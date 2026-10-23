@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scooterways</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1d1d1f; --muted:#666; --accent:#e4572e; --line:#ddd; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1c1c1e; --fg:#eee; --muted:#aaa; --line:#333; } }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  #app { display:flex; height:100%; }
+  #panel { width:340px; padding:16px; overflow-y:auto; border-right:1px solid var(--line); }
+  #map { flex:1; }
+  h1 { font-size:20px; margin:0 0 12px; }
+  label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
+  input[type=text] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  input[type=range] { width:100%; }
+  button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+  #summary { margin-top:14px; font-weight:600; }
+  #steps { padding-left:20px; font-size:13px; }
+  #steps li { margin:4px 0; }
+  .hint { font-size:12px; color:var(--muted); }
+  @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="panel">
+    <h1>🛵 Scooterways</h1>
+    <label for="from">Start</label>
+    <input id="from" type="text" placeholder="Adresse oder Klick auf Karte">
+    <label for="to">Ziel</label>
+    <input id="to" type="text" placeholder="Adresse oder Klick auf Karte">
+    <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
+    <input id="speed" type="range" min="25" max="60" step="5" value="45">
+    <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
+    <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
+    <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
+    <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    <button id="go">Route berechnen</button>
+    <div id="summary"></div>
+    <ol id="steps"></ol>
+    <p class="hint">Erster Klick auf die Karte setzt den Start, zweiter das Ziel. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+  </div>
+  <div id="map"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// In Phase 2 nur diese URL auf den eigenen Server umstellen.
+const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+
+const map = L.map('map').setView([51.16, 10.45], 6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende'
+}).addTo(map);
+
+const points = { from: null, to: null };
+const markers = {};
+let routeLayer = null;
+
+const $ = id => document.getElementById(id);
+const label = (v, words) => words[Math.min(words.length - 1, Math.floor(v * words.length))];
+const primaryWords = ['strikt meiden', 'meiden', 'neutral', 'bevorzugen'];
+const hillsWords = ['meiden', 'eher meiden', 'egal', 'gern'];
+
+$('speed').oninput = e => $('speedVal').textContent = e.target.value;
+$('primary').oninput = e => $('primaryVal').textContent = label(+e.target.value, primaryWords);
+$('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hillsWords);
+$('primary').oninput({ target: $('primary') });
+$('hills').oninput({ target: $('hills') });
+
+function setPoint(key, latlng, text) {
+  points[key] = latlng;
+  if (markers[key]) markers[key].setLatLng(latlng);
+  else markers[key] = L.marker(latlng, { draggable: true, title: key === 'from' ? 'Start' : 'Ziel' })
+    .addTo(map).on('dragend', e => { points[key] = e.target.getLatLng(); route(); });
+  if (text) $(key).value = text;
+}
+
+map.on('click', e => {
+  const key = !points.from ? 'from' : 'to';
+  setPoint(key, e.latlng, `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`);
+  if (points.from && points.to) route();
+});
+
+async function geocode(q) {
+  const m = q.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+  if (m) return L.latLng(+m[1], +m[3]);
+  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!data.length) throw new Error(`Nicht gefunden: ${q}`);
+  return L.latLng(+data[0].lat, +data[0].lon);
+}
+
+// Valhalla liefert Polylines mit Präzision 6
+function decode(str, precision = 6) {
+  let idx = 0, lat = 0, lng = 0;
+  const coords = [], f = Math.pow(10, precision);
+  while (idx < str.length) {
+    for (const axis of [0, 1]) {
+      let shift = 0, result = 0, b;
+      do { b = str.charCodeAt(idx++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      const d = (result & 1) ? ~(result >> 1) : (result >> 1);
+      if (axis === 0) lat += d; else lng += d;
+    }
+    coords.push([lat / f, lng / f]);
+  }
+  return coords;
+}
+
+async function route() {
+  $('summary').textContent = 'Berechne …';
+  $('steps').innerHTML = '';
+  try {
+    for (const key of ['from', 'to']) {
+      if (!points[key]) {
+        if (!$(key).value.trim()) throw new Error('Bitte Start und Ziel angeben.');
+        setPoint(key, await geocode($(key).value));
+      }
+    }
+    const body = {
+      locations: [points.from, points.to].map(p => ({ lat: p.lat, lon: p.lng })),
+      costing: 'motor_scooter',
+      costing_options: { motor_scooter: {
+        top_speed: +$('speed').value,
+        use_primary: +$('primary').value,
+        use_hills: +$('hills').value
+      } },
+      directions_options: { language: 'de-DE', units: 'kilometers' }
+    };
+    const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    const leg = data.trip.legs[0];
+    if (routeLayer) map.removeLayer(routeLayer);
+    routeLayer = L.polyline(decode(leg.shape), { color: '#e4572e', weight: 5 }).addTo(map);
+    map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+
+    const s = data.trip.summary;
+    const min = Math.round(s.time / 60);
+    $('summary').textContent = `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`;
+    $('steps').innerHTML = leg.maneuvers.map(m => `<li>${m.instruction}</li>`).join('');
+  } catch (err) {
+    $('summary').textContent = '⚠️ ' + err.message;
+  }
+}
+
+$('go').onclick = () => {
+  // Eingetippte Adressen haben Vorrang vor alten Klickpunkten
+  for (const key of ['from', 'to']) {
+    if (!/^-?\d/.test($(key).value)) points[key] = null;
+  }
+  route();
+};
+</script>
+</body>
+</html>
