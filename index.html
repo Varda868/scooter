@@ -659,7 +659,7 @@ function offset(ll, meters, bearingDeg) {
   const b = bearingDeg * Math.PI / 180;
   return L.latLng(ll.lat + meters * Math.cos(b) / 110540, ll.lng + meters * Math.sin(b) / (111320 * Math.cos(ll.lat * Math.PI / 180)));
 }
-$('roundtrip').onclick = () => {
+$('roundtrip').onclick = async () => {
   const start = waypoints[0].latlng;
   if (!start) { $('summary').textContent = '⚠️ Für eine Rundtour zuerst den Start setzen.'; return; }
   const km = Math.max(5, +$('rtKm').value || 40);
@@ -667,12 +667,52 @@ $('roundtrip').onclick = () => {
   const r = km * 1000 / (2 * Math.PI * 1.3);
   const center = offset(start, r, dir);
   const back = (dir + 180) % 360; // Richtung vom Mittelpunkt zum Start
-  const pts = [90, 180, 270].map(a => offset(center, r, back + a));
-  changeWaypoints(() => {
-    waypoints = [waypoints[0], ...pts.map(ll => ({ latlng: ll, text: coordText(ll), shaping: true })),
-      { latlng: start, text: waypoints[0].text }];
-  });
+  const targets = [90, 180, 270].map(a => offset(center, r, back + a));
+  $('roundtrip').disabled = true;
+  $('summary').textContent = 'Suche Orte für die Rundtour …';
+  try {
+    const pts = await snapRoundtrip(targets, start, Math.min(8000, Math.max(1500, r * 0.4)));
+    changeWaypoints(() => {
+      waypoints = [waypoints[0], ...pts.map(p => ({ latlng: p.latlng, text: p.name || coordText(p.latlng), shaping: true })),
+        { latlng: start, text: waypoints[0].text }];
+    });
+  } finally {
+    $('roundtrip').disabled = false;
+  }
 };
+
+// Kreispunkte liegen oft im Feld oder Wald. Daher auf den nächsten Ort einrasten (liegt immer an einer Straße);
+// größere Orte werden leicht bevorzugt. Ohne Ort im Umkreis: nächster befahrbarer Straßenpunkt über Valhalla /locate.
+const PLACE_WEIGHT = { town: 0.7, village: 0.85, suburb: 1, hamlet: 1 };
+async function snapRoundtrip(targets, start, radius) {
+  let places = [];
+  try {
+    const around = targets.map(t => `node[place~"^(town|village|suburb|hamlet)$"](around:${Math.round(radius)},${t.lat.toFixed(5)},${t.lng.toFixed(5)});`).join('');
+    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:25];(${around});out;`) });
+    if (res.ok) places = (await res.json()).elements.map(e => ({ latlng: L.latLng(e.lat, e.lon), name: e.tags.name, weight: PLACE_WEIGHT[e.tags.place] || 1 }));
+  } catch {}
+  const used = new Set();
+  const out = [];
+  for (const t of targets) {
+    const best = places
+      .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
+      .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
+    if (best) { used.add(best); out.push(best); continue; }
+    out.push({ latlng: await snapToRoad(t) });
+  }
+  return out;
+}
+
+async function snapToRoad(ll) {
+  try {
+    const res = await fetch(VALHALLA_URL.replace(/\/route$/, '/locate'), { method: 'POST', body: JSON.stringify({
+      locations: [{ lat: ll.lat, lon: ll.lng }], costing: 'motor_scooter'
+    }) });
+    const edge = (await res.json())[0]?.edges?.[0];
+    if (edge) return L.latLng(edge.correlated_lat, edge.correlated_lon);
+  } catch {}
+  return ll;
+}
 
 // Beim Öffnen den eigenen Standort als Start vorschlagen
 if (navigator.geolocation) navigator.geolocation.getCurrentPosition(pos => {
