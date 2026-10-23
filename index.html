@@ -16,7 +16,11 @@
   h1 { font-size:20px; margin:0 0 12px; }
   label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
   input[type=text] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  input[type=range] { width:100%; }
+  /* pan-y: senkrechtes Wischen scrollt das Panel, statt den Regler zu verstellen */
+  input[type=range] { width:100%; touch-action:pan-y; }
+  details.fold { margin-top:12px; border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  details.fold > summary { cursor:pointer; font-weight:600; font-size:14px; padding:4px 0; }
+  details.fold > summary .hint { font-weight:400; }
   button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   #summary { margin-top:14px; font-weight:600; }
   #steps { padding-left:20px; font-size:13px; }
@@ -34,7 +38,10 @@
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
   #wpList { list-style:none; padding:0; margin:0; }
-  #wpList li { margin:4px 0; }
+  #wpList li { margin:4px 0; position:relative; }
+  .suggest { position:absolute; left:26px; right:0; top:32px; z-index:1000; background:var(--bg); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.2); max-height:260px; overflow-y:auto; }
+  .suggest div { padding:8px 10px; cursor:pointer; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .suggest div:hover, .suggest div.active { background:var(--line); }
   .wp-row { display:flex; gap:4px; align-items:center; }
   .wp-row input { flex:1; min-width:0; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
@@ -90,17 +97,23 @@
       </select>
       <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
     </div>
+    <details id="profileBox" class="fold">
+    <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
     <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
     <input id="speed" type="range" min="25" max="60" step="5" value="45">
     <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
     <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    </details>
+    <details id="poiBox" class="fold">
+    <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
     <fieldset id="poiTypes">
-      <legend>POIs entlang der Route</legend>
+      <legend>Anzeigen</legend>
     </fieldset>
     <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
     <input id="radius" type="range" min="100" max="2000" step="100" value="500">
+    </details>
     <label class="file-btn">📂 GPX laden (Track oder Geocaches)
       <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
     </label>
@@ -191,8 +204,28 @@ $('cachesNearRoute').onchange = () => renderCaches();
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
   `<label><input type="checkbox" value="${t.id}" checked> ${t.icon} ${t.name}</label>`).join(''));
 $('poiTypes').onchange = () => loadPois();
+// Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius'];
+const settings = store.get('settings', {});
+SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
+['profileBox', 'poiBox'].forEach(id => {
+  $(id).open = !!settings[id];
+  $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
+});
+function updateFoldSummaries() {
+  SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
+  store.set('settings', settings);
+  $('profileSummary').textContent = `${$('speed').value} km/h · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}`;
+  const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
+  $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
+}
+$('panel').addEventListener('input', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
+$('panel').addEventListener('change', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
+$('speedVal').textContent = $('speed').value;
+$('radiusVal').textContent = $('radius').value;
 $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
+updateFoldSummaries();
 
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
 const isEnd = i => i === 0 || i === waypoints.length - 1;
@@ -340,17 +373,80 @@ $('wpList').oninput = e => {
   savePlan();
 };
 $('wpList').onchange = async e => {
-  if (e.target.tagName !== 'INPUT') return;
+  if (e.target.tagName !== 'INPUT' || !e.target.isConnected) return;
   const i = +e.target.closest('li').dataset.i, text = e.target.value.trim();
   if (text === waypoints[i].text) return;
   try {
     const ll = text ? await geocode(text) : null;
+    if (ll) rememberPlace(text, ll);
     changeWaypoints(() => { waypoints[i] = { ...waypoints[i], latlng: ll, text }; });
     if (ll && !ready()) map.setView(ll, 13);
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
   }
 };
+// --- Vorschläge beim Antippen eines Adressfelds: eigener Standort, letzte Ziele, eigene POIs ---
+let recentPlaces = store.get('recent', []);
+const OWN_LOCATION = 'Mein Standort';
+const isCoordText = t => /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(t);
+
+function rememberPlace(name, ll) {
+  name = name.trim();
+  if (!name || name === OWN_LOCATION || isCoordText(name)) return;
+  recentPlaces = [{ name, lat: ll.lat, lon: ll.lng }, ...recentPlaces.filter(p => p.name !== name)].slice(0, 8);
+  store.set('recent', recentPlaces);
+}
+
+function suggestionsFor(text) {
+  const q = text.trim().toLowerCase();
+  const match = name => !q || name.toLowerCase().includes(q);
+  return [
+    ...(navigator.geolocation && match(OWN_LOCATION) ? [{ icon: '📍', name: OWN_LOCATION, gps: true }] : []),
+    ...recentPlaces.filter(p => match(p.name)).map(p => ({ icon: '🕘', ...p })),
+    ...myPois.filter(p => match(p.name)).slice(0, 5).map(p => ({ icon: p.icon, name: p.name, lat: p.lat, lon: p.lon }))
+  ];
+}
+
+function showSuggestions(input) {
+  input.closest('li').querySelector('.suggest')?.remove();
+  const items = suggestionsFor(input.value);
+  if (!items.length) return;
+  const box = document.createElement('div');
+  box.className = 'suggest';
+  box.innerHTML = items.map((it, k) => `<div data-k="${k}">${it.icon} ${escapeHtml(it.name)}</div>`).join('');
+  // mousedown statt click: das Feld behält den Fokus, sonst löst blur vorher eine Suche mit dem Teiltext aus
+  box.onmousedown = ev => {
+    ev.preventDefault();
+    const it = items[ev.target.closest('[data-k]')?.dataset.k];
+    if (!it) return;
+    // Erst den Feldtext setzen, damit ein nachträgliches change-Event (Feld wird neu gerendert) nichts überschreibt
+    input.value = it.name;
+    pickSuggestion(+input.closest('li').dataset.i, it);
+  };
+  input.closest('li').append(box);
+}
+
+function pickSuggestion(i, it) {
+  const apply = ll => {
+    if (!it.gps) rememberPlace(it.name, ll);
+    changeWaypoints(() => { waypoints[i] = { ...waypoints[i], latlng: ll, text: it.name }; });
+    if (!ready()) map.setView(ll, 13);
+  };
+  if (!it.gps) return apply(L.latLng(it.lat, it.lon));
+  $('summary').textContent = 'Bestimme Standort …';
+  navigator.geolocation.getCurrentPosition(
+    pos => { $('summary').textContent = ''; apply(L.latLng(pos.coords.latitude, pos.coords.longitude)); },
+    err => { $('summary').textContent = '⚠️ Standort nicht verfügbar: ' + err.message; },
+    { timeout: 10000, maximumAge: 60000 });
+}
+
+$('wpList').addEventListener('focusin', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
+$('wpList').addEventListener('input', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
+$('wpList').addEventListener('focusout', e => {
+  if (e.target.matches('.wp-row input')) setTimeout(() => e.target.closest('li')?.querySelector('.suggest')?.remove(), 150);
+});
+$('wpList').addEventListener('keydown', e => { if (e.key === 'Escape') e.target.closest('li')?.querySelector('.suggest')?.remove(); });
+
 $('addVia').onclick = () => changeWaypoints(() => waypoints.splice(waypoints.length - 1, 0, { latlng: null, text: '' }), false);
 $('reverse').onclick = () => changeWaypoints(() => waypoints.reverse());
 $('undo').onclick = () => {
@@ -442,6 +538,7 @@ const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ?
 const tripText = s => { const min = Math.round(s.time / 60); return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`; };
 
 function showTrip(trip, alternates = []) {
+  waypoints.forEach(w => w.latlng && !w.shaping && rememberPlace(w.text, w.latlng));
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
