@@ -13,10 +13,15 @@
   #app { display:flex; height:100%; }
   #panel { width:340px; padding:16px; overflow-y:auto; border-right:1px solid var(--line); }
   #map { flex:1; }
-  h1 { font-size:20px; margin:0 0 12px; }
+  h1 { font-size:20px; margin:0 0 12px; display:flex; align-items:baseline; }
+  .clock { margin-left:auto; font-size:13px; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
   label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
   input[type=text] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  input[type=range] { width:100%; }
+  /* pan-y: senkrechtes Wischen scrollt das Panel, statt den Regler zu verstellen */
+  input[type=range] { width:100%; touch-action:pan-y; }
+  details.fold { margin-top:12px; border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  details.fold > summary { cursor:pointer; font-weight:600; font-size:14px; padding:4px 0; }
+  details.fold > summary .hint { font-weight:400; }
   button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   #summary { margin-top:14px; font-weight:600; }
   #steps { padding-left:20px; font-size:13px; }
@@ -34,10 +39,14 @@
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
   #wpList { list-style:none; padding:0; margin:0; }
-  #wpList li { margin:4px 0; }
+  #wpList li { margin:4px 0; position:relative; }
+  .suggest { position:absolute; left:26px; right:0; top:32px; z-index:1000; background:var(--bg); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.2); max-height:260px; overflow-y:auto; }
+  .suggest div { padding:8px 10px; cursor:pointer; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .suggest div:hover, .suggest div.active { background:var(--line); }
   .wp-row { display:flex; gap:4px; align-items:center; }
   .wp-row input { flex:1; min-width:0; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
+  .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
   .note { white-space:pre-wrap; margin:4px 0; font-size:13px; }
   #myPois { list-style:none; padding:0; font-size:13px; }
@@ -75,7 +84,7 @@
 <body>
 <div id="app">
   <div id="panel">
-    <h1>🛵 Scooterways</h1>
+    <h1>🛵 Scooterways <span id="clock" class="clock"></span></h1>
     <ul id="wpList"></ul>
     <div class="wp-tools">
       <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
@@ -90,17 +99,23 @@
       </select>
       <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
     </div>
+    <details id="profileBox" class="fold">
+    <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
     <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
     <input id="speed" type="range" min="25" max="60" step="5" value="45">
     <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
     <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    </details>
+    <details id="poiBox" class="fold">
+    <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
     <fieldset id="poiTypes">
-      <legend>POIs entlang der Route</legend>
+      <legend>Anzeigen</legend>
     </fieldset>
     <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
     <input id="radius" type="range" min="100" max="2000" step="100" value="500">
+    </details>
     <label class="file-btn">📂 GPX laden (Track oder Geocaches)
       <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
     </label>
@@ -126,6 +141,7 @@ const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const VALHALLA_HEIGHT_URL = VALHALLA_URL.replace(/\/route$/, '/height');
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 
 // Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
 const POI_TYPES = [
@@ -191,8 +207,28 @@ $('cachesNearRoute').onchange = () => renderCaches();
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
   `<label><input type="checkbox" value="${t.id}" checked> ${t.icon} ${t.name}</label>`).join(''));
 $('poiTypes').onchange = () => loadPois();
+// Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius'];
+const settings = store.get('settings', {});
+SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
+['profileBox', 'poiBox'].forEach(id => {
+  $(id).open = !!settings[id];
+  $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
+});
+function updateFoldSummaries() {
+  SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
+  store.set('settings', settings);
+  $('profileSummary').textContent = `${$('speed').value} km/h · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}`;
+  const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
+  $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
+}
+$('panel').addEventListener('input', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
+$('panel').addEventListener('change', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
+$('speedVal').textContent = $('speed').value;
+$('radiusVal').textContent = $('radius').value;
 $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
+updateFoldSummaries();
 
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
 const isEnd = i => i === 0 || i === waypoints.length - 1;
@@ -223,6 +259,7 @@ function renderWaypoints() {
     <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte">
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
+    ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
     ${w.noteOpen || w.note ? `<textarea rows="2" placeholder="Notiz, z. B. Pause, Tanken, Treffpunkt …">${escapeHtml(w.note || '')}</textarea>` : ''}</li>`).join('');
@@ -319,6 +356,8 @@ $('wpList').onclick = e => {
   const act = e.target.dataset.act, i = +e.target.closest('li')?.dataset.i;
   if (!act) return;
   if (act === 'del') return removeWaypoint(i);
+  // Am Handy gibt es keinen Tooltip: Wetterdetails als Popup am Wegpunkt
+  if (act === 'wx') return L.popup({ className: 'map-menu' }).setLatLng(waypoints[i].latlng).setContent(escapeHtml(waypoints[i].wx.title)).openOn(map);
   if (act === 'note') {
     const w = waypoints[i];
     // Leere offene Notiz schließt sich wieder, sonst öffnen
@@ -340,17 +379,80 @@ $('wpList').oninput = e => {
   savePlan();
 };
 $('wpList').onchange = async e => {
-  if (e.target.tagName !== 'INPUT') return;
+  if (e.target.tagName !== 'INPUT' || !e.target.isConnected) return;
   const i = +e.target.closest('li').dataset.i, text = e.target.value.trim();
   if (text === waypoints[i].text) return;
   try {
     const ll = text ? await geocode(text) : null;
+    if (ll) rememberPlace(text, ll);
     changeWaypoints(() => { waypoints[i] = { ...waypoints[i], latlng: ll, text }; });
     if (ll && !ready()) map.setView(ll, 13);
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
   }
 };
+// --- Vorschläge beim Antippen eines Adressfelds: eigener Standort, letzte Ziele, eigene POIs ---
+let recentPlaces = store.get('recent', []);
+const OWN_LOCATION = 'Mein Standort';
+const isCoordText = t => /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/.test(t);
+
+function rememberPlace(name, ll) {
+  name = name.trim();
+  if (!name || name === OWN_LOCATION || isCoordText(name)) return;
+  recentPlaces = [{ name, lat: ll.lat, lon: ll.lng }, ...recentPlaces.filter(p => p.name !== name)].slice(0, 8);
+  store.set('recent', recentPlaces);
+}
+
+function suggestionsFor(text) {
+  const q = text.trim().toLowerCase();
+  const match = name => !q || name.toLowerCase().includes(q);
+  return [
+    ...(navigator.geolocation && match(OWN_LOCATION) ? [{ icon: '📍', name: OWN_LOCATION, gps: true }] : []),
+    ...recentPlaces.filter(p => match(p.name)).map(p => ({ icon: '🕘', ...p })),
+    ...myPois.filter(p => match(p.name)).slice(0, 5).map(p => ({ icon: p.icon, name: p.name, lat: p.lat, lon: p.lon }))
+  ];
+}
+
+function showSuggestions(input) {
+  input.closest('li').querySelector('.suggest')?.remove();
+  const items = suggestionsFor(input.value);
+  if (!items.length) return;
+  const box = document.createElement('div');
+  box.className = 'suggest';
+  box.innerHTML = items.map((it, k) => `<div data-k="${k}">${it.icon} ${escapeHtml(it.name)}</div>`).join('');
+  // mousedown statt click: das Feld behält den Fokus, sonst löst blur vorher eine Suche mit dem Teiltext aus
+  box.onmousedown = ev => {
+    ev.preventDefault();
+    const it = items[ev.target.closest('[data-k]')?.dataset.k];
+    if (!it) return;
+    // Erst den Feldtext setzen, damit ein nachträgliches change-Event (Feld wird neu gerendert) nichts überschreibt
+    input.value = it.name;
+    pickSuggestion(+input.closest('li').dataset.i, it);
+  };
+  input.closest('li').append(box);
+}
+
+function pickSuggestion(i, it) {
+  const apply = ll => {
+    if (!it.gps) rememberPlace(it.name, ll);
+    changeWaypoints(() => { waypoints[i] = { ...waypoints[i], latlng: ll, text: it.name }; });
+    if (!ready()) map.setView(ll, 13);
+  };
+  if (!it.gps) return apply(L.latLng(it.lat, it.lon));
+  $('summary').textContent = 'Bestimme Standort …';
+  navigator.geolocation.getCurrentPosition(
+    pos => { $('summary').textContent = ''; apply(L.latLng(pos.coords.latitude, pos.coords.longitude)); },
+    err => { $('summary').textContent = '⚠️ Standort nicht verfügbar: ' + err.message; },
+    { timeout: 10000, maximumAge: 60000 });
+}
+
+$('wpList').addEventListener('focusin', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
+$('wpList').addEventListener('input', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
+$('wpList').addEventListener('focusout', e => {
+  if (e.target.matches('.wp-row input')) setTimeout(() => e.target.closest('li')?.querySelector('.suggest')?.remove(), 150);
+});
+$('wpList').addEventListener('keydown', e => { if (e.key === 'Escape') e.target.closest('li')?.querySelector('.suggest')?.remove(); });
+
 $('addVia').onclick = () => changeWaypoints(() => waypoints.splice(waypoints.length - 1, 0, { latlng: null, text: '' }), false);
 $('reverse').onclick = () => changeWaypoints(() => waypoints.reverse());
 $('undo').onclick = () => {
@@ -410,8 +512,12 @@ async function route() {
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     const body = {
       // Formpunkte: "through" = Route muss durch, aber kein Halt und kein eigener Abschnitt
-      locations: locs.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng,
-        type: w.shaping && i && i < locs.length - 1 ? 'through' : 'break' })),
+      // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
+      locations: locs.map((w, i) => {
+        const shaping = w.shaping && i && i < locs.length - 1;
+        return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
+          ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
+      }),
       costing: 'motor_scooter',
       costing_options: { motor_scooter: {
         top_speed: +$('speed').value,
@@ -435,9 +541,22 @@ async function route() {
 
 // Bei Zwischenzielen liefert Valhalla einen Abschnitt (leg) je Teilstrecke.
 const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ? 1 : 0));
-const tripText = s => { const min = Math.round(s.time / 60); return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`; };
+const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+const tripText = s => {
+  const min = Math.round(s.time / 60);
+  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${hhmm(new Date(Date.now() + s.time * 1000))}`;
+};
+
+// Uhr im Header, auf die volle Minute synchronisiert
+function tick() {
+  $('clock').textContent = hhmm(new Date());
+  setTimeout(tick, 60000 - Date.now() % 60000 + 50);
+}
+tick();
 
 function showTrip(trip, alternates = []) {
+  waypoints.forEach(w => w.latlng && !w.shaping && rememberPlace(w.text, w.latlng));
+  loadWeather(trip);
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
@@ -554,6 +673,52 @@ function pointAtKm(km) {
   const t = (km - routeKm[i - 1]) / ((routeKm[i] - routeKm[i - 1]) || 1);
   const [a, b] = [routeCoords[i - 1], routeCoords[i]];
   return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+}
+
+// --- Wetter je Halt zur voraussichtlichen Ankunft (Open-Meteo, stündlich, bis 3 Tage) ---
+const WMO = [
+  [[0], '☀️', 'klar'], [[1], '🌤️', 'überwiegend klar'], [[2], '⛅', 'teils bewölkt'], [[3], '☁️', 'bedeckt'],
+  [[45, 48], '🌫️', 'Nebel'], [[51, 53, 55, 56, 57], '🌦️', 'Nieselregen'], [[61, 63, 65], '🌧️', 'Regen'],
+  [[66, 67], '🧊', 'gefrierender Regen'], [[71, 73, 75, 77, 85, 86], '🌨️', 'Schnee'], [[80, 81, 82], '🌦️', 'Schauer'],
+  [[95, 96, 99], '⛈️', 'Gewitter']
+];
+const wmo = code => WMO.find(([codes]) => codes.includes(code)) || [[], '❔', 'unbekannt'];
+let weatherRequest = 0;
+
+async function loadWeather(trip) {
+  const req = ++weatherRequest;
+  // Halte = Wegpunkte, die Valhalla als "break" bekommt; Ankunft = Summe der Abschnittszeiten
+  const located = waypoints.filter(w => w.latlng);
+  const stops = located.filter((w, i) => !(w.shaping && i && i < located.length - 1));
+  waypoints.forEach(w => { delete w.wx; });
+  let t = Date.now();
+  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary?.time || 0) * 1000; w.eta = t; });
+  try {
+    const qs = new URLSearchParams({
+      latitude: stops.map(w => w.latlng.lat.toFixed(3)).join(','),
+      longitude: stops.map(w => w.latlng.lng.toFixed(3)).join(','),
+      hourly: 'weather_code,temperature_2m,precipitation_probability,wind_speed_10m',
+      forecast_days: 3, timeformat: 'unixtime', wind_speed_unit: 'kmh'
+    });
+    const res = await fetch(`${WEATHER_URL}?${qs}`);
+    if (!res.ok) return;
+    let data = await res.json();
+    if (req !== weatherRequest) return;
+    if (!Array.isArray(data)) data = [data];
+    stops.forEach((w, k) => {
+      const h = data[k]?.hourly;
+      if (!h) return;
+      // nächste volle Stunde zur Ankunft; außerhalb des Vorhersagezeitraums kein Symbol
+      const idx = h.time.reduce((best, ts, j) => Math.abs(ts * 1000 - w.eta) < Math.abs(h.time[best] * 1000 - w.eta) ? j : best, 0);
+      if (Math.abs(h.time[idx] * 1000 - w.eta) > 90 * 60000) return;
+      const [, icon, text] = wmo(h.weather_code[idx]);
+      w.wx = {
+        icon, temp: Math.round(h.temperature_2m[idx]),
+        title: `${hhmm(new Date(w.eta))}: ${text}, ${Math.round(h.temperature_2m[idx])} °C, Regen ${h.precipitation_probability[idx] ?? '–'} %, Wind ${Math.round(h.wind_speed_10m[idx])} km/h`
+      };
+    });
+    renderWaypoints();
+  } catch {}
 }
 
 // Route ziehen (Maus) erzeugt einen Formpunkt; kurzes Antippen öffnet ein Menü (auch für Touch).
@@ -681,32 +846,76 @@ $('roundtrip').onclick = async () => {
   }
 };
 
-// Kreispunkte liegen oft im Feld oder Wald. Daher auf den nächsten Ort einrasten (liegt immer an einer Straße);
-// größere Orte werden leicht bevorzugt. Ohne Ort im Umkreis: nächster befahrbarer Straßenpunkt über Valhalla /locate.
+// Kreispunkte liegen oft im Feld oder Wald. Zweistufig einrasten:
+// 1. Anker: nächster Ort im Umkreis (größere leicht bevorzugt), sonst der Kreispunkt selbst.
+// 2. Anker auf den nächsten Punkt einer richtigen Straße (Overpass-Geometrie, Lotfußpunkt) setzen.
+// Fallback: Valhalla /locate, zuletzt der Rohpunkt.
 const PLACE_WEIGHT = { town: 0.7, village: 0.85, suburb: 1, hamlet: 1 };
+const SNAP_ROADS = '^(primary|secondary|tertiary|unclassified|residential|living_street)$';
+
+async function overpass(query) {
+  const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:25];${query}`) });
+  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+  return (await res.json()).elements;
+}
+
 async function snapRoundtrip(targets, start, radius) {
   let places = [];
   try {
-    const around = targets.map(t => `node[place~"^(town|village|suburb|hamlet)$"](around:${Math.round(radius)},${t.lat.toFixed(5)},${t.lng.toFixed(5)});`).join('');
-    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:25];(${around});out;`) });
-    if (res.ok) places = (await res.json()).elements.map(e => ({ latlng: L.latLng(e.lat, e.lon), name: e.tags.name, weight: PLACE_WEIGHT[e.tags.place] || 1 }));
+    places = (await overpass(`(${targets.map(t =>
+      `node[place~"^(town|village|suburb|hamlet)$"](around:${Math.round(radius)},${t.lat.toFixed(5)},${t.lng.toFixed(5)});`).join('')});out;`))
+      .map(e => ({ latlng: L.latLng(e.lat, e.lon), name: e.tags.name, weight: PLACE_WEIGHT[e.tags.place] || 1 }));
   } catch {}
   const used = new Set();
-  const out = [];
-  for (const t of targets) {
+  const anchors = targets.map(t => {
     const best = places
       .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
       .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
-    if (best) { used.add(best); out.push(best); continue; }
-    out.push({ latlng: await snapToRoad(t) });
+    if (best) used.add(best);
+    // Ortsmittelpunkt: Straße ganz in der Nähe; freier Kreispunkt: weiter suchen
+    return best ? { ...best, search: 500 } : { latlng: t, search: Math.round(Math.min(radius, 3000)) };
+  });
+
+  let ways = [];
+  try {
+    ways = await overpass(`(${anchors.map(a =>
+      `way[highway~"${SNAP_ROADS}"](around:${a.search},${a.latlng.lat.toFixed(5)},${a.latlng.lng.toFixed(5)});`).join('')});out geom;`);
+  } catch {}
+
+  const out = [];
+  for (const a of anchors) {
+    const onRoad = nearestOnWays(a.latlng, ways, a.search);
+    out.push({ name: a.name, latlng: onRoad || await snapToRoad(a.latlng) });
   }
   return out;
+}
+
+// Nächster Punkt auf den Straßengeometrien; Haupt- und Verbindungsstraßen leicht bevorzugt
+function nearestOnWays(ll, ways, maxDist) {
+  const kx = 111320 * Math.cos(ll.lat * Math.PI / 180), ky = 110540;
+  let best = null, bestScore = Infinity;
+  for (const w of ways) {
+    const g = w.geometry || [];
+    const weight = /^(residential|living_street)$/.test(w.tags?.highway) ? 1.3 : 1;
+    for (let i = 1; i < g.length; i++) {
+      const ax = (g[i - 1].lon - ll.lng) * kx, ay = (g[i - 1].lat - ll.lat) * ky;
+      const dx = (g[i].lon - g[i - 1].lon) * kx, dy = (g[i].lat - g[i - 1].lat) * ky;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+      const d = Math.hypot(ax + t * dx, ay + t * dy);
+      if (d <= maxDist && d * weight < bestScore) {
+        bestScore = d * weight;
+        best = L.latLng(g[i - 1].lat + t * (g[i].lat - g[i - 1].lat), g[i - 1].lon + t * (g[i].lon - g[i - 1].lon));
+      }
+    }
+  }
+  return best;
 }
 
 async function snapToRoad(ll) {
   try {
     const res = await fetch(VALHALLA_URL.replace(/\/route$/, '/locate'), { method: 'POST', body: JSON.stringify({
-      locations: [{ lat: ll.lat, lon: ll.lng }], costing: 'motor_scooter'
+      locations: [{ lat: ll.lat, lon: ll.lng, search_filter: { min_road_class: 'residential' } }], costing: 'motor_scooter'
     }) });
     const edge = (await res.json())[0]?.edges?.[0];
     if (edge) return L.latLng(edge.correlated_lat, edge.correlated_lon);
