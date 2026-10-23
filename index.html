@@ -22,6 +22,13 @@
   #steps { padding-left:20px; font-size:13px; }
   #steps li { margin:4px 0; }
   .hint { font-size:12px; color:var(--muted); }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:14px 0 0; padding:8px 10px; }
+  legend { font-size:13px; color:var(--muted); padding:0 4px; }
+  fieldset label { display:inline-flex; align-items:center; gap:4px; margin:4px 10px 4px 0; color:var(--fg); font-size:14px; }
+  #pois { list-style:none; padding:0; font-size:13px; }
+  #pois li { margin:4px 0; cursor:pointer; }
+  #pois li:hover { text-decoration:underline; }
+  .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
 </style>
 </head>
@@ -39,8 +46,15 @@
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
     <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    <fieldset id="poiTypes">
+      <legend>POIs entlang der Route</legend>
+    </fieldset>
+    <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
+    <input id="radius" type="range" min="100" max="2000" step="100" value="500">
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
+    <div id="poiSummary"></div>
+    <ul id="pois"></ul>
     <ol id="steps"></ol>
     <p class="hint">Erster Klick auf die Karte setzt den Start, zweiter das Ziel. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
   </div>
@@ -51,6 +65,17 @@
 // In Phase 2 nur diese URL auf den eigenen Server umstellen.
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+// Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
+const POI_TYPES = [
+  { id: 'shelter', icon: '🛖', name: 'Schutzhütte', filters: [
+    '[amenity=shelter][shelter_type!=public_transport]', '[tourism=wilderness_hut]', '[tourism=alpine_hut]' ] },
+  { id: 'water', icon: '🚰', name: 'Trinkwasser', filters: [
+    '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
+  { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
+  { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] }
+];
 
 const map = L.map('map').setView([51.16, 10.45], 6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -60,6 +85,8 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const points = { from: null, to: null };
 const markers = {};
 let routeLayer = null;
+let routeCoords = null;
+const poiLayer = L.layerGroup();
 
 const $ = id => document.getElementById(id);
 const label = (v, words) => words[Math.min(words.length - 1, Math.floor(v * words.length))];
@@ -69,6 +96,11 @@ const hillsWords = ['meiden', 'eher meiden', 'egal', 'gern'];
 $('speed').oninput = e => $('speedVal').textContent = e.target.value;
 $('primary').oninput = e => $('primaryVal').textContent = label(+e.target.value, primaryWords);
 $('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hillsWords);
+$('radius').oninput = e => $('radiusVal').textContent = e.target.value;
+$('radius').onchange = () => loadPois();
+$('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
+  `<label><input type="checkbox" value="${t.id}" checked> ${t.icon} ${t.name}</label>`).join(''));
+$('poiTypes').onchange = () => loadPois();
 $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
 
@@ -137,16 +169,89 @@ async function route() {
 
     const leg = data.trip.legs[0];
     if (routeLayer) map.removeLayer(routeLayer);
-    routeLayer = L.polyline(decode(leg.shape), { color: '#e4572e', weight: 5 }).addTo(map);
+    routeCoords = decode(leg.shape);
+    routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 5 }).addTo(map);
     map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
     const s = data.trip.summary;
     const min = Math.round(s.time / 60);
     $('summary').textContent = `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`;
     $('steps').innerHTML = leg.maneuvers.map(m => `<li>${m.instruction}</li>`).join('');
+    loadPois();
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
   }
+}
+
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+// Overpass akzeptiert bei around: eine Punktliste als Linie; zu viele Punkte machen die Abfrage langsam.
+function simplify(coords, max = 150) {
+  if (coords.length <= max) return coords;
+  const step = (coords.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => coords[Math.round(i * step)]);
+}
+
+// Kilometer ab Start bis zum nächstgelegenen Routenpunkt
+function kmAlongRoute(lat, lon) {
+  let best = Infinity, bestKm = 0, km = 0;
+  for (let i = 0; i < routeCoords.length; i++) {
+    if (i) km += map.distance(routeCoords[i - 1], routeCoords[i]) / 1000;
+    const d = map.distance(routeCoords[i], [lat, lon]);
+    if (d < best) { best = d; bestKm = km; }
+  }
+  return bestKm;
+}
+
+let poiRequest = 0;
+async function loadPois() {
+  poiLayer.clearLayers().addTo(map);
+  $('pois').innerHTML = '';
+  $('poiSummary').textContent = '';
+  if (!routeCoords) return;
+  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked);
+  if (!active.length) return;
+
+  const req = ++poiRequest;
+  $('poiSummary').textContent = 'Suche POIs …';
+  const line = simplify(routeCoords).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
+  const around = `(around:${+$('radius').value},${line})`;
+  const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around};`)).join('')});out center tags;`;
+  try {
+    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const data = await res.json();
+    if (req !== poiRequest) return;
+
+    const pois = data.elements.map(el => {
+      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+      const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
+      return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: kmAlongRoute(lat, lon) } : null;
+    }).filter(Boolean).sort((a, b) => a.km - b.km);
+
+    for (const p of pois) {
+      const title = p.tags.name || p.tags.brand || p.type.name;
+      p.marker = L.marker([p.lat, p.lon], {
+        icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
+      }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
+        (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '')).addTo(poiLayer);
+    }
+    $('poiSummary').textContent = pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.';
+    $('pois').innerHTML = pois.map((p, i) =>
+      `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
+    $('pois').onclick = e => {
+      const p = pois[e.target.closest('li')?.dataset.i];
+      if (p) { map.setView([p.lat, p.lon], 16); p.marker.openPopup(); }
+    };
+  } catch (err) {
+    if (req === poiRequest) $('poiSummary').textContent = '⚠️ POIs: ' + err.message;
+  }
+}
+
+// Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"
+function matches(tags, filter) {
+  return [...filter.matchAll(/\[(\w+)(!?=)([^\]]+)\]/g)].every(([, k, op, v]) =>
+    op === '=' ? tags[k] === v : tags[k] !== v);
 }
 
 $('go').onclick = () => {
