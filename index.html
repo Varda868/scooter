@@ -24,6 +24,19 @@
   details.fold > summary .hint { font-weight:400; }
   button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   #summary { margin-top:14px; font-weight:600; }
+  #play { margin-top:8px; background:var(--fg); color:var(--bg); }
+  .sim { position:absolute; z-index:1000; left:50%; transform:translateX(-50%); top:10px; width:min(360px, calc(100% - 20px));
+    background:var(--bg); color:var(--fg); border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.35); padding:8px 10px; font-size:13px; }
+  .sim-turn { display:flex; gap:10px; align-items:center; }
+  #simArrow { font-size:30px; line-height:1; width:36px; text-align:center; }
+  #simDist { font-size:17px; }
+  .sim-stats { display:flex; gap:8px; align-items:center; margin-top:6px; color:var(--muted); }
+  .sim-grade { color:#fff; font-weight:700; border-radius:4px; padding:1px 6px; }
+  .sim-ctl { display:flex; gap:6px; align-items:center; margin-top:6px; }
+  .sim-ctl button { margin:0; width:36px; padding:4px; }
+  .sim-ctl input { flex:1; touch-action:pan-y; }
+  .sim-dot { width:22px; height:22px; border-radius:50%; background:#222; color:#fff; border:2px solid #fff; display:flex;
+    align-items:center; justify-content:center; font-size:12px; box-shadow:0 1px 4px rgba(0,0,0,.5); }
   #steps { padding-left:20px; font-size:13px; }
   #steps li { margin:4px 0; }
   .hint { font-size:12px; color:var(--muted); }
@@ -122,6 +135,7 @@
     <label><input id="cachesNearRoute" type="checkbox" checked> Geocaches nur entlang der Route</label>
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
+    <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
     <div id="elevation"></div>
     <div id="poiSummary"></div>
     <ul id="pois"></ul>
@@ -133,6 +147,15 @@
     <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
   </div>
   <div id="map"></div>
+  <div id="sim" class="sim" hidden>
+    <div class="sim-turn"><span id="simArrow">↑</span><div><b id="simDist"></b><div id="simText"></div></div></div>
+    <div class="sim-stats"><span id="simGrade" class="sim-grade"></span><span id="simInfo"></span></div>
+    <div class="sim-ctl">
+      <button id="simPause" title="Pause/Weiter">⏸</button>
+      <input id="simSpeed" type="range" min="5" max="200" step="5" value="30" title="Zeitraffer"><span id="simSpeedVal">30×</span>
+      <button id="simStop" title="Beenden">✕</button>
+    </div>
+  </div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -182,12 +205,20 @@ const altLayer = L.layerGroup().addTo(map);
 let routeLayer = null;
 let routeCoords = null;
 let routeKm = null; // kumulierte km je Routenpunkt
+let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
+let routeKmh = null; // Durchschnittstempo laut Valhalla
+let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
+const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null, gradeLayer: L.layerGroup() };
 const poiLayer = L.layerGroup();
 const cacheLayer = L.layerGroup().addTo(map);
 let caches = [];
 
 // Referenzlinie für POI-/Cache-Filter: berechnete Route oder geladener GPX-Track
 function setRouteCoords(coords) {
+  stopSim();
+  routeManeuvers = [];
+  eleData = null;
+  $('play').hidden = false;
   routeCoords = coords;
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
@@ -467,6 +498,8 @@ $('undo').onclick = () => {
 function clearRoute() {
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
+  stopSim();
+  $('play').hidden = true;
   routeLayer = routeCoords = routeKm = null;
   $('summary').textContent = '';
   $('steps').innerHTML = '';
@@ -500,6 +533,35 @@ function decode(str, precision = 6) {
   return coords;
 }
 
+function routeBody(locs) {
+  const body = {
+    // Formpunkte: "through" = Route muss durch, aber kein Halt und kein eigener Abschnitt
+    // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
+    locations: locs.map((w, i) => {
+      const shaping = w.shaping && i && i < locs.length - 1;
+      return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
+        ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
+    }),
+    costing: 'motor_scooter',
+    costing_options: { motor_scooter: {
+      top_speed: +$('speed').value,
+      use_primary: +$('primary').value,
+      use_hills: +$('hills').value
+    } },
+    directions_options: { language: 'de-DE', units: 'kilometers' }
+  };
+  if (excluded.length) body.exclude_locations = excluded.map(ll => ({ lat: ll.lat, lon: ll.lng }));
+  return body;
+}
+
+async function fetchRoute(body) {
+  const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+let summaryNote = '';
 async function route() {
   $('summary').textContent = 'Berechne …';
   $('steps').innerHTML = '';
@@ -510,29 +572,10 @@ async function route() {
     renderWaypoints();
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
-    const body = {
-      // Formpunkte: "through" = Route muss durch, aber kein Halt und kein eigener Abschnitt
-      // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
-      locations: locs.map((w, i) => {
-        const shaping = w.shaping && i && i < locs.length - 1;
-        return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
-          ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
-      }),
-      costing: 'motor_scooter',
-      costing_options: { motor_scooter: {
-        top_speed: +$('speed').value,
-        use_primary: +$('primary').value,
-        use_hills: +$('hills').value
-      } },
-      directions_options: { language: 'de-DE', units: 'kilometers' }
-    };
-    if (excluded.length) body.exclude_locations = excluded.map(ll => ({ lat: ll.lat, lon: ll.lng }));
+    const body = routeBody(locs);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
     if (locs.length === 2) body.alternates = 2;
-    const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-
+    const data = await fetchRoute(body);
     showTrip(data.trip, (data.alternates || []).map(a => a.trip));
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
@@ -567,11 +610,19 @@ function showTrip(trip, alternates = []) {
       .addTo(altLayer);
   });
   setRouteCoords(tripCoords(trip));
+  routeKmh = trip.summary.length / (trip.summary.time / 3600);
+  // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
+  let off = 0;
+  for (const l of trip.legs) {
+    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type });
+    off += decode(l.shape).length - 1;
+  }
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
   enableRouteEditing(routeLayer);
   if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
-  $('summary').textContent = tripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '');
+  $('summary').textContent = tripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + summaryNote;
+  summaryNote = '';
   $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
   loadElevation();
   loadPois();
@@ -633,6 +684,7 @@ function renderElevation(pts, lenM) {
     if (j < pts.length) maxGrade = Math.max(maxGrade, Math.abs(hs[j] - hs[i]) / ((xs[j] - xs[i]) * 1000) * 100);
   }
   const totalKm = xs[xs.length - 1];
+  eleData = { xs, hs };
   $('elevation').innerHTML = `<div class="ele-stats">↑ ${up} m · ↓ ${down} m · ${Math.round(minH)}–${Math.round(maxH)} m ü. NN · max. ${maxGrade.toFixed(0)} % Steigung</div>
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Höhenprofil">
       <line class="ele-grid" x1="${L0}" x2="${W - R0}" y1="${Y(hi)}" y2="${Y(hi)}"/>
@@ -649,7 +701,12 @@ function renderElevation(pts, lenM) {
   const cursor = svg.querySelector('.ele-cursor'), label = svg.querySelector('.ele-label');
   const show = ev => {
     const r = svg.getBoundingClientRect();
-    const km = Math.max(0, Math.min(totalKm, ((ev.clientX - r.left) / r.width * W - L0) / (W - L0 - R0) * totalKm));
+    showKm(Math.max(0, Math.min(totalKm, ((ev.clientX - r.left) / r.width * W - L0) / (W - L0 - R0) * totalKm)));
+    eleCursor.addTo(map);
+  };
+  // Auch von der Vorschaufahrt genutzt
+  eleShowKm = showKm;
+  function showKm(km) {
     const i = xs.findIndex(x => x >= km);
     const h = hs[Math.max(0, i)];
     const x = X(km);
@@ -658,13 +715,15 @@ function renderElevation(pts, lenM) {
     label.setAttribute('x', x < W / 2 ? x + 4 : x - 4);
     label.setAttribute('text-anchor', x < W / 2 ? 'start' : 'end');
     label.setAttribute('visibility', 'visible');
-    eleCursor.setLatLng(pointAtKm(km)).addTo(map);
-  };
+    eleCursor.setLatLng(pointAtKm(km));
+  }
   const hide = () => { cursor.setAttribute('visibility', 'hidden'); label.setAttribute('visibility', 'hidden'); eleCursor.remove(); };
   svg.addEventListener('pointermove', show);
   svg.addEventListener('pointerdown', show);
   svg.addEventListener('pointerleave', hide);
 }
+
+let eleShowKm = null;
 
 // Position auf der Route nach Kilometern (linear zwischen Stützpunkten)
 function pointAtKm(km) {
@@ -674,6 +733,127 @@ function pointAtKm(km) {
   const [a, b] = [routeCoords[i - 1], routeCoords[i]];
   return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
 }
+
+// --- Vorschaufahrt: Strecke im Zeitraffer abfahren, Karte folgt, Zoom je nach Tempo und nächster Abbiegung ---
+const TURN_ARROWS = { 1: '▶', 2: '▶', 3: '▶', 4: '🏁', 5: '🏁', 6: '🏁', 9: '↗', 10: '→', 11: '↘', 12: '↶', 13: '↶', 14: '↙', 15: '←', 16: '↖',
+  20: '↗', 21: '↖', 24: '↖', 25: '↗', 26: '⟳', 27: '⟳' };
+map.getContainer().appendChild($('sim'));
+L.DomEvent.disableClickPropagation($('sim'));
+L.DomEvent.disableScrollPropagation($('sim'));
+
+function heightAt(km) {
+  const { xs, hs } = eleData;
+  let i = xs.findIndex(x => x >= km);
+  if (i <= 0) return hs[Math.max(0, i)] ?? hs[hs.length - 1];
+  const t = (km - xs[i - 1]) / ((xs[i] - xs[i - 1]) || 1);
+  return hs[i - 1] + t * (hs[i] - hs[i - 1]);
+}
+// Steigung in % über ±100 m, glättet Sprünge im Höhenmodell
+const gradeAt = km => eleData ? (heightAt(km + 0.1) - heightAt(Math.max(0, km - 0.1))) / (Math.min(km, 0.1) + 0.1) / 10 : null;
+const gradeColor = g => g > 8 ? '#c0392b' : g > 5 ? '#e67e22' : g > 2 ? '#e6b800' : g < -5 ? '#1f5fbf' : g < -2 ? '#5aa9e6' : '#2e9e4f';
+
+// Route nach Steigung einfärben, gleiche Farben zu einer Linie zusammenfassen
+function drawGrades() {
+  sim.gradeLayer.clearLayers();
+  if (!eleData) return;
+  const total = routeKm[routeKm.length - 1], step = Math.max(0.05, total / 800);
+  let seg = [pointAtKm(0)], color = gradeColor(gradeAt(0));
+  for (let km = step; km < total + step; km += step) {
+    const k = Math.min(km, total), c = gradeColor(gradeAt(k));
+    seg.push(pointAtKm(k));
+    if (c !== color || k === total) {
+      L.polyline(seg, { color, weight: 7, interactive: false }).addTo(sim.gradeLayer);
+      seg = [pointAtKm(k)]; color = c;
+    }
+  }
+}
+
+function startSim() {
+  if (!routeCoords) return;
+  stopSim();
+  sim.km = 0;
+  $('sim').hidden = false;
+  drawGrades();
+  sim.gradeLayer.addTo(map);
+  sim.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
+    icon: L.divIcon({ className: '', html: '<div class="sim-dot">➤</div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
+  if (eleData) eleCursor.addTo(map);
+  map.setView(routeCoords[0], 16, { animate: false });
+  sim.zoomAt = performance.now();
+  resumeSim();
+}
+
+function resumeSim() {
+  if (sim.km >= routeKm[routeKm.length - 1]) sim.km = 0;
+  sim.running = true;
+  sim.last = performance.now();
+  $('simPause').textContent = '⏸';
+  sim.frame = requestAnimationFrame(simStep);
+}
+
+function pauseSim() {
+  sim.running = false;
+  cancelAnimationFrame(sim.frame);
+  $('simPause').textContent = '▶';
+}
+
+function stopSim() {
+  if (!sim.marker) return;
+  pauseSim();
+  sim.marker.remove(); sim.marker = null;
+  sim.gradeLayer.remove();
+  eleCursor.remove();
+  $('sim').hidden = true;
+}
+
+function simStep(now) {
+  if (!sim.running) return;
+  const total = routeKm[routeKm.length - 1];
+  const factor = +$('simSpeed').value;
+  const kmh = routeKmh || +$('speed').value * 0.8;
+  sim.km = Math.min(total, sim.km + kmh * factor * Math.min(now - sim.last, 100) / 3600000);
+  sim.last = now;
+  renderSim(now);
+  if (sim.km >= total) pauseSim();
+  else sim.frame = requestAnimationFrame(simStep);
+}
+
+function renderSim(now) {
+  const total = routeKm[routeKm.length - 1], factor = +$('simSpeed').value;
+  const pos = pointAtKm(sim.km), ahead = pointAtKm(Math.min(total, sim.km + 0.03));
+  const dir = bearing(L.latLng(pos), L.latLng(ahead));
+  sim.marker.setLatLng(pos);
+  const dot = sim.marker.getElement()?.firstChild;
+  if (dot && map.distance(pos, ahead) > 1) dot.style.transform = `rotate(${dir - 90}deg)`;
+
+  const next = routeManeuvers.find(m => m.km > sim.km + 0.005);
+  const dist = next ? next.km - sim.km : total - sim.km;
+  $('simArrow').textContent = next ? TURN_ARROWS[next.type] || '↑' : '🏁';
+  $('simDist').textContent = dist < 1 ? `${Math.round(dist * 100) * 10} m` : `${dist.toFixed(1)} km`;
+  $('simText').textContent = next ? next.text : (routeManeuvers.length ? 'Ziel' : 'Ende des Tracks');
+
+  const g = gradeAt(sim.km);
+  $('simGrade').hidden = g == null;
+  if (g != null) {
+    $('simGrade').textContent = `${g > 0.5 ? '↗' : g < -0.5 ? '↘' : '→'} ${Math.abs(g).toFixed(0)} %`;
+    $('simGrade').style.background = gradeColor(g);
+  }
+  $('simInfo').textContent = `km ${sim.km.toFixed(1)} / ${total.toFixed(1)}` + (eleData ? ` · ${Math.round(heightAt(sim.km))} m` : '');
+  if (eleData && eleShowKm) eleShowKm(sim.km);
+
+  // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln
+  const want = next && dist < 0.3 ? 17 : factor <= 20 ? 16 : factor <= 60 ? 15 : 14;
+  const zoomNow = want !== map.getZoom() && now - sim.zoomAt > 1500;
+  if (zoomNow) sim.zoomAt = now;
+  map.setView(pos, zoomNow ? want : map.getZoom(), { animate: false });
+}
+
+$('play').onclick = startSim;
+$('simPause').onclick = () => sim.running ? pauseSim() : resumeSim();
+$('simStop').onclick = stopSim;
+$('simSpeed').oninput = () => $('simSpeedVal').textContent = $('simSpeed').value + '×';
+// Karte von Hand verschieben hält die Fahrt an
+map.on('dragstart', () => sim.running && pauseSim());
 
 // --- Wetter je Halt zur voraussichtlichen Ankunft (Open-Meteo, stündlich, bis 3 Tage) ---
 const WMO = [
@@ -819,24 +999,55 @@ ${myPois.map(p => `  <wpt lat="${p.lat}" lon="${p.lon}"><name>${xmlEscape(p.name
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-// Rundtour: drei Formpunkte auf einem Kreis, Start = Ziel. Faktor 1,3 für Umwege der Straßen gegenüber dem Kreis.
+// Rundtour: Formpunkte auf einem Kreis, Start = Ziel. Faktor 1,3 für Umwege der Straßen gegenüber dem Kreis.
+// Gerade bei kurzen Touren gibt es wenige gute Straßen, daher mehrere gedrehte Varianten rechnen und die sauberste nehmen.
 function offset(ll, meters, bearingDeg) {
   const b = bearingDeg * Math.PI / 180;
   return L.latLng(ll.lat + meters * Math.cos(b) / 110540, ll.lng + meters * Math.sin(b) / (111320 * Math.cos(ll.lat * Math.PI / 180)));
 }
+const bearing = (from, to) => (Math.atan2((to.lng - from.lng) * Math.cos(from.lat * Math.PI / 180), to.lat - from.lat) * 180 / Math.PI + 360) % 360;
+const RT_TURNS = [0, 35, -35, 70];
+
 $('roundtrip').onclick = async () => {
   const start = waypoints[0].latlng;
   if (!start) { $('summary').textContent = '⚠️ Für eine Rundtour zuerst den Start setzen.'; return; }
   const km = Math.max(5, +$('rtKm').value || 40);
   const dir = $('rtDir').value === '' ? Math.random() * 360 : +$('rtDir').value;
   const r = km * 1000 / (2 * Math.PI * 1.3);
-  const center = offset(start, r, dir);
-  const back = (dir + 180) % 360; // Richtung vom Mittelpunkt zum Start
-  const targets = [90, 180, 270].map(a => offset(center, r, back + a));
+  // Kurze Touren: Dreieck mit zwei Formpunkten, sonst Viereck mit drei
+  const angles = km < 25 ? [120, 240] : [90, 180, 270];
+  const variants = RT_TURNS.map(turn => {
+    const center = offset(start, r, dir + turn);
+    const back = (dir + turn + 180) % 360; // Richtung vom Mittelpunkt zum Start
+    return { center, back, targets: angles.map(a => offset(center, r, back + a)) };
+  });
   $('roundtrip').disabled = true;
   $('summary').textContent = 'Suche Orte für die Rundtour …';
   try {
-    const pts = await snapRoundtrip(targets, start, Math.min(8000, Math.max(1500, r * 0.4)));
+    const snapped = await snapRoundtrip(variants.map(v => v.targets), start, Math.min(8000, Math.max(1500, r * 0.4)));
+    const minGap = Math.min(1500, r * 0.5);
+    const cands = variants.map((v, i) => {
+      // Nach Winkel um den Mittelpunkt sortieren: Reihenfolge bleibt ein konvexes Vieleck, die Tour kreuzt sich nicht
+      const angle = p => (bearing(v.center, p.latlng) - v.back + 360) % 360;
+      const pts = snapped[i].sort((a, b) => angle(a) - angle(b))
+        .filter((p, j, arr) => map.distance(p.latlng, start) > minGap && arr.slice(0, j).every(q => map.distance(q.latlng, p.latlng) > minGap));
+      return pts;
+    }).filter(pts => pts.length);
+    const seen = new Set();
+    const unique = cands.filter(pts => { const k = pts.map(p => p.latlng.toString()).join(); return !seen.has(k) && seen.add(k); });
+    $('summary').textContent = `Vergleiche ${unique.length} Varianten …`;
+    let best = null;
+    // Nacheinander statt parallel: die öffentliche Valhalla-Instanz drosselt sonst
+    for (const pts of unique) {
+      const locs = [{ latlng: start }, ...pts.map(p => ({ latlng: p.latlng, shaping: true })), { latlng: start }];
+      try {
+        const trip = (await fetchRoute(routeBody(locs))).trip;
+        const score = scoreRoundtrip(trip, km);
+        if (!best || score < best.score) best = { pts, score };
+      } catch {}
+    }
+    const pts = best ? best.pts : unique[0] || [];
+    if (unique.length > 1) summaryNote = ` · beste von ${unique.length} Rundtour-Varianten`;
     changeWaypoints(() => {
       waypoints = [waypoints[0], ...pts.map(p => ({ latlng: p.latlng, text: p.name || coordText(p.latlng), shaping: true })),
         { latlng: start, text: waypoints[0].text }];
@@ -846,11 +1057,53 @@ $('roundtrip').onclick = async () => {
   }
 };
 
+// Bewertung (kleiner = besser): Abweichung von der Wunschlänge, doppelt gefahrene Strecke (Stiche, hin und zurück)
+// und niedriges Durchschnittstempo als Zeichen für Stadtverkehr.
+function scoreRoundtrip(trip, km) {
+  const s = trip.summary;
+  const lengthDev = Math.abs(s.length - km) / km;
+  const speed = s.length / (s.time / 3600);
+  const slow = Math.max(0, 1 - speed / Math.max(25, +$('speed').value * 0.8));
+  return lengthDev + 2 * overlapShare(tripCoords(trip)) + slow;
+}
+
+// Anteil der Strecke, die nahe an einem mindestens 1 km entfernten anderen Stück derselben Route liegt
+function overlapShare(coords, step = 50, near = 25, apart = 1000) {
+  if (coords.length < 2) return 0;
+  const kx = 111320 * Math.cos(coords[0][0] * Math.PI / 180), ky = 110540;
+  const pts = [];
+  let along = 0, carry = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const x0 = coords[i - 1][1] * kx, y0 = coords[i - 1][0] * ky, x1 = coords[i][1] * kx, y1 = coords[i][0] * ky;
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    for (let d = carry; d < len; d += step) pts.push({ x: x0 + (x1 - x0) * d / len, y: y0 + (y1 - y0) * d / len, s: along + d });
+    carry = (carry - len) % step; if (carry < 0) carry += step;
+    along += len;
+  }
+  // Raster mit Zellgröße "near", damit nicht jeder Punkt gegen jeden geprüft wird
+  const grid = new Map(), key = (cx, cy) => cx + ',' + cy;
+  for (const p of pts) {
+    const k = key(Math.floor(p.x / near), Math.floor(p.y / near));
+    (grid.get(k) || grid.set(k, []).get(k)).push(p);
+  }
+  let doubled = 0;
+  for (const p of pts) {
+    const cx = Math.floor(p.x / near), cy = Math.floor(p.y / near);
+    let hit = false;
+    for (let dx = -1; dx <= 1 && !hit; dx++) for (let dy = -1; dy <= 1 && !hit; dy++)
+      hit = (grid.get(key(cx + dx, cy + dy)) || []).some(q => Math.abs(q.s - p.s) > apart && Math.hypot(q.x - p.x, q.y - p.y) < near);
+    if (hit) doubled++;
+  }
+  return doubled / pts.length;
+}
+
 // Kreispunkte liegen oft im Feld oder Wald. Zweistufig einrasten:
-// 1. Anker: nächster Ort im Umkreis (größere leicht bevorzugt), sonst der Kreispunkt selbst.
-// 2. Anker auf den nächsten Punkt einer richtigen Straße (Overpass-Geometrie, Lotfußpunkt) setzen.
+// 1. Anker: nächstes Dorf im Umkreis, sonst der Kreispunkt selbst. Stadtteile (suburb) zählen nicht, sie ziehen die Tour in die Stadt.
+// 2. Anker auf den nächsten Punkt einer Durchgangsstraße setzen (Overpass-Geometrie, Lotfußpunkt).
+//    Wohnstraßen nur, wenn nichts Besseres in der Nähe ist: dort enden Formpunkte oft in Sackgassen und erzeugen Stiche.
 // Fallback: Valhalla /locate, zuletzt der Rohpunkt.
-const PLACE_WEIGHT = { town: 0.7, village: 0.85, suburb: 1, hamlet: 1 };
+// groups: je Variante eine Liste von Kreispunkten. Alles in zwei Overpass-Abfragen.
+const PLACE_WEIGHT = { town: 1, village: 0.8, hamlet: 1 };
 const SNAP_ROADS = '^(primary|secondary|tertiary|unclassified|residential|living_street)$';
 
 async function overpass(query) {
@@ -859,44 +1112,52 @@ async function overpass(query) {
   return (await res.json()).elements;
 }
 
-async function snapRoundtrip(targets, start, radius) {
+const aroundQuery = (filter, items) => `(${[...new Set(items.map(([ll, rad]) =>
+  `${filter}(around:${Math.round(rad)},${ll.lat.toFixed(5)},${ll.lng.toFixed(5)});`))].join('')});`;
+
+async function snapRoundtrip(groups, start, radius) {
   let places = [];
   try {
-    places = (await overpass(`(${targets.map(t =>
-      `node[place~"^(town|village|suburb|hamlet)$"](around:${Math.round(radius)},${t.lat.toFixed(5)},${t.lng.toFixed(5)});`).join('')});out;`))
+    places = (await overpass(aroundQuery('node[place~"^(town|village|hamlet)$"]', groups.flat().map(t => [t, radius])) + 'out;'))
       .map(e => ({ latlng: L.latLng(e.lat, e.lon), name: e.tags.name, weight: PLACE_WEIGHT[e.tags.place] || 1 }));
   } catch {}
-  const used = new Set();
-  const anchors = targets.map(t => {
-    const best = places
-      .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
-      .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
-    if (best) used.add(best);
-    // Ortsmittelpunkt: Straße ganz in der Nähe; freier Kreispunkt: weiter suchen
-    return best ? { ...best, search: 500 } : { latlng: t, search: Math.round(Math.min(radius, 3000)) };
+  const anchorGroups = groups.map(targets => {
+    const used = new Set();
+    return targets.map(t => {
+      const best = places
+        .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
+        .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
+      if (best) used.add(best);
+      // Ortsmittelpunkt: Straße ganz in der Nähe; freier Kreispunkt: weiter suchen
+      return best ? { ...best, search: 600 } : { latlng: t, search: Math.round(Math.min(radius, 2500)) };
+    });
   });
 
   let ways = [];
   try {
-    ways = await overpass(`(${anchors.map(a =>
-      `way[highway~"${SNAP_ROADS}"](around:${a.search},${a.latlng.lat.toFixed(5)},${a.latlng.lng.toFixed(5)});`).join('')});out geom;`);
+    ways = await overpass(aroundQuery(`way[highway~"${SNAP_ROADS}"]`, anchorGroups.flat().map(a => [a.latlng, a.search])) + 'out geom;');
   } catch {}
 
   const out = [];
-  for (const a of anchors) {
-    const onRoad = nearestOnWays(a.latlng, ways, a.search);
-    out.push({ name: a.name, latlng: onRoad || await snapToRoad(a.latlng) });
+  for (const anchors of anchorGroups) {
+    const pts = [];
+    for (const a of anchors) {
+      const onRoad = nearestOnWays(a.latlng, ways, a.search);
+      pts.push({ name: a.name, latlng: onRoad || await snapToRoad(a.latlng) });
+    }
+    out.push(pts);
   }
   return out;
 }
 
-// Nächster Punkt auf den Straßengeometrien; Haupt- und Verbindungsstraßen leicht bevorzugt
+// Nächster Punkt auf den Straßengeometrien; Durchgangsstraßen klar bevorzugt
+const ROAD_WEIGHT = { unclassified: 1.4, residential: 2.5, living_street: 3 };
 function nearestOnWays(ll, ways, maxDist) {
   const kx = 111320 * Math.cos(ll.lat * Math.PI / 180), ky = 110540;
   let best = null, bestScore = Infinity;
   for (const w of ways) {
     const g = w.geometry || [];
-    const weight = /^(residential|living_street)$/.test(w.tags?.highway) ? 1.3 : 1;
+    const weight = ROAD_WEIGHT[w.tags?.highway] || 1;
     for (let i = 1; i < g.length; i++) {
       const ax = (g[i - 1].lon - ll.lng) * kx, ay = (g[i - 1].lat - ll.lat) * ky;
       const dx = (g[i].lon - g[i - 1].lon) * kx, dy = (g[i].lat - g[i - 1].lat) * ky;
@@ -1055,6 +1316,7 @@ $('gpx').onchange = async e => {
         tracks++;
         if (routeLayer) map.removeLayer(routeLayer);
         setRouteCoords(thin(track));
+        routeKmh = null;
         routeLayer = L.polyline(routeCoords, { color: '#2e86e4', weight: 4 }).addTo(map);
         map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
         $('steps').innerHTML = '';
