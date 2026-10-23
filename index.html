@@ -33,6 +33,20 @@
   .file-btn { display:block; margin-top:14px; padding:8px; border:1px dashed var(--line); border-radius:6px; text-align:center; cursor:pointer; color:var(--fg); font-size:14px; }
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
+  #wpList { list-style:none; padding:0; margin:0; }
+  #wpList li { display:flex; gap:4px; align-items:center; margin:4px 0; }
+  #wpList input { flex:1; min-width:0; }
+  .wp-badge { flex:none; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .wp-badge.via { background:#555; }
+  .icon-btn { flex:none; width:28px; height:28px; margin:0; padding:0; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font-weight:400; cursor:pointer; }
+  .icon-btn:disabled { opacity:.3; cursor:default; }
+  .wp-tools { display:flex; gap:6px; margin-top:6px; }
+  .wp-tools button { margin:0; padding:6px; width:auto; flex:1; background:var(--bg); color:var(--fg); border:1px solid var(--line); font-weight:400; font-size:13px; }
+  .wp-tools button:disabled { opacity:.4; cursor:default; }
+  .wp-marker { width:24px; height:24px; border-radius:50%; background:#e4572e; color:#fff; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4); font:700 12px/20px system-ui,sans-serif; text-align:center; }
+  .wp-marker.via { background:#555; }
+  .map-menu button { display:block; width:100%; margin:4px 0; padding:8px 12px; font-size:14px; }
+  .map-menu button.secondary { background:#eee; color:#222; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
 </style>
 </head>
@@ -40,10 +54,12 @@
 <div id="app">
   <div id="panel">
     <h1>🛵 Scooterways</h1>
-    <label for="from">Start</label>
-    <input id="from" type="text" placeholder="Adresse oder Klick auf Karte">
-    <label for="to">Ziel</label>
-    <input id="to" type="text" placeholder="Adresse oder Klick auf Karte">
+    <ul id="wpList"></ul>
+    <div class="wp-tools">
+      <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
+      <button id="reverse" title="Reihenfolge umkehren">⇅ Umkehren</button>
+      <button id="undo" title="Letzten Schritt rückgängig machen">↶ Zurück</button>
+    </div>
     <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
     <input id="speed" type="range" min="25" max="60" step="5" value="45">
     <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
@@ -66,7 +82,7 @@
     <div id="cacheSummary"></div>
     <ul id="caches"></ul>
     <ol id="steps"></ol>
-    <p class="hint">Erster Klick auf die Karte setzt den Start, zweiter das Ziel. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+    <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker bietet „Entfernen“ an. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
   </div>
   <div id="map"></div>
 </div>
@@ -92,8 +108,10 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende'
 }).addTo(map);
 
-const points = { from: null, to: null };
-const markers = {};
+// Wegpunkte: erster = Start, letzter = Ziel, dazwischen Zwischenziele. latlng null = noch nicht aufgelöst.
+let waypoints = [{ latlng: null, text: '' }, { latlng: null, text: '' }];
+const undoStack = [];
+const wpLayer = L.layerGroup().addTo(map);
 let routeLayer = null;
 let routeCoords = null;
 let routeKm = null; // kumulierte km je Routenpunkt
@@ -125,19 +143,134 @@ $('poiTypes').onchange = () => loadPois();
 $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
 
-function setPoint(key, latlng, text) {
-  points[key] = latlng;
-  if (markers[key]) markers[key].setLatLng(latlng);
-  else markers[key] = L.marker(latlng, { draggable: true, title: key === 'from' ? 'Start' : 'Ziel' })
-    .addTo(map).on('dragend', e => { points[key] = e.target.getLatLng(); route(); });
-  if (text) $(key).value = text;
+const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+const wpLabel = i => i === 0 ? 'A' : i === waypoints.length - 1 ? 'B' : String(i);
+const ready = () => waypoints.filter(w => w.latlng).length >= 2 && waypoints.every(w => w.latlng || !w.text.trim());
+
+// Jede Änderung an den Wegpunkten läuft hierüber, damit Rückgängig funktioniert.
+function changeWaypoints(fn, recalc = true) {
+  undoStack.push(JSON.stringify(waypoints));
+  if (undoStack.length > 30) undoStack.shift();
+  fn();
+  renderWaypoints();
+  if (recalc && ready()) route();
 }
 
+function renderWaypoints() {
+  const last = waypoints.length - 1;
+  $('wpList').innerHTML = waypoints.map((w, i) => `<li data-i="${i}">
+    <span class="wp-badge${i && i < last ? ' via' : ''}">${wpLabel(i)}</span>
+    <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : 'Zwischenziel'}: Adresse oder Karte">
+    <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
+    <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
+    <button class="icon-btn" data-act="del" title="Entfernen">✕</button></li>`).join('');
+  $('undo').disabled = !undoStack.length;
+  $('reverse').disabled = waypoints.length < 2;
+
+  wpLayer.clearLayers();
+  waypoints.forEach((w, i) => {
+    if (!w.latlng) return;
+    L.marker(w.latlng, {
+      draggable: true, title: wpLabel(i),
+      icon: L.divIcon({ className: '', html: `<div class="wp-marker${i && i < last ? ' via' : ''}">${wpLabel(i)}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] })
+    }).addTo(wpLayer)
+      .on('dragend', e => changeWaypoints(() => { const ll = e.target.getLatLng(); waypoints[i] = { latlng: ll, text: coordText(ll) }; }))
+      .bindPopup(() => {
+        const btn = document.createElement('button');
+        btn.textContent = `${wpLabel(i)} entfernen`;
+        btn.onclick = () => { map.closePopup(); removeWaypoint(i); };
+        const box = document.createElement('div');
+        box.append(btn);
+        return box;
+      }, { className: 'map-menu', closeButton: false });
+  });
+}
+
+// Start/Ziel werden geleert statt gelöscht, damit immer mindestens zwei Felder bleiben.
+function removeWaypoint(i) {
+  changeWaypoints(() => {
+    if (waypoints.length > 2) waypoints.splice(i, 1);
+    else waypoints[i] = { latlng: null, text: '' };
+  }, waypoints.length > 2);
+  if (waypoints.filter(w => w.latlng).length < 2) clearRoute();
+}
+
+// Neues Zwischenziel in den Abschnitt einsortieren, der dadurch am wenigsten Umweg bekommt (Luftlinie).
+function insertVia(ll) {
+  const pts = waypoints.filter(w => w.latlng);
+  let best = waypoints.length - 1, bestCost = Infinity;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i].latlng, b = waypoints[i + 1].latlng;
+    if (!a || !b) continue;
+    const cost = map.distance(a, ll) + map.distance(ll, b) - map.distance(a, b);
+    if (cost < bestCost) { bestCost = cost; best = i + 1; }
+  }
+  waypoints.splice(pts.length >= 2 ? best : waypoints.length - 1, 0, { latlng: ll, text: coordText(ll) });
+}
+
+function setEnd(i, ll) {
+  waypoints[i] = { latlng: ll, text: coordText(ll) };
+}
+
+const mapMenu = L.popup({ className: 'map-menu', closeButton: false, minWidth: 170 });
 map.on('click', e => {
-  const key = !points.from ? 'from' : 'to';
-  setPoint(key, e.latlng, `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`);
-  if (points.from && points.to) route();
+  const ll = e.latlng, last = waypoints.length - 1;
+  const hasStart = !!waypoints[0].latlng, hasEnd = !!waypoints[last].latlng;
+  const items = [
+    ['start', hasStart ? 'Start hierher verlegen' : 'Start hier'],
+    ['end', hasEnd ? 'Ziel hierher verlegen' : 'Ziel hier'],
+    ...(hasStart && hasEnd ? [['via', 'Zwischenziel hier']] : [])
+  ];
+  // Der wahrscheinlichste nächste Schritt steht oben und ist hervorgehoben.
+  const primary = !hasStart ? 'start' : !hasEnd ? 'end' : 'via';
+  items.sort((a, b) => (b[0] === primary) - (a[0] === primary));
+  const box = document.createElement('div');
+  box.innerHTML = items.map(([act, text]) => `<button data-act="${act}" class="${act === primary ? '' : 'secondary'}">${text}</button>`).join('');
+  box.onclick = ev => {
+    const act = ev.target.dataset.act;
+    if (!act) return;
+    map.closePopup(mapMenu);
+    changeWaypoints(() => act === 'start' ? setEnd(0, ll) : act === 'end' ? setEnd(waypoints.length - 1, ll) : insertVia(ll));
+  };
+  mapMenu.setLatLng(ll).setContent(box).openOn(map);
 });
+
+$('wpList').onclick = e => {
+  const act = e.target.dataset.act, i = +e.target.closest('li')?.dataset.i;
+  if (!act) return;
+  if (act === 'del') return removeWaypoint(i);
+  const j = act === 'up' ? i - 1 : i + 1;
+  changeWaypoints(() => { [waypoints[i], waypoints[j]] = [waypoints[j], waypoints[i]]; });
+};
+// Eingetippte Adresse: beim Verlassen des Felds bzw. Enter auflösen
+$('wpList').onchange = async e => {
+  const i = +e.target.closest('li').dataset.i, text = e.target.value.trim();
+  if (text === waypoints[i].text) return;
+  try {
+    const ll = text ? await geocode(text) : null;
+    changeWaypoints(() => { waypoints[i] = { latlng: ll, text }; });
+    if (ll && !ready()) map.setView(ll, 13);
+  } catch (err) {
+    $('summary').textContent = '⚠️ ' + err.message;
+  }
+};
+$('addVia').onclick = () => changeWaypoints(() => waypoints.splice(waypoints.length - 1, 0, { latlng: null, text: '' }), false);
+$('reverse').onclick = () => changeWaypoints(() => waypoints.reverse());
+$('undo').onclick = () => {
+  if (!undoStack.length) return;
+  waypoints = JSON.parse(undoStack.pop()).map(w => ({ ...w, latlng: w.latlng && L.latLng(w.latlng) }));
+  renderWaypoints();
+  if (ready()) route(); else clearRoute();
+};
+
+function clearRoute() {
+  if (routeLayer) map.removeLayer(routeLayer);
+  routeLayer = routeCoords = routeKm = null;
+  $('summary').textContent = '';
+  $('steps').innerHTML = '';
+  loadPois();
+  renderCaches();
+}
 
 async function geocode(q) {
   const m = q.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
@@ -168,14 +301,14 @@ async function route() {
   $('summary').textContent = 'Berechne …';
   $('steps').innerHTML = '';
   try {
-    for (const key of ['from', 'to']) {
-      if (!points[key]) {
-        if (!$(key).value.trim()) throw new Error('Bitte Start und Ziel angeben.');
-        setPoint(key, await geocode($(key).value));
-      }
+    for (const w of waypoints) {
+      if (!w.latlng && w.text.trim()) w.latlng = await geocode(w.text);
     }
+    renderWaypoints();
+    const locs = waypoints.filter(w => w.latlng);
+    if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     const body = {
-      locations: [points.from, points.to].map(p => ({ lat: p.lat, lon: p.lng })),
+      locations: locs.map(w => ({ lat: w.latlng.lat, lon: w.latlng.lng })),
       costing: 'motor_scooter',
       costing_options: { motor_scooter: {
         top_speed: +$('speed').value,
@@ -188,16 +321,17 @@ async function route() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
-    const leg = data.trip.legs[0];
+    // Bei Zwischenzielen liefert Valhalla einen Abschnitt (leg) je Teilstrecke.
+    const legs = data.trip.legs;
     if (routeLayer) map.removeLayer(routeLayer);
-    setRouteCoords(decode(leg.shape));
+    setRouteCoords(legs.flatMap((l, i) => decode(l.shape).slice(i ? 1 : 0)));
     routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 5 }).addTo(map);
-    map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+    if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
     const s = data.trip.summary;
     const min = Math.round(s.time / 60);
     $('summary').textContent = `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`;
-    $('steps').innerHTML = leg.maneuvers.map(m => `<li>${m.instruction}</li>`).join('');
+    $('steps').innerHTML = legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
     loadPois();
     renderCaches();
   } catch (err) {
@@ -384,12 +518,13 @@ function matches(tags, filter) {
 }
 
 $('go').onclick = () => {
-  // Eingetippte Adressen haben Vorrang vor alten Klickpunkten
-  for (const key of ['from', 'to']) {
-    if (!/^-?\d/.test($(key).value)) points[key] = null;
-  }
+  // Noch nicht bestätigte Eingaben übernehmen
+  $('wpList').querySelectorAll('input').forEach((inp, i) => {
+    if (inp.value.trim() !== waypoints[i].text) waypoints[i] = { latlng: null, text: inp.value.trim() };
+  });
   route();
 };
+renderWaypoints();
 </script>
 </body>
 </html>
