@@ -500,6 +500,35 @@ function decode(str, precision = 6) {
   return coords;
 }
 
+function routeBody(locs) {
+  const body = {
+    // Formpunkte: "through" = Route muss durch, aber kein Halt und kein eigener Abschnitt
+    // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
+    locations: locs.map((w, i) => {
+      const shaping = w.shaping && i && i < locs.length - 1;
+      return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
+        ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
+    }),
+    costing: 'motor_scooter',
+    costing_options: { motor_scooter: {
+      top_speed: +$('speed').value,
+      use_primary: +$('primary').value,
+      use_hills: +$('hills').value
+    } },
+    directions_options: { language: 'de-DE', units: 'kilometers' }
+  };
+  if (excluded.length) body.exclude_locations = excluded.map(ll => ({ lat: ll.lat, lon: ll.lng }));
+  return body;
+}
+
+async function fetchRoute(body) {
+  const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+let summaryNote = '';
 async function route() {
   $('summary').textContent = 'Berechne …';
   $('steps').innerHTML = '';
@@ -510,29 +539,10 @@ async function route() {
     renderWaypoints();
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
-    const body = {
-      // Formpunkte: "through" = Route muss durch, aber kein Halt und kein eigener Abschnitt
-      // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
-      locations: locs.map((w, i) => {
-        const shaping = w.shaping && i && i < locs.length - 1;
-        return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
-          ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
-      }),
-      costing: 'motor_scooter',
-      costing_options: { motor_scooter: {
-        top_speed: +$('speed').value,
-        use_primary: +$('primary').value,
-        use_hills: +$('hills').value
-      } },
-      directions_options: { language: 'de-DE', units: 'kilometers' }
-    };
-    if (excluded.length) body.exclude_locations = excluded.map(ll => ({ lat: ll.lat, lon: ll.lng }));
+    const body = routeBody(locs);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
     if (locs.length === 2) body.alternates = 2;
-    const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-
+    const data = await fetchRoute(body);
     showTrip(data.trip, (data.alternates || []).map(a => a.trip));
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
@@ -571,7 +581,8 @@ function showTrip(trip, alternates = []) {
   enableRouteEditing(routeLayer);
   if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
-  $('summary').textContent = tripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '');
+  $('summary').textContent = tripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + summaryNote;
+  summaryNote = '';
   $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
   loadElevation();
   loadPois();
@@ -819,24 +830,55 @@ ${myPois.map(p => `  <wpt lat="${p.lat}" lon="${p.lon}"><name>${xmlEscape(p.name
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-// Rundtour: drei Formpunkte auf einem Kreis, Start = Ziel. Faktor 1,3 für Umwege der Straßen gegenüber dem Kreis.
+// Rundtour: Formpunkte auf einem Kreis, Start = Ziel. Faktor 1,3 für Umwege der Straßen gegenüber dem Kreis.
+// Gerade bei kurzen Touren gibt es wenige gute Straßen, daher mehrere gedrehte Varianten rechnen und die sauberste nehmen.
 function offset(ll, meters, bearingDeg) {
   const b = bearingDeg * Math.PI / 180;
   return L.latLng(ll.lat + meters * Math.cos(b) / 110540, ll.lng + meters * Math.sin(b) / (111320 * Math.cos(ll.lat * Math.PI / 180)));
 }
+const bearing = (from, to) => (Math.atan2((to.lng - from.lng) * Math.cos(from.lat * Math.PI / 180), to.lat - from.lat) * 180 / Math.PI + 360) % 360;
+const RT_TURNS = [0, 35, -35, 70];
+
 $('roundtrip').onclick = async () => {
   const start = waypoints[0].latlng;
   if (!start) { $('summary').textContent = '⚠️ Für eine Rundtour zuerst den Start setzen.'; return; }
   const km = Math.max(5, +$('rtKm').value || 40);
   const dir = $('rtDir').value === '' ? Math.random() * 360 : +$('rtDir').value;
   const r = km * 1000 / (2 * Math.PI * 1.3);
-  const center = offset(start, r, dir);
-  const back = (dir + 180) % 360; // Richtung vom Mittelpunkt zum Start
-  const targets = [90, 180, 270].map(a => offset(center, r, back + a));
+  // Kurze Touren: Dreieck mit zwei Formpunkten, sonst Viereck mit drei
+  const angles = km < 25 ? [120, 240] : [90, 180, 270];
+  const variants = RT_TURNS.map(turn => {
+    const center = offset(start, r, dir + turn);
+    const back = (dir + turn + 180) % 360; // Richtung vom Mittelpunkt zum Start
+    return { center, back, targets: angles.map(a => offset(center, r, back + a)) };
+  });
   $('roundtrip').disabled = true;
   $('summary').textContent = 'Suche Orte für die Rundtour …';
   try {
-    const pts = await snapRoundtrip(targets, start, Math.min(8000, Math.max(1500, r * 0.4)));
+    const snapped = await snapRoundtrip(variants.map(v => v.targets), start, Math.min(8000, Math.max(1500, r * 0.4)));
+    const minGap = Math.min(1500, r * 0.5);
+    const cands = variants.map((v, i) => {
+      // Nach Winkel um den Mittelpunkt sortieren: Reihenfolge bleibt ein konvexes Vieleck, die Tour kreuzt sich nicht
+      const angle = p => (bearing(v.center, p.latlng) - v.back + 360) % 360;
+      const pts = snapped[i].sort((a, b) => angle(a) - angle(b))
+        .filter((p, j, arr) => map.distance(p.latlng, start) > minGap && arr.slice(0, j).every(q => map.distance(q.latlng, p.latlng) > minGap));
+      return pts;
+    }).filter(pts => pts.length);
+    const seen = new Set();
+    const unique = cands.filter(pts => { const k = pts.map(p => p.latlng.toString()).join(); return !seen.has(k) && seen.add(k); });
+    $('summary').textContent = `Vergleiche ${unique.length} Varianten …`;
+    let best = null;
+    // Nacheinander statt parallel: die öffentliche Valhalla-Instanz drosselt sonst
+    for (const pts of unique) {
+      const locs = [{ latlng: start }, ...pts.map(p => ({ latlng: p.latlng, shaping: true })), { latlng: start }];
+      try {
+        const trip = (await fetchRoute(routeBody(locs))).trip;
+        const score = scoreRoundtrip(trip, km);
+        if (!best || score < best.score) best = { pts, score };
+      } catch {}
+    }
+    const pts = best ? best.pts : unique[0] || [];
+    if (unique.length > 1) summaryNote = ` · beste von ${unique.length} Rundtour-Varianten`;
     changeWaypoints(() => {
       waypoints = [waypoints[0], ...pts.map(p => ({ latlng: p.latlng, text: p.name || coordText(p.latlng), shaping: true })),
         { latlng: start, text: waypoints[0].text }];
@@ -846,11 +888,53 @@ $('roundtrip').onclick = async () => {
   }
 };
 
+// Bewertung (kleiner = besser): Abweichung von der Wunschlänge, doppelt gefahrene Strecke (Stiche, hin und zurück)
+// und niedriges Durchschnittstempo als Zeichen für Stadtverkehr.
+function scoreRoundtrip(trip, km) {
+  const s = trip.summary;
+  const lengthDev = Math.abs(s.length - km) / km;
+  const speed = s.length / (s.time / 3600);
+  const slow = Math.max(0, 1 - speed / Math.max(25, +$('speed').value * 0.8));
+  return lengthDev + 2 * overlapShare(tripCoords(trip)) + slow;
+}
+
+// Anteil der Strecke, die nahe an einem mindestens 1 km entfernten anderen Stück derselben Route liegt
+function overlapShare(coords, step = 50, near = 25, apart = 1000) {
+  if (coords.length < 2) return 0;
+  const kx = 111320 * Math.cos(coords[0][0] * Math.PI / 180), ky = 110540;
+  const pts = [];
+  let along = 0, carry = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const x0 = coords[i - 1][1] * kx, y0 = coords[i - 1][0] * ky, x1 = coords[i][1] * kx, y1 = coords[i][0] * ky;
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    for (let d = carry; d < len; d += step) pts.push({ x: x0 + (x1 - x0) * d / len, y: y0 + (y1 - y0) * d / len, s: along + d });
+    carry = (carry - len) % step; if (carry < 0) carry += step;
+    along += len;
+  }
+  // Raster mit Zellgröße "near", damit nicht jeder Punkt gegen jeden geprüft wird
+  const grid = new Map(), key = (cx, cy) => cx + ',' + cy;
+  for (const p of pts) {
+    const k = key(Math.floor(p.x / near), Math.floor(p.y / near));
+    (grid.get(k) || grid.set(k, []).get(k)).push(p);
+  }
+  let doubled = 0;
+  for (const p of pts) {
+    const cx = Math.floor(p.x / near), cy = Math.floor(p.y / near);
+    let hit = false;
+    for (let dx = -1; dx <= 1 && !hit; dx++) for (let dy = -1; dy <= 1 && !hit; dy++)
+      hit = (grid.get(key(cx + dx, cy + dy)) || []).some(q => Math.abs(q.s - p.s) > apart && Math.hypot(q.x - p.x, q.y - p.y) < near);
+    if (hit) doubled++;
+  }
+  return doubled / pts.length;
+}
+
 // Kreispunkte liegen oft im Feld oder Wald. Zweistufig einrasten:
-// 1. Anker: nächster Ort im Umkreis (größere leicht bevorzugt), sonst der Kreispunkt selbst.
-// 2. Anker auf den nächsten Punkt einer richtigen Straße (Overpass-Geometrie, Lotfußpunkt) setzen.
+// 1. Anker: nächstes Dorf im Umkreis, sonst der Kreispunkt selbst. Stadtteile (suburb) zählen nicht, sie ziehen die Tour in die Stadt.
+// 2. Anker auf den nächsten Punkt einer Durchgangsstraße setzen (Overpass-Geometrie, Lotfußpunkt).
+//    Wohnstraßen nur, wenn nichts Besseres in der Nähe ist: dort enden Formpunkte oft in Sackgassen und erzeugen Stiche.
 // Fallback: Valhalla /locate, zuletzt der Rohpunkt.
-const PLACE_WEIGHT = { town: 0.7, village: 0.85, suburb: 1, hamlet: 1 };
+// groups: je Variante eine Liste von Kreispunkten. Alles in zwei Overpass-Abfragen.
+const PLACE_WEIGHT = { town: 1, village: 0.8, hamlet: 1 };
 const SNAP_ROADS = '^(primary|secondary|tertiary|unclassified|residential|living_street)$';
 
 async function overpass(query) {
@@ -859,44 +943,52 @@ async function overpass(query) {
   return (await res.json()).elements;
 }
 
-async function snapRoundtrip(targets, start, radius) {
+const aroundQuery = (filter, items) => `(${[...new Set(items.map(([ll, rad]) =>
+  `${filter}(around:${Math.round(rad)},${ll.lat.toFixed(5)},${ll.lng.toFixed(5)});`))].join('')});`;
+
+async function snapRoundtrip(groups, start, radius) {
   let places = [];
   try {
-    places = (await overpass(`(${targets.map(t =>
-      `node[place~"^(town|village|suburb|hamlet)$"](around:${Math.round(radius)},${t.lat.toFixed(5)},${t.lng.toFixed(5)});`).join('')});out;`))
+    places = (await overpass(aroundQuery('node[place~"^(town|village|hamlet)$"]', groups.flat().map(t => [t, radius])) + 'out;'))
       .map(e => ({ latlng: L.latLng(e.lat, e.lon), name: e.tags.name, weight: PLACE_WEIGHT[e.tags.place] || 1 }));
   } catch {}
-  const used = new Set();
-  const anchors = targets.map(t => {
-    const best = places
-      .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
-      .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
-    if (best) used.add(best);
-    // Ortsmittelpunkt: Straße ganz in der Nähe; freier Kreispunkt: weiter suchen
-    return best ? { ...best, search: 500 } : { latlng: t, search: Math.round(Math.min(radius, 3000)) };
+  const anchorGroups = groups.map(targets => {
+    const used = new Set();
+    return targets.map(t => {
+      const best = places
+        .filter(p => !used.has(p) && map.distance(p.latlng, start) > 1000 && map.distance(p.latlng, t) <= radius)
+        .sort((a, b) => map.distance(a.latlng, t) * a.weight - map.distance(b.latlng, t) * b.weight)[0];
+      if (best) used.add(best);
+      // Ortsmittelpunkt: Straße ganz in der Nähe; freier Kreispunkt: weiter suchen
+      return best ? { ...best, search: 600 } : { latlng: t, search: Math.round(Math.min(radius, 2500)) };
+    });
   });
 
   let ways = [];
   try {
-    ways = await overpass(`(${anchors.map(a =>
-      `way[highway~"${SNAP_ROADS}"](around:${a.search},${a.latlng.lat.toFixed(5)},${a.latlng.lng.toFixed(5)});`).join('')});out geom;`);
+    ways = await overpass(aroundQuery(`way[highway~"${SNAP_ROADS}"]`, anchorGroups.flat().map(a => [a.latlng, a.search])) + 'out geom;');
   } catch {}
 
   const out = [];
-  for (const a of anchors) {
-    const onRoad = nearestOnWays(a.latlng, ways, a.search);
-    out.push({ name: a.name, latlng: onRoad || await snapToRoad(a.latlng) });
+  for (const anchors of anchorGroups) {
+    const pts = [];
+    for (const a of anchors) {
+      const onRoad = nearestOnWays(a.latlng, ways, a.search);
+      pts.push({ name: a.name, latlng: onRoad || await snapToRoad(a.latlng) });
+    }
+    out.push(pts);
   }
   return out;
 }
 
-// Nächster Punkt auf den Straßengeometrien; Haupt- und Verbindungsstraßen leicht bevorzugt
+// Nächster Punkt auf den Straßengeometrien; Durchgangsstraßen klar bevorzugt
+const ROAD_WEIGHT = { unclassified: 1.4, residential: 2.5, living_street: 3 };
 function nearestOnWays(ll, ways, maxDist) {
   const kx = 111320 * Math.cos(ll.lat * Math.PI / 180), ky = 110540;
   let best = null, bestScore = Infinity;
   for (const w of ways) {
     const g = w.geometry || [];
-    const weight = /^(residential|living_street)$/.test(w.tags?.highway) ? 1.3 : 1;
+    const weight = ROAD_WEIGHT[w.tags?.highway] || 1;
     for (let i = 1; i < g.length; i++) {
       const ax = (g[i - 1].lon - ll.lng) * kx, ay = (g[i - 1].lat - ll.lat) * ky;
       const dx = (g[i].lon - g[i - 1].lon) * kx, dy = (g[i].lat - g[i - 1].lat) * ky;
