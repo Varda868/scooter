@@ -811,12 +811,17 @@ function simStep(now) {
   const total = routeKm[routeKm.length - 1];
   const factor = +$('simSpeed').value;
   const kmh = routeKmh || +$('speed').value * 0.8;
-  sim.km = Math.min(total, sim.km + kmh * factor * Math.min(now - sim.last, 100) / 3600000);
+  // Tempo auf den Grundzoom bezogen: näher herangezoomt (Abbiegung, Mausrad) entsprechend langsamer,
+  // damit der Punkt auf dem Bildschirm gleich schnell wirkt
+  const zoomScale = 2 ** (baseZoom(factor) - map.getZoom());
+  sim.km = Math.min(total, sim.km + kmh * factor * zoomScale * Math.min(now - sim.last, 100) / 3600000);
   sim.last = now;
   renderSim(now);
   if (sim.km >= total) pauseSim();
   else sim.frame = requestAnimationFrame(simStep);
 }
+
+const baseZoom = factor => factor <= 20 ? 16 : factor <= 60 ? 15 : 14;
 
 function renderSim(now) {
   const total = routeKm[routeKm.length - 1], factor = +$('simSpeed').value;
@@ -842,7 +847,7 @@ function renderSim(now) {
   if (eleData && eleShowKm) eleShowKm(sim.km);
 
   // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln
-  const want = next && dist < 0.3 ? 17 : factor <= 20 ? 16 : factor <= 60 ? 15 : 14;
+  const want = next && dist < 0.3 ? 17 : baseZoom(factor);
   const zoomNow = want !== map.getZoom() && now - sim.zoomAt > 1500;
   if (zoomNow) sim.zoomAt = now;
   map.setView(pos, zoomNow ? want : map.getZoom(), { animate: false });
