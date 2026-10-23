@@ -46,6 +46,7 @@
   .wp-row { display:flex; gap:4px; align-items:center; }
   .wp-row input { flex:1; min-width:0; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
+  .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
   .note { white-space:pre-wrap; margin:4px 0; font-size:13px; }
   #myPois { list-style:none; padding:0; font-size:13px; }
@@ -140,6 +141,7 @@ const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const VALHALLA_HEIGHT_URL = VALHALLA_URL.replace(/\/route$/, '/height');
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 
 // Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
 const POI_TYPES = [
@@ -257,6 +259,7 @@ function renderWaypoints() {
     <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte">
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
+    ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
     ${w.noteOpen || w.note ? `<textarea rows="2" placeholder="Notiz, z. B. Pause, Tanken, Treffpunkt …">${escapeHtml(w.note || '')}</textarea>` : ''}</li>`).join('');
@@ -353,6 +356,8 @@ $('wpList').onclick = e => {
   const act = e.target.dataset.act, i = +e.target.closest('li')?.dataset.i;
   if (!act) return;
   if (act === 'del') return removeWaypoint(i);
+  // Am Handy gibt es keinen Tooltip: Wetterdetails als Popup am Wegpunkt
+  if (act === 'wx') return L.popup({ className: 'map-menu' }).setLatLng(waypoints[i].latlng).setContent(escapeHtml(waypoints[i].wx.title)).openOn(map);
   if (act === 'note') {
     const w = waypoints[i];
     // Leere offene Notiz schließt sich wieder, sonst öffnen
@@ -551,6 +556,7 @@ tick();
 
 function showTrip(trip, alternates = []) {
   waypoints.forEach(w => w.latlng && !w.shaping && rememberPlace(w.text, w.latlng));
+  loadWeather(trip);
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
@@ -667,6 +673,52 @@ function pointAtKm(km) {
   const t = (km - routeKm[i - 1]) / ((routeKm[i] - routeKm[i - 1]) || 1);
   const [a, b] = [routeCoords[i - 1], routeCoords[i]];
   return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+}
+
+// --- Wetter je Halt zur voraussichtlichen Ankunft (Open-Meteo, stündlich, bis 3 Tage) ---
+const WMO = [
+  [[0], '☀️', 'klar'], [[1], '🌤️', 'überwiegend klar'], [[2], '⛅', 'teils bewölkt'], [[3], '☁️', 'bedeckt'],
+  [[45, 48], '🌫️', 'Nebel'], [[51, 53, 55, 56, 57], '🌦️', 'Nieselregen'], [[61, 63, 65], '🌧️', 'Regen'],
+  [[66, 67], '🧊', 'gefrierender Regen'], [[71, 73, 75, 77, 85, 86], '🌨️', 'Schnee'], [[80, 81, 82], '🌦️', 'Schauer'],
+  [[95, 96, 99], '⛈️', 'Gewitter']
+];
+const wmo = code => WMO.find(([codes]) => codes.includes(code)) || [[], '❔', 'unbekannt'];
+let weatherRequest = 0;
+
+async function loadWeather(trip) {
+  const req = ++weatherRequest;
+  // Halte = Wegpunkte, die Valhalla als "break" bekommt; Ankunft = Summe der Abschnittszeiten
+  const located = waypoints.filter(w => w.latlng);
+  const stops = located.filter((w, i) => !(w.shaping && i && i < located.length - 1));
+  waypoints.forEach(w => { delete w.wx; });
+  let t = Date.now();
+  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary?.time || 0) * 1000; w.eta = t; });
+  try {
+    const qs = new URLSearchParams({
+      latitude: stops.map(w => w.latlng.lat.toFixed(3)).join(','),
+      longitude: stops.map(w => w.latlng.lng.toFixed(3)).join(','),
+      hourly: 'weather_code,temperature_2m,precipitation_probability,wind_speed_10m',
+      forecast_days: 3, timeformat: 'unixtime', wind_speed_unit: 'kmh'
+    });
+    const res = await fetch(`${WEATHER_URL}?${qs}`);
+    if (!res.ok) return;
+    let data = await res.json();
+    if (req !== weatherRequest) return;
+    if (!Array.isArray(data)) data = [data];
+    stops.forEach((w, k) => {
+      const h = data[k]?.hourly;
+      if (!h) return;
+      // nächste volle Stunde zur Ankunft; außerhalb des Vorhersagezeitraums kein Symbol
+      const idx = h.time.reduce((best, ts, j) => Math.abs(ts * 1000 - w.eta) < Math.abs(h.time[best] * 1000 - w.eta) ? j : best, 0);
+      if (Math.abs(h.time[idx] * 1000 - w.eta) > 90 * 60000) return;
+      const [, icon, text] = wmo(h.weather_code[idx]);
+      w.wx = {
+        icon, temp: Math.round(h.temperature_2m[idx]),
+        title: `${hhmm(new Date(w.eta))}: ${text}, ${Math.round(h.temperature_2m[idx])} °C, Regen ${h.precipitation_probability[idx] ?? '–'} %, Wind ${Math.round(h.wind_speed_10m[idx])} km/h`
+      };
+    });
+    renderWaypoints();
+  } catch {}
 }
 
 // Route ziehen (Maus) erzeugt einen Formpunkt; kurzes Antippen öffnet ein Menü (auch für Touch).
