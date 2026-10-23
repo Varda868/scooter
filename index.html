@@ -22,6 +22,17 @@
   #steps { padding-left:20px; font-size:13px; }
   #steps li { margin:4px 0; }
   .hint { font-size:12px; color:var(--muted); }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:14px 0 0; padding:8px 10px; }
+  legend { font-size:13px; color:var(--muted); padding:0 4px; }
+  fieldset label { display:inline-flex; align-items:center; gap:4px; margin:4px 10px 4px 0; color:var(--fg); font-size:14px; }
+  #pois { list-style:none; padding:0; font-size:13px; }
+  #pois li { margin:4px 0; cursor:pointer; }
+  #pois li:hover, #caches li:hover { text-decoration:underline; }
+  #caches { list-style:none; padding:0; font-size:13px; }
+  #caches li { margin:4px 0; cursor:pointer; }
+  .file-btn { display:block; margin-top:14px; padding:8px; border:1px dashed var(--line); border-radius:6px; text-align:center; cursor:pointer; color:var(--fg); font-size:14px; }
+  .file-btn input { display:none; }
+  .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
 </style>
 </head>
@@ -39,8 +50,21 @@
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
     <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    <fieldset id="poiTypes">
+      <legend>POIs entlang der Route</legend>
+    </fieldset>
+    <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
+    <input id="radius" type="range" min="100" max="2000" step="100" value="500">
+    <label class="file-btn">📂 GPX laden (Track oder Geocaches)
+      <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
+    </label>
+    <label><input id="cachesNearRoute" type="checkbox" checked> Geocaches nur entlang der Route</label>
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
+    <div id="poiSummary"></div>
+    <ul id="pois"></ul>
+    <div id="cacheSummary"></div>
+    <ul id="caches"></ul>
     <ol id="steps"></ol>
     <p class="hint">Erster Klick auf die Karte setzt den Start, zweiter das Ziel. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
   </div>
@@ -51,6 +75,17 @@
 // In Phase 2 nur diese URL auf den eigenen Server umstellen.
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+// Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
+const POI_TYPES = [
+  { id: 'shelter', icon: '🛖', name: 'Schutzhütte', filters: [
+    '[amenity=shelter][shelter_type!=public_transport]', '[tourism=wilderness_hut]', '[tourism=alpine_hut]' ] },
+  { id: 'water', icon: '🚰', name: 'Trinkwasser', filters: [
+    '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
+  { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
+  { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] }
+];
 
 const map = L.map('map').setView([51.16, 10.45], 6);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -60,6 +95,18 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const points = { from: null, to: null };
 const markers = {};
 let routeLayer = null;
+let routeCoords = null;
+let routeKm = null; // kumulierte km je Routenpunkt
+const poiLayer = L.layerGroup();
+const cacheLayer = L.layerGroup().addTo(map);
+let caches = [];
+
+// Referenzlinie für POI-/Cache-Filter: berechnete Route oder geladener GPX-Track
+function setRouteCoords(coords) {
+  routeCoords = coords;
+  routeKm = [0];
+  for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
+}
 
 const $ = id => document.getElementById(id);
 const label = (v, words) => words[Math.min(words.length - 1, Math.floor(v * words.length))];
@@ -69,6 +116,12 @@ const hillsWords = ['meiden', 'eher meiden', 'egal', 'gern'];
 $('speed').oninput = e => $('speedVal').textContent = e.target.value;
 $('primary').oninput = e => $('primaryVal').textContent = label(+e.target.value, primaryWords);
 $('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hillsWords);
+$('radius').oninput = e => $('radiusVal').textContent = e.target.value;
+$('radius').onchange = () => { loadPois(); renderCaches(); };
+$('cachesNearRoute').onchange = () => renderCaches();
+$('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
+  `<label><input type="checkbox" value="${t.id}" checked> ${t.icon} ${t.name}</label>`).join(''));
+$('poiTypes').onchange = () => loadPois();
 $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
 
@@ -137,16 +190,197 @@ async function route() {
 
     const leg = data.trip.legs[0];
     if (routeLayer) map.removeLayer(routeLayer);
-    routeLayer = L.polyline(decode(leg.shape), { color: '#e4572e', weight: 5 }).addTo(map);
+    setRouteCoords(decode(leg.shape));
+    routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 5 }).addTo(map);
     map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
     const s = data.trip.summary;
     const min = Math.round(s.time / 60);
     $('summary').textContent = `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min`;
     $('steps').innerHTML = leg.maneuvers.map(m => `<li>${m.instruction}</li>`).join('');
+    loadPois();
+    renderCaches();
   } catch (err) {
     $('summary').textContent = '⚠️ ' + err.message;
   }
+}
+
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+
+// Overpass akzeptiert bei around: eine Punktliste als Linie; zu viele Punkte machen die Abfrage langsam.
+function simplify(coords, max = 150) {
+  if (coords.length <= max) return coords;
+  const step = (coords.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => coords[Math.round(i * step)]);
+}
+
+// Abstand zur Route (m) und Kilometer ab Start am nächsten Punkt, per Lotfußpunkt auf jedem Segment.
+// Lokale Planprojektion reicht bei Segmentlängen von wenigen hundert Metern.
+function locateOnRoute(lat, lon) {
+  const kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540;
+  let best = Infinity, bestKm = 0;
+  for (let i = 1; i < routeCoords.length; i++) {
+    const [aLat, aLon] = routeCoords[i - 1], [bLat, bLon] = routeCoords[i];
+    const ax = (aLon - lon) * kx, ay = (aLat - lat) * ky;
+    const dx = (bLon - aLon) * kx, dy = (bLat - aLat) * ky;
+    const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+    const d = Math.hypot(ax + t * dx, ay + t * dy);
+    if (d < best) { best = d; bestKm = routeKm[i - 1] + t * (routeKm[i] - routeKm[i - 1]); }
+  }
+  return { dist: best, km: bestKm };
+}
+
+let poiRequest = 0;
+async function loadPois() {
+  poiLayer.clearLayers().addTo(map);
+  $('pois').innerHTML = '';
+  $('poiSummary').textContent = '';
+  if (!routeCoords) return;
+  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked);
+  if (!active.length) return;
+
+  const req = ++poiRequest;
+  $('poiSummary').textContent = 'Suche POIs …';
+  const line = simplify(routeCoords).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
+  const around = `(around:${+$('radius').value},${line})`;
+  const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around};`)).join('')});out center tags;`;
+  try {
+    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const data = await res.json();
+    if (req !== poiRequest) return;
+
+    const pois = data.elements.map(el => {
+      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+      const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
+      return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
+    }).filter(Boolean).sort((a, b) => a.km - b.km);
+
+    for (const p of pois) {
+      const title = p.tags.name || p.tags.brand || p.type.name;
+      p.marker = L.marker([p.lat, p.lon], {
+        icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
+      }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
+        (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '')).addTo(poiLayer);
+    }
+    $('poiSummary').textContent = pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.';
+    $('pois').innerHTML = pois.map((p, i) =>
+      `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
+    $('pois').onclick = e => {
+      const p = pois[e.target.closest('li')?.dataset.i];
+      if (p) { map.setView([p.lat, p.lon], 16); p.marker.openPopup(); }
+    };
+  } catch (err) {
+    if (req === poiRequest) $('poiSummary').textContent = '⚠️ POIs: ' + err.message;
+  }
+}
+
+// --- GPX: Tracks werden zur Referenzlinie, Wegpunkte (z. B. Geocaches aus c:geo/GSAK/Pocket Queries) zu Markern ---
+const CACHE_ICONS = { traditional: '📦', multi: '🧩', unknown: '❓', mystery: '❓', earthcache: '🌍',
+  letterbox: '✉️', wherigo: '📱', virtual: '👻', event: '🎉', webcam: '📷' };
+const childText = (el, name) => el.getElementsByTagNameNS('*', name)[0]?.textContent.trim() || '';
+
+function cacheIcon(type, isCache) {
+  if (!isCache) return '📍';
+  const key = Object.keys(CACHE_ICONS).find(k => type.toLowerCase().includes(k));
+  return key ? CACHE_ICONS[key] : '📦';
+}
+
+function parseGpx(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('Keine gültige GPX-Datei');
+  const pts = sel => [...doc.getElementsByTagNameNS('*', sel)].map(p => [+p.getAttribute('lat'), +p.getAttribute('lon')]);
+  const track = pts('trkpt').length ? pts('trkpt') : pts('rtept');
+  const wpts = [...doc.getElementsByTagNameNS('*', 'wpt')].map(w => {
+    const cache = w.getElementsByTagNameNS('*', 'cache')[0];
+    const code = childText(w, 'name');
+    const sym = childText(w, 'sym');
+    const isCache = !!cache || /^geocache/i.test(sym) || /^GC[0-9A-Z]+$/i.test(code);
+    const type = (cache && childText(cache, 'type')) || childText(w, 'type').replace(/^Geocache\|/i, '');
+    return {
+      lat: +w.getAttribute('lat'), lon: +w.getAttribute('lon'), code, isCache, type,
+      title: (cache && childText(cache, 'name')) || childText(w, 'desc') || code,
+      difficulty: cache ? childText(cache, 'difficulty') : '',
+      terrain: cache ? childText(cache, 'terrain') : '',
+      container: cache ? childText(cache, 'container') : '',
+      url: childText(w, 'url') || (/^GC/i.test(code) ? `https://coord.info/${code}` : '')
+    };
+  });
+  return { track, wpts };
+}
+
+// Dichte Logger-Tracks (1 Punkt/s) auf Punkte im Mindestabstand ausdünnen
+function thin(coords, minMeters = 15) {
+  const out = coords.slice(0, 1);
+  for (const c of coords.slice(1)) if (map.distance(out[out.length - 1], c) >= minMeters) out.push(c);
+  if (coords.length > 1 && out[out.length - 1] !== coords[coords.length - 1]) out.push(coords[coords.length - 1]);
+  return out;
+}
+
+$('gpx').onchange = async e => {
+  let tracks = 0, added = 0;
+  try {
+    for (const file of e.target.files) {
+      const { track, wpts } = parseGpx(await file.text());
+      if (track.length > 1) {
+        tracks++;
+        if (routeLayer) map.removeLayer(routeLayer);
+        setRouteCoords(thin(track));
+        routeLayer = L.polyline(routeCoords, { color: '#2e86e4', weight: 4 }).addTo(map);
+        map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+        $('steps').innerHTML = '';
+        $('summary').textContent = `GPX-Track „${file.name}“ · ${routeKm[routeKm.length - 1].toFixed(1)} km`;
+      }
+      caches.push(...wpts);
+      added += wpts.length;
+    }
+    if (tracks) loadPois();
+    renderCaches();
+    if (!tracks && added) map.fitBounds(L.latLngBounds(caches.map(c => [c.lat, c.lon])), { padding: [30, 30] });
+    if (!tracks && !added) $('cacheSummary').textContent = '⚠️ Die Datei enthält weder Track noch Wegpunkte.';
+  } catch (err) {
+    $('cacheSummary').textContent = '⚠️ GPX: ' + err.message;
+  }
+  e.target.value = '';
+};
+
+function renderCaches() {
+  cacheLayer.clearLayers();
+  $('caches').innerHTML = '';
+  if (!caches.length) { $('cacheSummary').textContent = ''; return; }
+  const radius = +$('radius').value;
+  const filter = $('cachesNearRoute').checked && routeCoords;
+  const shown = caches.map(c => ({ ...c, ...(routeCoords ? locateOnRoute(c.lat, c.lon) : {}) }))
+    .filter(c => !filter || c.dist <= radius)
+    .sort((a, b) => (a.km ?? 0) - (b.km ?? 0));
+
+  for (const c of shown) {
+    const icon = cacheIcon(c.type, c.isCache);
+    const dt = c.difficulty ? `<br>D ${escapeHtml(c.difficulty)} / T ${escapeHtml(c.terrain)}` + (c.container ? ` · ${escapeHtml(c.container)}` : '') : '';
+    const pos = c.km != null ? `<br>km ${c.km.toFixed(1)} · ${Math.round(c.dist)} m neben der Route` : '';
+    const link = /^https?:\/\//.test(c.url) ? `<br><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">Cache-Seite</a>` : '';
+    c.marker = L.marker([c.lat, c.lon], {
+      icon: L.divIcon({ className: 'poi-icon', html: icon, iconSize: [24, 24] }), title: c.title
+    }).bindPopup(`<b>${escapeHtml(c.title)}</b><br>${escapeHtml(c.code)}${c.type ? ' · ' + escapeHtml(c.type) : ''}${dt}${pos}${link}`)
+      .addTo(cacheLayer);
+  }
+  const label = caches.some(c => c.isCache) ? 'Geocaches' : 'Wegpunkte';
+  $('cacheSummary').textContent = filter
+    ? `${shown.length} von ${caches.length} ${label} im Umkreis von ${radius} m`
+    : `${caches.length} ${label} geladen` + (caches.length && !routeCoords ? ' (für den Routenfilter erst Route berechnen oder Track laden)' : '');
+  $('caches').innerHTML = shown.map((c, i) =>
+    `<li data-i="${i}">${cacheIcon(c.type, c.isCache)} ${c.km != null ? `km ${c.km.toFixed(1)} · ` : ''}${escapeHtml(c.code)} ${escapeHtml(c.title !== c.code ? c.title : '')}</li>`).join('');
+  $('caches').onclick = e => {
+    const c = shown[e.target.closest('li')?.dataset.i];
+    if (c) { map.setView([c.lat, c.lon], 16); c.marker.openPopup(); }
+  };
+}
+
+// Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"
+function matches(tags, filter) {
+  return [...filter.matchAll(/\[(\w+)(!?=)([^\]]+)\]/g)].every(([, k, op, v]) =>
+    op === '=' ? tags[k] === v : tags[k] !== v);
 }
 
 $('go').onclick = () => {
