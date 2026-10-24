@@ -13,10 +13,34 @@ const OPUS_CFG = { codec: 'opus', numberOfChannels: 1, bitrate: 12000,
 const PAKET_MAX = 239, PAKETE_MAX = 250;
 const talkPrefs = Object.assign({ on: false, name: '', plz: '', pw: '', mode: 'ptt', empf: 12, halt: 1000, relays: TALK_RELAYS.join(' ') }, store.get('talk', {}));
 const talk = { mod: null, netz: null, lauf: 0, mic: null, empf: null, vox: null, tx: null, warte: [], spielt: false, slot: 0,
-  schon: new Set(), sperreBis: 0, voxLetzt: null, micFehler: '', hoert: '', opus: false, leser: null, spieltBis: 0 };
+  sperreBis: 0, fenster: false, fensterFrei: null, voxLetzt: null, micFehler: '', hoert: '', opus: false, leser: null, spieltBis: 0 };
 const saveTalk = () => store.set('talk', talkPrefs);
 const talkName = () => { const n = talkPrefs.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9); return n.length >= 3 ? n : ''; };
 const talkBereit = () => !!talk.netz && talk.netz.verbunden > 0;
+// Schon gehörte Durchsagen (Kennung -> Zeit), auch über ein Neuladen hinweg: Relays liefern nach dem Verbinden
+// die letzten 2 Minuten noch einmal aus
+const TALK_GEHOERT_MS = 15 * 60000;
+function talkSchonGehoert(kennung) {
+  const jetzt = Date.now(), alt = store.get('talkGehoert', {}), neu = {};
+  for (const k in alt) if (jetzt - alt[k] < TALK_GEHOERT_MS) neu[k] = alt[k];
+  const schon = kennung in neu;
+  neu[kennung] = jetzt;
+  store.set('talkGehoert', neu);
+  return schon;
+}
+// Nur ein Fenster je Gerät hört und sendet, sonst kommt jede Durchsage doppelt (zweiter Tab, App und Browser).
+// Die anderen warten auf die Sperre und übernehmen, sobald das erste Fenster zugeht oder Talk ausschaltet.
+let talkSperre = null;
+function talkFenster() {
+  if (!navigator.locks) return Promise.resolve();
+  return talkSperre ||= new Promise(hat => navigator.locks.request('scooterways-talk', () => {
+    talk.fenster = true; hat();
+    return new Promise(frei => talk.fensterFrei = frei);
+  }));
+}
+function talkFensterFreigeben() {
+  talk.fensterFrei?.(); talk.fensterFrei = null; talk.fenster = false; talkSperre = null;
+}
 
 let talkLibs = null;
 const talkScript = src => new Promise((ok, fail) => {
@@ -56,7 +80,12 @@ async function talkStart() {
   talkLoslassen();
   talk.netz?.stoppen(); talk.netz = null;
   talkZeigen();
-  if (!talkPrefs.on) { talk.mic?.schliessen(); return; }
+  if (!talkPrefs.on) { talk.mic?.schliessen(); talkFensterFreigeben(); return; }
+  if (navigator.locks && !talk.fenster) {
+    $('talkStatus').textContent = 'Talk läuft schon in einem anderen Tab oder Fenster. Dieses übernimmt, sobald das andere zugeht.';
+    await talkFenster();
+    if (lauf !== talk.lauf || !talkPrefs.on) return;
+  }
   if (!talk.mod) $('talkStatus').textContent = 'Lade Talk …';
   try { await talkLaden(); } catch (e) { $('talkStatus').textContent = '⚠️ Talk lädt nicht: ' + e.message; return; }
   if (lauf !== talk.lauf) return;
@@ -248,9 +277,7 @@ async function talkMikro() {
 const talkSpielt = () => talk.empf.spielt() || Date.now() < talk.spieltBis;
 const talkDauer = d => d.kopf.codec === TALK_OPUS ? d.pakete.length * 140 : d.pakete.length * 10 * (Sprechfunk.CODECS[d.kopf.codec]?.ms || 40);
 function talkEinreihen(d) {
-  if (talk.schon.has(d.kennung)) return;
-  if (talk.schon.size > 2000) talk.schon.clear();
-  talk.schon.add(d.kennung);
+  if (talkSchonGehoert(d.kennung)) return;
   if (talk.warte.some(x => x.kopf.schluessel === d.kopf.schluessel)) return;
   if (talk.warte.length >= 5 || talk.warte.reduce((s, x) => s + talkDauer(x), talkDauer(d)) > 60000) return talkLog('Durchsage verworfen, Warteschlange voll');
   talk.warte.push(d);
@@ -340,7 +367,8 @@ function talkZeigen() {
   $('talkStatus').textContent = !on ? '' : !n ? $('talkStatus').textContent
     : `${netzText} verbunden · ${talk.opus ? 'Opus' : `Codec2 3200${talk.opusGrund ? ` (kein Opus: ${talk.opusGrund})` : ''}`} · Region ${n.region}${talkPrefs.pw ? ' · Gruppe 🔒' : ' · offen (ohne Passwort hört die ganze Region)'}` +
       (n.gesperrt ? ` · ${n.gesperrt} Relay(s) lehnen ab` : '');
-  $('talkSummary').textContent = on ? (n ? netzText : 'startet …') : 'aus';
+  $('talkSummary').textContent = on ? [talkName(), n ? netzText : 'startet …'].filter(Boolean).join(' · ') : 'aus';
+  $('talkNameHint').textContent = talkName() ? `Andere sehen dich als ${talkName()}.` : 'Ohne Rufname sehen andere nur die ersten Stellen deines Schlüssels.';
   const sek = t?.codec || t?.enc ? Math.floor(t.ms / 1000) : 0;
   const chip = t ? (t.codec || t.enc ? `${t.vox ? 'VOX ' : ''}sendet ${sek} s${sek >= 25 ? ` · noch ${30 - sek}` : ''}` : 'Mikrofon …')
     : talk.hoert ? `🔊 ${talk.hoert}`
@@ -380,7 +408,7 @@ $('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('tal
 $('talkMode').value = talkPrefs.mode; $('talkEmpf').value = talkPrefs.empf; $('talkEmpfVal').textContent = talkPrefs.empf + ' dB';
 $('talkHalt').value = String(talkPrefs.halt); $('talkRelays').value = talkPrefs.relays;
 $('talkOn').onchange = () => { talkPrefs.on = $('talkOn').checked; saveTalk(); talkStart(); };
-$('talkName').onchange = () => { talkPrefs.name = $('talkName').value = talkName(); saveTalk(); };
+$('talkName').onchange = () => { talkPrefs.name = $('talkName').value; talkPrefs.name = $('talkName').value = talkName(); saveTalk(); talkZeigen(); };
 for (const [id, key] of [['talkPlz', 'plz'], ['talkPw', 'pw'], ['talkRelays', 'relays']])
   $(id).onchange = () => { talkPrefs[key] = $(id).value.trim(); saveTalk(); if (talkPrefs.on) talkStart(); };
 $('talkMode').onchange = () => { talkPrefs.mode = $('talkMode').value; saveTalk(); talkLoslassen(); talkVoxEinstellen(); talkZeigen(); };
