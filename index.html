@@ -64,6 +64,11 @@
   .suggest div:hover, .suggest div.active { background:var(--line); }
   .wp-row { display:flex; gap:4px; align-items:center; }
   .wp-row input { flex:1; min-width:0; }
+  .wp-input { flex:1; min-width:0; position:relative; display:flex; }
+  .wp-input input { padding-right:28px !important; }
+  .wp-clear { position:absolute; right:2px; top:50%; transform:translateY(-50%); width:24px; height:24px; margin:0; padding:0;
+    border:0; border-radius:50%; background:transparent; color:var(--muted); font-size:15px; line-height:24px; cursor:pointer; }
+  .wp-input input:placeholder-shown + .wp-clear { display:none; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
   .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
@@ -345,7 +350,7 @@ function renderWaypoints() {
   const last = waypoints.length - 1;
   $('wpList').innerHTML = waypoints.map((w, i) => `<li data-i="${i}"><div class="wp-row">
     <span class="wp-badge${wpClass(i)}">${isEnd(i) || !w.shaping ? wpLabel(i) : ''}</span>
-    <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte">
+    <span class="wp-input"><input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte"><button class="wp-clear" type="button" title="Text löschen" tabindex="-1">✕</button></span>
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
     ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
@@ -535,6 +540,16 @@ function pickSuggestion(i, it) {
     { timeout: 10000, maximumAge: 60000 });
 }
 
+// Kreuz im Adressfeld: nur den Text leeren und Feld fokussiert lassen (Vorschläge erscheinen),
+// pointerdown statt click, damit das Feld nicht erst den Fokus verliert und die Eingabe übernimmt
+$('wpList').addEventListener('pointerdown', e => {
+  if (!e.target.matches('.wp-clear')) return;
+  e.preventDefault();
+  const input = e.target.previousElementSibling;
+  input.value = '';
+  input.focus();
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+});
 $('wpList').addEventListener('focusin', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
 $('wpList').addEventListener('input', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
 $('wpList').addEventListener('focusout', e => {
