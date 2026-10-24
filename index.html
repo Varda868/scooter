@@ -341,6 +341,7 @@ function renderWaypoints() {
     <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte">
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
+    ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${hhmm(new Date(w.eta))}">⏱ ${durText(w.dur)}</span>` : ''}
     ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
@@ -659,6 +660,7 @@ const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ?
 const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 // Fahrzeit in s: eigener Schnitt aus dem Fahrprofil, sonst Valhalla (gilt für Abschnitte und ganze Route)
 const tripTime = s => +$('avgSpeed').value > 0 ? s.length / +$('avgSpeed').value * 3600 : s.time;
+const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; };
 const tripText = s => {
   const t = tripTime(s), min = Math.round(t / 60);
   return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${hhmm(new Date(Date.now() + t * 1000))}`;
@@ -1144,7 +1146,10 @@ async function loadWeather(trip) {
   const stops = located.filter((w, i) => !(w.shaping && i && i < located.length - 1));
   waypoints.forEach(w => { delete w.wx; });
   let t = Date.now();
-  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000; w.eta = t; });
+  const now = t;
+  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000; w.eta = t; w.dur = (t - now) / 1000; });
+  // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
+  renderWaypoints();
   try {
     const qs = new URLSearchParams({
       latitude: stops.map(w => w.latlng.lat.toFixed(3)).join(','),
