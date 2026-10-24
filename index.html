@@ -41,6 +41,11 @@
         </select>
         <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
       </div>
+      <label class="style-line">Strecke
+        <select id="rideStyle" title="Setzt die Regler Hauptstraßen und Steigungen im Fahrprofil">
+          <option value="">eigene Einstellung</option><option value="0">direkt</option>
+          <option value="1">🌀 Nebenstraßen</option><option value="2">🌀🌀 kleine Straßen, Hügel ok</option><option value="3">🌀🌀🌀 kleinste Straßen, bergig</option>
+        </select></label>
       <div id="profileLine" class="hint profile-line" title="Fahrprofil ändern"></div>
       <button id="go">Route berechnen</button>
       <div id="summary"></div>
