@@ -70,6 +70,11 @@
     border:0; border-radius:50%; background:transparent; color:var(--muted); font-size:15px; line-height:24px; cursor:pointer; }
   .wp-input input:placeholder-shown + .wp-clear { display:none; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
+  .route-cmp { padding:1px 5px; font:11px/1.3 system-ui,sans-serif; border-radius:4px; color:#444; background:rgba(255,255,255,.9); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+  .route-cmp.main { border:1px solid #e4572e; }
+  .route-cmp:before { display:none; }
+  .route-cmp.leaflet-tooltip-left { margin-left:-4px; } .route-cmp.leaflet-tooltip-right { margin-left:4px; }
+  .route-cmp b { color:#1a7f37; }
   .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
   .note { white-space:pre-wrap; margin:4px 0; font-size:13px; }
@@ -263,7 +268,7 @@ let routeKm = null; // kumulierte km je Routenpunkt
 let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
-const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null, profile: false };
+const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
 const cacheLayer = L.layerGroup().addTo(map);
@@ -703,12 +708,13 @@ function showTrip(trip, alternates = []) {
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
+  const pick = k => showTrip(alternates[k], [trip, ...alternates.filter((_, j) => j !== k)]);
   alternates.forEach((alt, k) => {
     L.polyline(tripCoords(alt), { color: '#888', weight: 5, opacity: 0.7, dashArray: '8 6', bubblingMouseEvents: false })
-      .bindTooltip(`Alternative: ${tripText(alt.summary)}`, { sticky: true })
-      .on('click', () => showTrip(alt, [trip, ...alternates.filter((_, j) => j !== k)]))
+      .on('click', () => pick(k))
       .addTo(altLayer);
   });
+  if (alternates.length) compareRoutes([trip, ...alternates], pick);
   setRouteCoords(tripCoords(trip));
   routeKmh = trip.summary.length / (tripTime(trip.summary) / 3600);
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
@@ -728,6 +734,62 @@ function showTrip(trip, alternates = []) {
   loadPois();
   renderCaches();
   renderMyPois();
+}
+
+// --- Routenvergleich: kleines Etikett je Route (km · Zeit · ↑hm), Bestwert je Kennzahl grün ---
+const climbCache = new Map();
+let compareRequest = 0;
+
+async function routeClimb(coords) {
+  const shape = simplify(coords, 200);
+  const key = shape.map(([a, b]) => a.toFixed(4) + ',' + b.toFixed(4)).join(';');
+  if (!climbCache.has(key)) climbCache.set(key, (async () => {
+    const res = await fetch(VALHALLA_HEIGHT_URL, { method: 'POST', body: JSON.stringify({
+      range: true, shape: shape.map(([lat, lon]) => ({ lat, lon })), resample_distance: 50
+    }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const pts = (data.range_height || []).filter(([, h]) => h != null && h > -1000);
+    if (pts.length < 2) throw new Error('keine Höhendaten');
+    return climb(pts).up;
+  })().catch(err => { climbCache.delete(key); throw err; }));
+  return climbCache.get(key);
+}
+
+// Etikett dort, wo die Route am weitesten von den anderen abweicht, damit sie sich nicht überdecken
+function labelPoint(own, others) {
+  const pts = simplify(own, 60), far = others.flatMap(c => simplify(c, 120));
+  let best = pts[Math.floor(pts.length / 2)], bestD = -1;
+  for (const p of pts.slice(1, -1)) {
+    let d = Infinity;
+    for (const q of far) d = Math.min(d, (p[0] - q[0]) ** 2 + ((p[1] - q[1]) * Math.cos(p[0] * Math.PI / 180)) ** 2);
+    if (d > bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+async function compareRoutes(trips, pick) {
+  const req = ++compareRequest;
+  const coords = trips.map(tripCoords);
+  const rows = trips.map(t => ({ km: t.summary.length, sec: tripTime(t.summary), up: null }));
+  // Etikett zur Seite weg von den anderen Routen; Hauptroute darüber
+  const tips = coords.map((c, i) => {
+    const others = coords.filter((_, j) => j !== i), at = labelPoint(c, others);
+    const lonOthers = others.flat().reduce((sum, q) => sum + q[1], 0) / others.flat().length;
+    const direction = i ? (at[1] < lonOthers ? 'left' : 'right') : 'top';
+    return L.tooltip({ permanent: true, interactive: true, direction, offset: i ? [0, 0] : [0, -8], className: 'route-cmp' + (i ? '' : ' main') })
+      .setLatLng(at).addTo(altLayer);
+  });
+  tips.forEach((tip, i) => i && tip.getElement()?.addEventListener('click', e => { L.DomEvent.stop(e); pick(i - 1); }));
+  const render = () => {
+    const min = f => Math.min(...rows.map(f).filter(v => v != null));
+    const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up) };
+    const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0) ? `<b>${text}</b>` : text);
+    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`)].filter(Boolean).join(' · ')));
+  };
+  render();
+  await Promise.all(coords.map((c, i) => routeClimb(c).then(up => { rows[i].up = up; }).catch(() => {})));
+  if (req === compareRequest && altLayer.hasLayer(tips[0])) render();
 }
 
 // --- Höhenprofil: Valhalla /height liefert [Distanz m, Höhe m] entlang der Linie (Höhenmodell, nicht GPS) ---
@@ -928,8 +990,11 @@ function startSim() {
   drawSimProfile();
   sim.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
     icon: L.divIcon({ className: '', html: '<div class="sim-dot">➤</div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
+  // Während der Fahrt Zwischenstufen erlauben, damit der Zoom gleiten kann
+  map.options.zoomSnap = 0;
   map.setView(routeCoords[0], 16, { animate: false });
   sim.zoomAt = performance.now();
+  sim.zoomFrom = sim.zoomTo = 16;
   resumeSim();
 }
 
@@ -952,6 +1017,8 @@ function stopSim() {
   pauseSim();
   sim.marker.remove(); sim.marker = null;
   eleCursor.remove();
+  map.options.zoomSnap = 1;
+  map.setZoom(Math.round(map.getZoom()), { animate: false });
   $('sim').hidden = true;
 }
 
@@ -970,6 +1037,7 @@ function simStep(now) {
   else sim.frame = requestAnimationFrame(simStep);
 }
 
+const ZOOM_GLIDE = 900;
 const baseZoom = factor => factor <= 20 ? 16 : factor <= 60 ? 15 : 14;
 
 function renderSim(now) {
@@ -997,11 +1065,15 @@ function renderSim(now) {
   const cur = $('simProfile').querySelector('.cur');
   if (cur && eleData) { const x = sim.km / eleData.xs[eleData.xs.length - 1] * 300; cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
 
-  // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln
+  // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln.
+  // Der Wechsel gleitet über ZOOM_GLIDE ms (ease-in-out); dazwischen bleibt ein Mausrad-Zoom des Nutzers stehen
   const want = next && dist < 0.3 ? 17 : baseZoom(factor);
-  const zoomNow = want !== map.getZoom() && now - sim.zoomAt > 1500;
-  if (zoomNow) sim.zoomAt = now;
-  map.setView(pos, zoomNow ? want : map.getZoom(), { animate: false });
+  if (Math.abs(want - map.getZoom()) > 0.01 && now - sim.zoomAt > 1500) {
+    sim.zoomAt = now; sim.zoomFrom = map.getZoom(); sim.zoomTo = want;
+  }
+  const u = Math.min(1, Math.max(0, (now - sim.zoomAt) / ZOOM_GLIDE)), ease = u * u * (3 - 2 * u);
+  const zoom = u < 1 ? sim.zoomFrom + (sim.zoomTo - sim.zoomFrom) * ease : map.getZoom();
+  map.setView(pos, zoom, { animate: false });
 }
 
 $('play').onclick = startSim;
