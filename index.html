@@ -33,14 +33,6 @@
         <button id="backHome" title="Start als letztes Ziel anhängen (Hin- und Rückfahrt)">⇄ Zurück zum Start</button>
         <label title="Bei Touren, die am Start enden: Rückweg ab dem letzten Halt meidet die Straßen des Hinwegs"><input id="backDiff" type="checkbox"> Rückweg anders</label>
       </div>
-      <div class="roundtrip">
-        <input id="rtKm" type="number" min="5" max="300" step="5" value="40" title="Länge der Rundtour in km"> km
-        <select id="rtDir" title="Richtung">
-          <option value="">zufällig</option><option value="0">Nord</option><option value="90">Ost</option>
-          <option value="180">Süd</option><option value="270">West</option>
-        </select>
-        <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
-      </div>
       <label class="style-line">Strecke
         <select id="rideStyle" title="Setzt die Regler Hauptstraßen und Steigungen im Fahrprofil">
           <option value="">eigene Einstellung</option><option value="0">direkt</option>
@@ -139,7 +131,6 @@
       </label>
       <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
       <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
-      <label><input id="expPrefer" type="checkbox"> Rundtour: unbefahrene Kacheln bevorzugen</label>
       <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
       <div id="exploreStats" class="hint"></div>
       <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
@@ -265,7 +256,6 @@
 <script src="js/09-etappen.js"></script>
 <script src="js/10-wetter.js"></script>
 <script src="js/11-pois.js"></script>
-<script src="js/12-rundtour.js"></script>
 <script src="js/13-poisuche.js"></script>
 <script src="js/14-gpx.js"></script>
 <script src="js/15-opencaching.js"></script>
