@@ -148,6 +148,12 @@
       <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
     </label>
     <label><input id="cachesNearRoute" type="checkbox" checked> Geocaches nur entlang der Route</label>
+    <details id="ocBox" class="fold">
+    <summary>🧭 Opencaching.de <span id="ocSummary" class="hint"></span></summary>
+    <label for="ocKey">OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
+    <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
+    <label><input id="ocOn" type="checkbox" checked> Caches entlang der Route live laden</label>
+    </details>
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
     <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
@@ -232,6 +238,7 @@ const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null,
 const poiLayer = L.layerGroup();
 const cacheLayer = L.layerGroup().addTo(map);
 let caches = [];
+const oc = { key: '', on: true, request: 0 };
 
 // Referenzlinie für POI-/Cache-Filter: berechnete Route oder geladener GPX-Track
 function setRouteCoords(coords) {
@@ -242,6 +249,7 @@ function setRouteCoords(coords) {
   routeCoords = coords;
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
+  loadOpencaching();
 }
 
 const $ = id => document.getElementById(id);
@@ -253,7 +261,7 @@ $('speed').oninput = e => $('speedVal').textContent = e.target.value;
 $('primary').oninput = e => $('primaryVal').textContent = label(+e.target.value, primaryWords);
 $('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hillsWords);
 $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
-$('radius').onchange = () => { loadPois(); renderCaches(); };
+$('radius').onchange = () => { loadPois(); loadOpencaching(); };
 $('cachesNearRoute').onchange = () => renderCaches();
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
   `<label><input type="checkbox" value="${t.id}"${t.off ? '' : ' checked'}> ${t.icon} ${t.name}</label>`).join(''));
@@ -267,7 +275,7 @@ $('brands').onchange = () => loadPois();
 const SETTING_IDS = ['speed', 'primary', 'hills', 'radius'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
-['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
+['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
   $(id).open = !!settings[id];
   $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
 });
@@ -531,6 +539,8 @@ function clearRoute() {
   $('elevation').innerHTML = '';
   renderIncidents([]);
   loadPois();
+  oc.request++;
+  caches = caches.filter(c => !c.oc);
   renderCaches();
 }
 
@@ -1456,7 +1466,7 @@ async function loadPois() {
 }
 
 // --- GPX: Tracks werden zur Referenzlinie, Wegpunkte (z. B. Geocaches aus c:geo/GSAK/Pocket Queries) zu Markern ---
-const CACHE_ICONS = { traditional: '📦', multi: '🧩', unknown: '❓', mystery: '❓', earthcache: '🌍',
+const CACHE_ICONS = { traditional: '📦', multi: '🧩', unknown: '❓', mystery: '❓', quiz: '❓', math: '❓', earthcache: '🌍', 'drive-in': '🚗', moving: '🚚',
   letterbox: '✉️', wherigo: '📱', virtual: '👻', event: '🎉', webcam: '📷' };
 const childText = (el, name) => el.getElementsByTagNameNS('*', name)[0]?.textContent.trim() || '';
 
@@ -1535,6 +1545,76 @@ $('gpx').onchange = async e => {
   e.target.value = '';
 };
 
+// --- Opencaching.de (OKAPI, Level 1: nur Consumer Key). Kein CORS dokumentiert, daher JSONP. ---
+const OKAPI_URL = 'https://www.opencaching.de/okapi/services/';
+Object.assign(oc, store.get('opencaching', {}));
+$('ocKey').value = oc.key; $('ocOn').checked = oc.on;
+function applyOc() {
+  oc.key = $('ocKey').value.trim(); oc.on = $('ocOn').checked;
+  store.set('opencaching', { key: oc.key, on: oc.on });
+  $('ocSummary').textContent = !oc.key ? 'kein Schlüssel' : oc.on ? 'live an' : 'aus';
+}
+applyOc();
+['ocKey', 'ocOn'].forEach(id => $(id).addEventListener('change', () => { applyOc(); loadOpencaching(); }));
+
+let jsonpCount = 0;
+function jsonp(url) {
+  return new Promise((resolve, reject) => {
+    const cb = `okapiCb${++jsonpCount}`, script = document.createElement('script');
+    const done = (err, data) => { clearTimeout(timer); delete window[cb]; script.remove(); err ? reject(err) : resolve(data); };
+    const timer = setTimeout(() => done(new Error('Zeitüberschreitung')), 20000);
+    window[cb] = data => done(null, data);
+    // OKAPI antwortet bei Fehlern (z. B. falscher Schlüssel) mit HTTP 400, das kommt hier nur als onerror an
+    script.onerror = () => done(new Error('Abruf fehlgeschlagen, Schlüssel prüfen'));
+    script.src = `${url}&format=jsonp&callback=${cb}`;
+    document.head.appendChild(script);
+  });
+}
+
+// Route in Stücke von ~15 km teilen, je Stück eine Bounding Box (plus Umkreis): eine große Box über die ganze
+// Tour würde am 500er-Limit hängen bleiben und nach Nähe zur Boxmitte sortieren
+function routeBoxes(padM) {
+  const boxes = [], total = routeKm[routeKm.length - 1], step = 15;
+  for (let from = 0; from < total; from += step) {
+    const pts = routeCoords.filter((_, i) => routeKm[i] >= from && routeKm[i] <= from + step);
+    if (!pts.length) continue;
+    const dLat = padM / 110540, dLon = padM / (111320 * Math.cos(pts[0][0] * Math.PI / 180));
+    const lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+    boxes.push([Math.min(...lats) - dLat, Math.min(...lons) - dLon, Math.max(...lats) + dLat, Math.max(...lons) + dLon]);
+  }
+  return boxes.slice(0, 12);
+}
+
+async function loadOpencaching() {
+  const req = ++oc.request;
+  caches = caches.filter(c => !c.oc);
+  if (!oc.key || !oc.on || !routeCoords) { renderCaches(); return; }
+  $('cacheSummary').textContent = 'Lade Opencaching-Caches …';
+  try {
+    const found = {};
+    await Promise.all(routeBoxes(+$('radius').value).map(async b => {
+      const params = new URLSearchParams({
+        consumer_key: oc.key, wrap: 'false',
+        search_method: 'services/caches/search/bbox',
+        search_params: JSON.stringify({ bbox: b.map(v => v.toFixed(5)).join('|'), status: 'Available', limit: '500' }),
+        retr_method: 'services/caches/geocaches',
+        retr_params: JSON.stringify({ fields: 'code|name|location|type|size2|difficulty|terrain|url', langpref: 'de|en' })
+      });
+      Object.assign(found, await jsonp(`${OKAPI_URL}caches/shortcuts/search_and_retrieve?${params}`));
+    }));
+    if (req !== oc.request) return;
+    caches = caches.filter(c => !c.oc).concat(Object.values(found).map(c => {
+      const [lat, lon] = c.location.split('|').map(Number);
+      return { oc: true, isCache: true, lat, lon, code: c.code, title: c.name, type: c.type, url: c.url,
+        difficulty: String(c.difficulty), terrain: String(c.terrain), container: c.size2 };
+    }));
+  } catch (err) {
+    if (req === oc.request) { renderCaches(); $('cacheSummary').textContent = '⚠️ Opencaching: ' + err.message; }
+    return;
+  }
+  renderCaches();
+}
+
 function renderCaches() {
   cacheLayer.clearLayers();
   $('caches').innerHTML = '';
@@ -1567,15 +1647,14 @@ function renderCaches() {
   };
 }
 
-// Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"
 // Hersteller stehen in OSM uneinheitlich (brand, brands, motorcycle:…, name, description): in allen Tags suchen
 function brandMatch(tags) {
   const words = [...$('brands').querySelectorAll('input:checked')].map(i => i.value.toLowerCase())
     .concat($('brand').value.toLowerCase().split(/[,;\s]+/).filter(Boolean));
   const all = Object.entries(tags).map(([k, v]) => `${k}=${v}`).join(' ').toLowerCase();
-  // Vespa ist eine Piaggio-Marke
   // Ganze Wörter, damit z. B. "Rex" oder "Beta" nicht in anderen Namen trifft
   const has = w => new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(all);
+  // Vespa ist eine Piaggio-Marke
   return !words.length || words.some(w => has(w) || (w === 'vespa' && has('piaggio')));
 }
 function workshopInfo(p) {
@@ -1590,6 +1669,7 @@ function workshopInfo(p) {
     (web && /^https?:\/\//.test(web) ? `<br><a href="${escapeHtml(web)}" target="_blank" rel="noopener">Website</a>` : '');
 }
 
+// Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"
 function matches(tags, filter) {
   return [...filter.matchAll(/\[(\w+)(!?=)([^\]]+)\]/g)].every(([, k, op, v]) =>
     op === '=' ? tags[k] === v : tags[k] !== v);
