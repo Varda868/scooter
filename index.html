@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scooterways</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#e4572e">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root { --bg:#fff; --fg:#1d1d1f; --muted:#666; --accent:#e4572e; --line:#ddd; }
@@ -26,6 +30,7 @@
   #summary { margin-top:14px; font-weight:600; }
   #play { margin-top:8px; background:var(--fg); color:var(--bg); }
   #navStart { margin-top:8px; background:#1d3557; }
+  #gpxTour { margin-top:8px; background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500; }
   .nav { position:absolute; z-index:1001; left:8px; right:8px; top:8px; max-width:520px; margin:0 auto; background:#1d3557; color:#fff;
     border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.45); padding:10px 12px; }
   .nav-turn { display:flex; gap:14px; align-items:center; }
@@ -233,6 +238,7 @@
     <div id="stageSummary" class="hint"></div>
     <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
     <button id="navStart" hidden title="Mit GPS navigieren, Bildschirm bleibt an">🧭 Navigation starten</button>
+    <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
     <div id="elevation"></div>
     <div id="wxRouteSummary"></div>
     <div id="incidentSummary"></div>
@@ -316,8 +322,9 @@ const POI_TYPES = [
 ];
 
 const map = L.map('map').setView([51.16, 10.45], 6);
+// crossOrigin: CORS-Antworten statt "opaque", damit der Service Worker angesehene Kacheln platzsparend zwischenspeichern kann
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap-Mitwirkende'
+  maxZoom: 19, crossOrigin: true, attribution: '© OpenStreetMap-Mitwirkende'
 }).addTo(map);
 
 // Wegpunkte: erster = Start, letzter = Ziel, dazwischen Zwischenziele. latlng null = noch nicht aufgelöst.
@@ -370,6 +377,7 @@ function setRouteCoords(coords) {
   routeStages = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   $('play').hidden = false;
   $('navStart').hidden = false;
+  $('gpxTour').hidden = false;
   routeCoords = coords;
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
@@ -670,6 +678,7 @@ function clearRoute() {
   stopSim();
   $('play').hidden = true;
   $('navStart').hidden = true;
+  $('gpxTour').hidden = true;
   routeLayer = routeCoords = routeKm = null;
   $('summary').textContent = '';
   $('steps').innerHTML = '';
@@ -751,7 +760,7 @@ function valhallaError(status, data) {
 async function fetchRoute(body) {
   let res;
   try { res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) }); }
-  catch { throw new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen und erneut berechnen.'); }
+  catch { throw Object.assign(new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen und erneut berechnen.'), { offline: true }); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(valhallaError(res.status, data));
   return data;
@@ -835,7 +844,18 @@ async function route() {
     renderWaypoints();
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
-    let data = await planRoute(locs);
+    // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
+    let data;
+    try {
+      data = await planRoute(locs);
+      store.set('lastTrip', { key: tripKey, trip: data.trip });
+    } catch (err) {
+      const last = store.get('lastTrip', null);
+      if (!err.offline || last?.key !== tripKey) throw err;
+      data = { trip: last.trip };
+      summaryNote += ' · 📴 offline: gespeicherte Route';
+    }
     let incidents = [];
     if (tt.key) {
       try {
@@ -1897,11 +1917,47 @@ $('exportPois').onclick = () => {
 <gpx version="1.1" creator="Scooterways" xmlns="http://www.topografix.com/GPX/1/1">
 ${myPois.map(p => `  <wpt lat="${p.lat}" lon="${p.lon}"><name>${xmlEscape(p.name)}</name><desc>${xmlEscape(p.note)}</desc><sym>${xmlEscape(p.icon)}</sym><type>scooterways</type></wpt>`).join('\n')}
 </gpx>`;
+  downloadGpx('scooterways-pois.gpx', gpx);
+};
+
+// Tour als GPX: ein Track (je Tagesetappe ein Segment, mit Höhe falls bekannt), Halte und Etappenenden als Wegpunkte.
+// Gedacht für OsmAnd/Locus mit BRouter: dort offline navigieren und bei Abweichung neu rechnen lassen.
+function downloadGpx(name, gpx) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
-  a.download = 'scooterways-pois.gpx';
+  a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+$('gpxTour').onclick = () => {
+  if (!routeCoords) return;
+  const ends = [...routeStages, routeKm.at(-1)];
+  const segs = ends.map(() => []);
+  routeCoords.forEach(([lat, lon], i) => {
+    const d = ends.findIndex(e => routeKm[i] <= e + 1e-6);
+    const pt = `<trkpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}">${eleData ? `<ele>${Math.round(heightAt(routeKm[i]))}</ele>` : ''}</trkpt>`;
+    const k = d < 0 ? segs.length - 1 : d;
+    // Etappengrenze gehört in beide Segmente, damit keine Lücke entsteht
+    if (k > 0 && !segs[k].length && segs[k - 1].length) segs[k].push(segs[k - 1].at(-1));
+    segs[k].push(pt);
+  });
+  const located = waypoints.filter(w => w.latlng);
+  const wpts = located.map((w, i) => (!w.shaping || !i || i === located.length - 1) &&
+    `  <wpt lat="${w.latlng.lat.toFixed(6)}" lon="${w.latlng.lng.toFixed(6)}"><name>${xmlEscape(w.text || coordText(w.latlng))}</name>` +
+    `${w.note ? `<desc>${xmlEscape(w.note)}</desc>` : ''}<sym>${i === located.length - 1 ? 'Flag, Red' : 'Flag, Blue'}</sym></wpt>`).filter(Boolean);
+  routeStages.forEach((km, d) => {
+    const [lat, lon] = pointAtKm(km);
+    wpts.push(`  <wpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"><name>Etappenende Tag ${d + 1}</name><desc>km ${km.toFixed(0)}</desc><sym>Campground</sym></wpt>`);
+  });
+  const title = `${located[0]?.text || 'Start'} – ${located.at(-1)?.text || 'Ziel'}`;
+  downloadGpx(`scooterways-${new Date().toISOString().slice(0, 10)}.gpx`, `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Scooterways" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${xmlEscape(title)}</name></metadata>
+${wpts.join('\n')}
+  <trk><name>${xmlEscape(title)}</name><type>moped</type>
+${segs.filter(sg => sg.length > 1).map(sg => `    <trkseg>\n      ${sg.join('\n      ')}\n    </trkseg>`).join('\n')}
+  </trk>
+</gpx>`);
 };
 
 // Rundtour: Formpunkte auf einem Kreis, Start = Ziel. Faktor 1,3 für Umwege der Straßen gegenüber dem Kreis.
@@ -2139,16 +2195,20 @@ async function loadPois() {
   const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   try {
     let elements, note = '';
-    try { elements = (await overpassFetch(query)).elements; }
-    catch (err) {
-      // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
-      const camp = active.find(t => t.id === 'camp');
-      if (!camp) throw err;
-      const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
-      const n = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
-      const { camps, source } = await findCamps(Array.from({ length: n }, (_, i) => pointAtKm(total * i / (n - 1))), rad);
-      elements = camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } }));
-      note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
+    try {
+      elements = (await overpassFetch(query)).elements;
+      store.set('lastPois', { query, elements });
+    } catch (err) {
+      const camp = active.find(t => t.id === 'camp'), lastPois = store.get('lastPois', null);
+      if (lastPois?.query === query) { // offline oder Server weg: letzte Abfrage für genau diese Route
+        elements = lastPois.elements; note = ' · 📴 gespeicherte POIs';
+      } else if (camp) { // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
+        const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
+        const n = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
+        const { camps, source } = await findCamps(Array.from({ length: n }, (_, i) => pointAtKm(total * i / (n - 1))), rad);
+        elements = camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } }));
+        note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
+      } else throw err;
     }
     if (req !== poiRequest) return;
 
@@ -2440,6 +2500,9 @@ $('go').onclick = () => {
 renderWaypoints();
 renderMyPois();
 if (ready()) route();
+
+// Offline-Start: Service Worker hält App und angesehene Kacheln vor (nur über HTTPS bzw. localhost)
+if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
 </body>
 </html>
