@@ -180,6 +180,18 @@
   #exploreBox, #rollerBox { border:0; padding:0; }
   .profile-line { margin-top:10px; cursor:pointer; text-decoration:underline dotted; }
   .sheet-btn { display:none; }
+  /* Tablet und PC: Leiste links lässt sich auf eine schmale Reiter-Spalte einklappen */
+  @media (min-width:701px) {
+    .sheet-btn { display:block; margin:0 0 0 10px; width:auto; padding:2px 10px; background:transparent; color:var(--fg); border:1px solid var(--line); font-size:16px; align-self:center; }
+    body.sheet-min #panel { width:64px; padding:12px 6px; overflow:hidden; }
+    body.sheet-min h1 { font-size:0; justify-content:center; margin-bottom:8px; }
+    body.sheet-min h1 .clock { display:none; }
+    body.sheet-min .sheet-btn { margin:0; }
+    body.sheet-min .tabs { flex-direction:column; margin:0; border-bottom:0; gap:6px; position:static; }
+    body.sheet-min .tabs button { border-bottom:0; border-radius:6px; padding:8px 0; }
+    body.sheet-min .tabs button span { display:none; }
+    body.sheet-min #panel .tab { display:none; }
+  }
   /* Handy: Karte oben, Leiste unten; eingeklappt nur Kopf und Reiter */
   @media (max-width:700px) {
     #app { flex-direction:column-reverse; }
