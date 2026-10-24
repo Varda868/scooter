@@ -195,3 +195,20 @@
     body.sheet-min #panel .tab { display:none; }
     body.sheet-min .tabs { margin-bottom:0; border-bottom:0; }
   }
+
+/* Talk: Sprechtaste auf der Karte (auch im Navi), groß genug für Handschuhe */
+.talk-ptt { position:absolute; right:10px; bottom:34px; z-index:1001; display:flex; flex-direction:column; align-items:flex-end; gap:6px; pointer-events:none; }
+.talk-ptt[hidden] { display:none; }
+.talk-chip { pointer-events:auto; background:#1d3557e6; color:#fff; font-size:13px; padding:3px 8px; border-radius:10px; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.talk-chip:empty { display:none; }
+#talkBtn { pointer-events:auto; width:76px; height:76px; margin:0; padding:0; border-radius:50%; border:3px solid #fff; background:#1d3557; color:#fff;
+  font-size:34px; box-shadow:0 3px 10px #0006; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+#talkBtn:disabled { opacity:.5; }
+#talkBtn.sendet { background:#e4572e; animation:talk-puls 1s infinite; }
+#talkBtn.hoert { background:#2a9d8f; }
+@keyframes talk-puls { 50% { box-shadow:0 0 0 10px #e4572e44; } }
+.talk-row { display:flex; gap:8px; }
+.talk-row label { flex:1; }
+.talk-row input { width:100%; }
+#talkBox select { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+.talk-log { list-style:none; padding:0; margin:4px 0; font-size:13px; opacity:.85; }

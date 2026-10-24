@@ -59,6 +59,30 @@
       </details>
     </section>
     <section id="tab-unterwegs" class="tab" role="tabpanel" hidden>
+      <details id="talkBox" class="fold">
+      <summary>📻 Talk: Gruppenfunk übers Netz <span id="talkSummary" class="hint"></span></summary>
+      <label><input id="talkOn" type="checkbox"> Talk einschalten</label>
+      <div class="talk-row">
+        <label>Rufname <input id="talkName" type="text" maxlength="9" autocomplete="off" placeholder="3–9 Zeichen"></label>
+        <label>PLZ-Region <input id="talkPlz" type="text" maxlength="6" inputmode="numeric" placeholder="z. B. 86"></label>
+      </div>
+      <label for="talkPw">Gruppen-Passwort (nur wer es kennt, hört mit)</label>
+      <input id="talkPw" type="password" autocomplete="off" spellcheck="false">
+      <label for="talkMode">Sprechen</label>
+      <select id="talkMode"><option value="ptt">Taste halten</option><option value="tap">Taste tippen: an/aus</option><option value="vox">VOX (sprachgesteuert)</option></select>
+      <div id="talkVoxBox" hidden>
+        <label for="talkEmpf">VOX-Empfindlichkeit: <span id="talkEmpfVal"></span> über dem Rauschen</label>
+        <input id="talkEmpf" type="range" min="6" max="24" step="1">
+        <label for="talkHalt">Nachlauf</label>
+        <select id="talkHalt"><option value="600">0,6 s</option><option value="1000">1 s</option><option value="1500">1,5 s</option><option value="2500">2,5 s</option></select>
+        <div id="talkVoxMess" class="hint"></div>
+      </div>
+      <label for="talkRelays">Relays (mit Leerzeichen getrennt)</label>
+      <input id="talkRelays" type="text" spellcheck="false" autocomplete="off">
+      <div id="talkStatus" class="hint"></div>
+      <ul id="talkLog" class="talk-log"></ul>
+      <p class="hint">Alle in der Gruppe tragen dieselbe PLZ-Region und dasselbe Passwort ein. Die Sprache wird im Handy mit Codec2 kodiert, signiert und über öffentliche Nostr-Relays verteilt, mit Passwort verschlüsselt; die Relays löschen sie nach 1 h. Jede Durchsage kommt als Ganzes an, die Verzögerung ist etwa die Sprechdauer. Bildschirm anlassen. Talk stammt aus der b:con-App (AGPL-3.0, siehe talk/QUELLE.md).</p>
+      </details>
       <div id="poiSummary"></div>
       <ul id="pois"></ul>
       <div id="cacheSummary"></div>
@@ -197,6 +221,7 @@
       <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
   </div>
+  <div id="talkPtt" class="talk-ptt" hidden><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
   <div id="arrive" class="arrive" hidden>
     <div class="arrive-head"><b>🏁 Angekommen</b><button id="arriveClose" title="Schließen (Fahrt wird gespeichert)">✕</button></div>
     <div id="arriveStats"></div>
@@ -245,5 +270,6 @@
 <script src="js/19-vektorkarte.js"></script>
 <script src="js/20-start.js"></script>
 <script src="js/21-oberflaeche.js"></script>
+<script src="js/22-talk.js"></script>
 </body>
 </html>
