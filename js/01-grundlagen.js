@@ -152,5 +152,20 @@ $('primary').oninput({ target: $('primary') });
 $('hills').oninput({ target: $('hills') });
 updateFoldSummaries();
 
+// Streckenstufen: nur Valhalla-Einstellungen (Hauptstraßen meiden, Steigungen zulassen), keine Kurvenwertung.
+// use_hills 1 nimmt Steigungen ohne Aufschlag, sucht sie aber nicht aktiv; Hügel kommen über die kleinen Straßen dazu.
+const RIDE_STYLES = [{ primary: 0.5, hills: 0.3 }, { primary: 0.2, hills: 0.5 }, { primary: 0.05, hills: 0.8 }, { primary: 0, hills: 1 }];
+const rideStyleOf = () => RIDE_STYLES.findIndex(st => Math.abs(st.primary - $('primary').value) < 0.01 && Math.abs(st.hills - $('hills').value) < 0.01);
+const showRideStyle = () => { const i = rideStyleOf(); $('rideStyle').value = i < 0 ? '' : String(i); };
+$('rideStyle').onchange = () => {
+  const st = RIDE_STYLES[$('rideStyle').value];
+  if (!st) { showTab('setup'); $('profileBox').open = true; return; }
+  for (const id of ['primary', 'hills']) { $(id).value = st[id]; $(id).oninput({ target: $(id) }); }
+  updateFoldSummaries();
+  if (ready()) route();
+};
+for (const id of ['primary', 'hills']) $(id).addEventListener('change', showRideStyle);
+showRideStyle();
+
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
 const isEnd = i => i === 0 || i === waypoints.length - 1;
