@@ -3,7 +3,7 @@
 // größte lückenlose Quadrat. Touren liegen nur in diesem Browser (IndexedDB), ausgedünnt auf 25 m.
 const EXP_Z = 14, EXP_N = 2 ** EXP_Z;
 const exp = { rides: [], tiles: new Set(), cluster: new Set(), square: null, routeNew: new Set(), rec: [], db: null };
-const expPrefs = { tiles: false, heat: false, prefer: false, rec: true, ...store.get('explore', {}) };
+const expPrefs = { tiles: false, heat: false, rec: true, ...store.get('explore', {}) };
 const expKey = (x, y) => x * EXP_N + y;
 const expTileXY = (lat, lon) => {
   const r = lat * Math.PI / 180;
@@ -27,8 +27,6 @@ function tilesOf(coords, set = new Set()) {
   return set;
 }
 const newTilesOf = coords => { const out = new Set(); for (const k of tilesOf(coords)) if (!exp.tiles.has(k)) out.add(k); return out; };
-const freshShare = coords => { const all = tilesOf(coords); let n = 0; for (const k of all) if (!exp.tiles.has(k)) n++; return all.size ? n / all.size : 0; };
-const expPreferOn = () => expPrefs.prefer && exp.tiles.size > 0;
 
 // Nächstgelegene unbefahrene Kachel (Mitte) im Umkreis, sonst der Punkt selbst
 function nearestNewTile(ll, maxM) {
@@ -206,7 +204,7 @@ $('gpxRides').onchange = async e => {
     $('exploreStats').textContent = '⚠️ Speichern im Browser fehlgeschlagen: ' + err.message;
   }
 };
-for (const [id, key] of [['expTiles', 'tiles'], ['expHeat', 'heat'], ['expPrefer', 'prefer'], ['expRec', 'rec']]) {
+for (const [id, key] of [['expTiles', 'tiles'], ['expHeat', 'heat'], ['expRec', 'rec']]) {
   $(id).checked = expPrefs[key];
   $(id).onchange = () => { expPrefs[key] = $(id).checked; store.set('explore', expPrefs); expRender(); };
 }

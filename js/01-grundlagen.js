@@ -169,3 +169,6 @@ showRideStyle();
 
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
 const isEnd = i => i === 0 || i === waypoints.length - 1;
+
+const bearing = (from, to) => (Math.atan2((to.lng - from.lng) * Math.cos(from.lat * Math.PI / 180), to.lat - from.lat) * 180 / Math.PI + 360) % 360;
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
