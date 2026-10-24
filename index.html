@@ -74,6 +74,7 @@
   .route-cmp.main { border:1px solid #e4572e; }
   .route-cmp:before { display:none; }
   .route-cmp.leaflet-tooltip-left { margin-left:-4px; } .route-cmp.leaflet-tooltip-right { margin-left:4px; }
+  .stage-pin { background:#1d3557; color:#fff; border-radius:9px; font:bold 11px/18px system-ui,sans-serif; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.4); }
   .route-cmp b { color:#1a7f37; }
   .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
@@ -154,6 +155,11 @@
     <select id="wxWindow">
       <option value="15">± 15 min</option><option value="30" selected>± 30 min</option><option value="60">± 60 min</option><option value="0">aus</option>
     </select>
+    <label for="dayMax">Mehrtagestour: Fahrzeit pro Tag höchstens (Etappenende mit Zeltplätzen in der Nähe)</label>
+    <select id="dayMax">
+      <option value="0" selected>aus</option><option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option>
+      <option value="5">5 h</option><option value="6">6 h</option><option value="8">8 h</option>
+    </select>
     </details>
     <details id="poiBox" class="fold">
     <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
@@ -192,6 +198,7 @@
     </details>
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
+    <div id="stageSummary" class="hint"></div>
     <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
     <div id="elevation"></div>
     <div id="wxRouteSummary"></div>
@@ -276,8 +283,10 @@ let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufa
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
 let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
+let routeStages = [], currentTrip = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
+const stageLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
 const cacheLayer = L.layerGroup().addTo(map);
 let caches = [];
@@ -293,6 +302,7 @@ function setRouteCoords(coords) {
   $('wxRouteSummary').textContent = '';
   // nach showTrip, das routeKmh erst danach setzt
   queueMicrotask(loadRouteWeather);
+  routeStages = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   $('play').hidden = false;
   routeCoords = coords;
   routeKm = [0];
@@ -320,7 +330,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
@@ -331,7 +341,7 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '');
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -372,7 +382,7 @@ function renderWaypoints() {
     <span class="wp-input"><input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte"><button class="wp-clear" type="button" title="Text löschen" tabindex="-1">✕</button></span>
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
-    ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${hhmm(new Date(w.eta))}">⏱ ${durText(w.dur)}</span>` : ''}
+    ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${etaText(w.eta)}">⏱ ${durText(w.dur)}</span>` : ''}
     ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
@@ -600,6 +610,7 @@ function clearRoute() {
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
   wxShelter = false;
+  routeStages = []; currentTrip = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);
@@ -652,11 +663,98 @@ function routeBody(locs) {
   return body;
 }
 
+// Valhalla-Fehlercodes auf Deutsch, jeweils mit Hinweis, was hilft
+const VALHALLA_ERRORS = {
+  150: ['Zu viele Wegpunkte für den Routing-Server.', 'Einige Zwischenziele oder Formpunkte entfernen.'],
+  154: ['Strecke zu lang für den Routing-Server (höchstens 200 km Luftlinie je Abschnitt).', 'Zwischenziele setzen, damit jedes Teilstück kürzer wird.'],
+  157: ['Zu viele gemiedene Stellen.', 'Mit „Zurück“ einige „Straße meiden“ zurücknehmen.'],
+  170: ['Zwischen den Punkten gibt es keine Straßenverbindung.', 'Prüfen, ob ein Punkt auf einer Insel liegt oder nur per Fähre erreichbar ist, und ihn verschieben.'],
+  171: ['Kein befahrbarer Weg in der Nähe eines Punkts.', 'Den Punkt näher an eine Straße setzen; Feld-, Wald- und Radwege sind für Roller tabu.'],
+  442: ['Keine Route für den Roller gefunden.', 'Punkte näher an Straßen setzen, „Straße meiden“ zurücknehmen oder im Fahrprofil Hauptstraßen weniger strikt meiden.'],
+  443: ['Keine Route für den Roller gefunden.', 'Punkte näher an Straßen setzen oder ein Zwischenziel auf erlaubter Strecke ergänzen.']
+};
+function valhallaError(status, data) {
+  const code = data.error_code ?? (/max distance/i.test(data.error || '') ? 154 : null);
+  const known = VALHALLA_ERRORS[code];
+  if (known) return `${known[0]} 💡 ${known[1]}`;
+  if ([429, 502, 503, 504].includes(status)) return 'Routing-Server gerade ausgelastet. 💡 In einer Minute erneut berechnen.';
+  return `Routing-Fehler (${data.error || 'HTTP ' + status}). 💡 Punkte leicht verschieben oder später erneut versuchen.`;
+}
+
 async function fetchRoute(body) {
-  const res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  let res;
+  try { res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body) }); }
+  catch { throw new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen und erneut berechnen.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(valhallaError(res.status, data));
   return data;
+}
+
+// Die öffentliche Valhalla-Instanz rechnet höchstens 200 km Luftlinie je Anfrage. Lange Strecken: zwischen weit
+// entfernten Punkten Formpunkte auf der Luftlinie einfügen, in Anfragen bis MAX_REQUEST_KM teilen und wieder zusammensetzen.
+const MAX_REQUEST_KM = 180;
+function chunkLocations(locs) {
+  const pts = [];
+  locs.forEach((w, i) => {
+    if (i) {
+      const a = locs[i - 1].latlng, b = w.latlng, n = Math.ceil(a.distanceTo(b) / 1000 / (MAX_REQUEST_KM * 0.9));
+      for (let k = 1; k < n; k++) pts.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), shaping: true });
+    }
+    pts.push(w);
+  });
+  const chunks = [];
+  let cur = [pts[0]], sum = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = pts[i - 1].latlng.distanceTo(pts[i].latlng) / 1000;
+    if (sum + d > MAX_REQUEST_KM && cur.length > 1) { chunks.push(cur); cur = [pts[i - 1]]; sum = 0; }
+    cur.push(pts[i]); sum += d;
+  }
+  chunks.push(cur);
+  return chunks;
+}
+
+function encode(coords, precision = 6) {
+  const f = 10 ** precision;
+  let out = '', prev = [0, 0];
+  for (const c of coords) {
+    for (const axis of [0, 1]) {
+      const v = Math.round(c[axis] * f);
+      let d = v - prev[axis];
+      prev[axis] = v;
+      d = d < 0 ? ~(d << 1) : d << 1;
+      while (d >= 0x20) { out += String.fromCharCode((0x20 | (d & 0x1f)) + 63); d >>= 5; }
+      out += String.fromCharCode(d + 63);
+    }
+  }
+  return out;
+}
+
+// Zwei Abschnitte an einem Formpunkt verbinden: Ankunft/Abfahrt dort entfallen, Manöver-Indizes verschieben
+function joinLegs(a, b) {
+  const ca = decode(a.shape), cb = decode(b.shape);
+  return {
+    shape: encode([...ca, ...cb.slice(1)]),
+    maneuvers: [...a.maneuvers.slice(0, -1), ...b.maneuvers.slice(1).map(m => ({ ...m, begin_shape_index: m.begin_shape_index + ca.length - 1 }))],
+    summary: { length: a.summary.length + b.summary.length, time: a.summary.time + b.summary.time }
+  };
+}
+
+async function planRoute(locs, exclude = []) {
+  const chunks = chunkLocations(locs);
+  const trips = [];
+  for (const chunk of chunks) {
+    const body = routeBody(chunk);
+    if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
+    // Valhalla liefert Alternativen nur ohne Zwischenpunkte
+    if (chunks.length === 1 && locs.length === 2) body.alternates = 2;
+    const data = await fetchRoute(body);
+    if (chunks.length === 1) return data;
+    trips.push(data.trip);
+  }
+  const legs = [];
+  trips.forEach((t, k) => t.legs.forEach((l, j) => legs.push(k && !j && chunks[k][0].shaping ? joinLegs(legs.pop(), l) : l)));
+  const sum = f => legs.reduce((acc, l) => acc + l.summary[f], 0);
+  return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
 }
 
 let summaryNote = '';
@@ -670,10 +768,7 @@ async function route() {
     renderWaypoints();
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
-    const body = routeBody(locs);
-    // Valhalla liefert Alternativen nur ohne Zwischenpunkte
-    if (locs.length === 2) body.alternates = 2;
-    let data = await fetchRoute(body);
+    let data = await planRoute(locs);
     let incidents = [];
     if (tt.key) {
       try {
@@ -683,9 +778,8 @@ async function route() {
         const closed = tt.avoid ? incidents.filter(i => i.properties.iconCategory === 8 &&
           incidentPoints(i).some(([lat, lon]) => locateOnRoute(lat, lon, coords).dist < 30)) : [];
         if (closed.length) {
-          body.exclude_locations = [...(body.exclude_locations || []), ...closed.flatMap(closurePoints)].slice(0, 50);
           try {
-            data = await fetchRoute(body);
+            data = await planRoute(locs, closed.flatMap(closurePoints));
             summaryNote += ` · ${closed.length} Sperrung${closed.length > 1 ? 'en' : ''} umfahren`;
           } catch { summaryNote += ' · ⚠️ Sperrung auf der Route, keine Umfahrung gefunden'; }
         }
@@ -704,9 +798,14 @@ const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-di
 // Fahrzeit in s: eigener Schnitt aus dem Fahrprofil, sonst Valhalla (gilt für Abschnitte und ganze Route)
 const tripTime = s => +$('avgSpeed').value > 0 ? s.length / +$('avgSpeed').value * 3600 : s.time;
 const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; };
+// Uhrzeit, an anderen Tagen mit Wochentag (Mehrtagestour)
+const etaText = ts => {
+  const d = new Date(ts);
+  return d.toDateString() === new Date().toDateString() ? hhmm(d) : `${d.toLocaleDateString('de-DE', { weekday: 'short' })} ${hhmm(d)}`;
+};
 const tripText = s => {
   const t = tripTime(s), min = Math.round(t / 60);
-  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${hhmm(new Date(Date.now() + t * 1000))}`;
+  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + t * 1000)}`;
 };
 
 // Uhr im Header, auf die volle Minute synchronisiert
@@ -718,7 +817,7 @@ tick();
 
 function showTrip(trip, alternates = []) {
   waypoints.forEach(w => w.latlng && !w.shaping && rememberPlace(w.text, w.latlng));
-  loadWeather(trip);
+  currentTrip = trip;
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
@@ -731,6 +830,8 @@ function showTrip(trip, alternates = []) {
   if (alternates.length) compareRoutes([trip, ...alternates], pick);
   setRouteCoords(tripCoords(trip));
   routeKmh = trip.summary.length / (tripTime(trip.summary) / 3600);
+  planStages();
+  loadWeather(trip);
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
@@ -741,7 +842,7 @@ function showTrip(trip, alternates = []) {
   enableRouteEditing(routeLayer);
   if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
-  $('summary').textContent = tripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + summaryNote;
+  $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + summaryNote;
   summaryNote = '';
   $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
   loadElevation();
@@ -1239,6 +1340,87 @@ function renderIncidents(incidents) {
   };
 }
 
+// --- Mehrtagestour: Etappen nach Fahrzeit pro Tag, Etappenende auf einen Halt ziehen, Zeltplätze in der Nähe ---
+const DAY_START_HOUR = 9; // Weiterfahrt an Folgetagen
+let stageRequest = 0;
+
+// Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab DAY_START_HOUR
+function etaAtKm(km) {
+  const kmh = routeKmh || +$('speed').value * 0.8;
+  const day = routeStages.filter(e => e < km - 1e-6).length;
+  const from = day ? routeStages[day - 1] : 0;
+  let base = Date.now();
+  if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(DAY_START_HOUR, 0, 0, 0); base = d.getTime(); }
+  return base + (km - from) / kmh * 3600000;
+}
+
+const stageTripText = s => routeStages.length
+  ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${routeStages.length + 1} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
+  : tripText(s);
+
+function planStages() {
+  routeStages = [];
+  stageLayer.clearLayers();
+  $('stageSummary').textContent = '';
+  const hours = +$('dayMax').value, total = routeKm?.at(-1);
+  if (!hours || !total || !routeKmh) return;
+  const perDay = routeKmh * hours;
+  if (total <= perDay * 1.1) return;
+  // Halte (keine Formpunkte) als bevorzugte Etappenenden
+  const located = waypoints.filter(w => w.latlng);
+  const stopKms = located.filter((w, i) => i && i < located.length - 1 && !w.shaping).map(w => locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+  let from = 0;
+  while (total - from > perDay * 1.1) {
+    const target = from + perDay;
+    const near = stopKms.filter(k => k > from + perDay * 0.5 && Math.abs(k - target) <= perDay * 0.15).sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
+    from = near ?? target;
+    routeStages.push(from);
+  }
+  const ends = [...routeStages, total];
+  $('stageSummary').textContent = '🌙 ' + ends.map((e, d) => `Tag ${d + 1}: ${(e - (d ? ends[d - 1] : 0)).toFixed(0)} km`).join(' · ');
+  routeStages.forEach((km, d) => {
+    L.marker(pointAtKm(km), { zIndexOffset: 500, icon: L.divIcon({ className: 'stage-pin', html: `🌙${d + 1}`, iconSize: [30, 18], iconAnchor: [15, 9] }) })
+      .bindTooltip(`Ende Tag ${d + 1} · km ${km.toFixed(0)} · an ca. ${etaText(etaAtKm(km))}`).addTo(stageLayer);
+  });
+  loadStageCamps();
+}
+
+async function loadStageCamps() {
+  const req = ++stageRequest;
+  const around = routeStages.map(km => pointAtKm(km)).map(([la, lo]) => `nwr[tourism=camp_site](around:8000,${la.toFixed(5)},${lo.toFixed(5)});`).join('');
+  try {
+    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:30];(${around});out center tags;`) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (req !== stageRequest) return;
+    for (const el of data.elements) {
+      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+      if (lat == null) continue;
+      const ll = L.latLng(lat, lon), name = el.tags?.name || 'Zeltplatz';
+      L.marker(ll, { icon: L.divIcon({ className: 'poi-icon', html: '⛺', iconSize: [24, 24] }), title: name })
+        .bindPopup(() => {
+          const box = document.createElement('div');
+          box.innerHTML = `<b>⛺ ${escapeHtml(name)}</b>`;
+          box.append(menuBox([['via', 'Als Übernachtung (Zwischenziel)']], () =>
+            changeWaypoints(() => { insertVia(ll); waypoints.find(w => w.latlng === ll).text = name; })));
+          return box;
+        }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
+    }
+    const n = data.elements.length;
+    $('stageSummary').textContent += n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km';
+  } catch (err) {
+    if (req === stageRequest) $('stageSummary').textContent += ` · ⚠️ Zeltplätze: ${err.message}`;
+  }
+}
+
+$('dayMax').addEventListener('change', () => {
+  if (!currentTrip || !routeCoords) return;
+  planStages();
+  loadWeather(currentTrip);
+  loadRouteWeather();
+  $('summary').textContent = stageTripText(currentTrip.summary);
+});
+
 // --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
 const wxRouteLayer = L.layerGroup().addTo(map);
 let wxRouteRequest = 0;
@@ -1267,13 +1449,13 @@ async function loadRouteWeather() {
   const start = Date.now(), samples = [];
   for (let km = 0; km <= total + 0.01; km += step) {
     const k = Math.min(km, total);
-    samples.push({ km: k, ll: pointAtKm(k), at: start + k / kmh * 3600000 });
+    samples.push({ km: k, ll: pointAtKm(k), at: etaAtKm(k) });
   }
   try {
     const qs = new URLSearchParams({
       latitude: samples.map(p => p.ll[0].toFixed(3)).join(','), longitude: samples.map(p => p.ll[1].toFixed(3)).join(','),
       minutely_15: 'precipitation,snowfall,weather_code,temperature_2m,wind_gusts_10m',
-      forecast_days: 2, timeformat: 'unixtime', wind_speed_unit: 'kmh'
+      forecast_days: Math.min(7, routeStages.length + 2), timeformat: 'unixtime', wind_speed_unit: 'kmh'
     });
     const res = await fetch(`${WEATHER_URL}?${qs}`);
     if (!res.ok || req !== wxRouteRequest) return;
@@ -1304,12 +1486,12 @@ async function loadRouteWeather() {
     const p0 = sec.points[0], hz = sec.hazard;
     const details = hz.detail ? ' · ' + hz.detail(p0.hit) : '';
     L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'poi-icon', html: hz.icon, iconSize: [24, 24] }) })
-      .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${hhmm(new Date(p0.at))}${details}`)
+      .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${etaText(p0.at)}${details}`)
       .addTo(wxRouteLayer);
   }
   setWxShelter(sections.some(sec => SHELTER_HAZARDS.includes(sec.hazard.id)));
   $('wxRouteSummary').textContent = sections.length
-    ? '⚠️ Wetter unterwegs: ' + sections.slice(0, 4).map(s => `${s.hazard.icon} ${s.hazard.name} ab km ${s.from.toFixed(0)} (ca. ${hhmm(new Date(s.points[0].at))})`).join(' · ')
+    ? '⚠️ Wetter unterwegs: ' + sections.slice(0, 4).map(s => `${s.hazard.icon} ${s.hazard.name} ab km ${s.from.toFixed(0)} (ca. ${etaText(s.points[0].at)})`).join(' · ')
       + (sections.length > 4 ? ` · +${sections.length - 4}` : '')
     : '';
 }
@@ -1333,7 +1515,13 @@ async function loadWeather(trip) {
   waypoints.forEach(w => { delete w.wx; });
   let t = Date.now();
   const now = t;
-  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000; w.eta = t; w.dur = (t - now) / 1000; });
+  stops.forEach((w, k) => {
+    if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000;
+    // w.dur = reine Fahrzeit; bei Mehrtagestour liegt die Ankunft am jeweiligen Etappentag
+    w.dur = (t - now) / 1000;
+    w.eta = !routeStages.length ? t : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+  });
+  const days = routeStages.length + 1;
   // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
   renderWaypoints();
   try {
@@ -1341,7 +1529,7 @@ async function loadWeather(trip) {
       latitude: stops.map(w => w.latlng.lat.toFixed(3)).join(','),
       longitude: stops.map(w => w.latlng.lng.toFixed(3)).join(','),
       hourly: 'weather_code,temperature_2m,precipitation_probability,wind_speed_10m',
-      forecast_days: 3, timeformat: 'unixtime', wind_speed_unit: 'kmh'
+      forecast_days: Math.min(16, days + 2), timeformat: 'unixtime', wind_speed_unit: 'kmh'
     });
     const res = await fetch(`${WEATHER_URL}?${qs}`);
     if (!res.ok) return;
@@ -1357,7 +1545,7 @@ async function loadWeather(trip) {
       const [, icon, text] = wmo(h.weather_code[idx]);
       w.wx = {
         icon, temp: Math.round(h.temperature_2m[idx]),
-        title: `${hhmm(new Date(w.eta))}: ${text}, ${Math.round(h.temperature_2m[idx])} °C, Regen ${h.precipitation_probability[idx] ?? '–'} %, Wind ${Math.round(h.wind_speed_10m[idx])} km/h`
+        title: `${etaText(w.eta)}: ${text}, ${Math.round(h.temperature_2m[idx])} °C, Regen ${h.precipitation_probability[idx] ?? '–'} %, Wind ${Math.round(h.wind_speed_10m[idx])} km/h`
       };
     });
     renderWaypoints();
