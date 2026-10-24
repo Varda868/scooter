@@ -130,6 +130,10 @@
     <fieldset id="poiTypes">
       <legend>Anzeigen</legend>
     </fieldset>
+    <fieldset id="brands">
+      <legend>🔧 Werkstätten: Marken (keine = alle)</legend>
+    </fieldset>
+    <input id="brand" type="text" placeholder="weitere Marken, z. B. Sherco, Motron">
     <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
     <input id="radius" type="range" min="100" max="2000" step="100" value="500">
     </details>
@@ -186,7 +190,10 @@ const POI_TYPES = [
   { id: 'water', icon: '🚰', name: 'Trinkwasser', filters: [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
-  { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] }
+  { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
+  // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis; standardmäßig aus
+  { id: 'workshop', icon: '🔧', name: 'Zweiradwerkstatt', off: true, minRadius: 2000, filters: [
+    '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]' ] }
 ];
 
 const map = L.map('map').setView([51.16, 10.45], 6);
@@ -249,8 +256,13 @@ $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
 $('radius').onchange = () => { loadPois(); renderCaches(); };
 $('cachesNearRoute').onchange = () => renderCaches();
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
-  `<label><input type="checkbox" value="${t.id}" checked> ${t.icon} ${t.name}</label>`).join(''));
+  `<label><input type="checkbox" value="${t.id}"${t.off ? '' : ' checked'}> ${t.icon} ${t.name}</label>`).join(''));
 $('poiTypes').onchange = () => loadPois();
+$('brand').onchange = () => loadPois();
+// Nur Marken, die aktuell 50er/45-km/h-Fahrzeuge anbieten (Honda und Yamaha nur noch elektrisch: EM1 e:, Neo's). Suzuki hat keine mehr.
+const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju', 'Beta', 'Kreidler', 'Rex', 'Nova Motors', 'Baotian', 'Niu', 'Honda', 'Yamaha'];
+$('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
+$('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
 const SETTING_IDS = ['speed', 'primary', 'hills', 'radius'];
 const settings = store.get('settings', {});
@@ -1410,8 +1422,8 @@ async function loadPois() {
   const req = ++poiRequest;
   $('poiSummary').textContent = 'Suche POIs …';
   const line = simplify(routeCoords).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
-  const around = `(around:${+$('radius').value},${line})`;
-  const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around};`)).join('')});out center tags;`;
+  const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
+  const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   try {
     const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
     if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
@@ -1422,14 +1434,14 @@ async function loadPois() {
       const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
       const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
       return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
-    }).filter(Boolean).sort((a, b) => a.km - b.km);
+    }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
 
     for (const p of pois) {
       const title = p.tags.name || p.tags.brand || p.type.name;
       p.marker = L.marker([p.lat, p.lon], {
         icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
       }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
-        (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '')).addTo(poiLayer);
+        (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
     }
     $('poiSummary').textContent = pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.';
     $('pois').innerHTML = pois.map((p, i) =>
@@ -1556,6 +1568,28 @@ function renderCaches() {
 }
 
 // Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"
+// Hersteller stehen in OSM uneinheitlich (brand, brands, motorcycle:…, name, description): in allen Tags suchen
+function brandMatch(tags) {
+  const words = [...$('brands').querySelectorAll('input:checked')].map(i => i.value.toLowerCase())
+    .concat($('brand').value.toLowerCase().split(/[,;\s]+/).filter(Boolean));
+  const all = Object.entries(tags).map(([k, v]) => `${k}=${v}`).join(' ').toLowerCase();
+  // Vespa ist eine Piaggio-Marke
+  // Ganze Wörter, damit z. B. "Rex" oder "Beta" nicht in anderen Namen trifft
+  const has = w => new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(all);
+  return !words.length || words.some(w => has(w) || (w === 'vespa' && has('piaggio')));
+}
+function workshopInfo(p) {
+  if (p.type.id !== 'workshop') return '';
+  const t = p.tags;
+  const brands = t.brand || t.brands || t['motorcycle:brands'] ||
+    Object.keys(t).filter(k => /^(motorcycle|scooter):(?!repair|sales|parts|rental|clothes|tyres|type)/.test(k) && t[k] === 'yes').map(k => k.split(':')[1]).join(', ');
+  const web = t.website || t['contact:website'], phone = t.phone || t['contact:phone'];
+  return (brands ? `<br>Marken: ${escapeHtml(brands)}` : '') +
+    (t['motorcycle:repair'] === 'yes' || t.shop === 'motorcycle_repair' || t.craft ? '<br>🔧 Reparatur' : '') +
+    (phone ? `<br>📞 <a href="tel:${escapeHtml(phone.replace(/[^\d+]/g, ''))}">${escapeHtml(phone)}</a>` : '') +
+    (web && /^https?:\/\//.test(web) ? `<br><a href="${escapeHtml(web)}" target="_blank" rel="noopener">Website</a>` : '');
+}
+
 function matches(tags, filter) {
   return [...filter.matchAll(/\[(\w+)(!?=)([^\]]+)\]/g)].every(([, k, op, v]) =>
     op === '=' ? tags[k] === v : tags[k] !== v);
