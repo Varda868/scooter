@@ -37,6 +37,11 @@
   #navRest { flex:1; opacity:.85; }
   .nav-stats button { margin:0; width:44px; padding:6px; background:rgba(255,255,255,.15); font-size:18px; }
   #navVoice.off { opacity:.45; }
+  .nav-zoom { position:absolute; z-index:1001; right:10px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px; }
+  .nav-zoom[hidden] { display:none; }
+  .nav-zoom button { margin:0; width:58px; height:58px; padding:0; border-radius:50%; background:#1d3557; color:#fff; font-size:30px;
+    box-shadow:0 2px 8px rgba(0,0,0,.45); }
+  .nav-zoom #navZoomAuto { font-size:14px; }
   .nav-note { font-size:13px; opacity:.85; margin-top:4px; }
   .nav-note:empty { display:none; }
   .nav-dot { width:30px; height:30px; border-radius:50%; background:#1d3557; color:#fff; border:3px solid #fff; display:flex;
@@ -73,6 +78,9 @@
   .file-btn { display:block; margin-top:14px; padding:8px; border:1px dashed var(--line); border-radius:6px; text-align:center; cursor:pointer; color:var(--fg); font-size:14px; }
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
+  /* Unwetter: schlanker farbiger Ring je Gefahr */
+  .wx-pin span { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border:1.5px solid; border-radius:50%;
+    background:rgba(255,255,255,.75); font-size:15px; line-height:1; box-shadow:0 0 2px rgba(0,0,0,.3); }
   #wpList { list-style:none; padding:0; margin:0; }
   #wpList li { margin:4px 0; position:relative; }
   .suggest { position:absolute; left:26px; right:0; top:32px; z-index:1000; background:var(--bg); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.2); max-height:260px; overflow-y:auto; }
@@ -176,6 +184,14 @@
       <option value="0" selected>aus</option><option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option>
       <option value="5">5 h</option><option value="6">6 h</option><option value="8">8 h</option>
     </select>
+    <label for="breakMin">Pause je 2 h Fahrt (für Ankunftszeiten)</label>
+    <select id="breakMin">
+      <option value="0" selected>keine</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
+    </select>
+    <label for="dayStart">Mehrtagestour: Weiterfahrt an Folgetagen um</label>
+    <select id="dayStart">
+      <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option>
+    </select>
     </details>
     <details id="poiBox" class="fold">
     <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
@@ -236,6 +252,10 @@
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
       <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
+  </div>
+  <div id="navZoom" class="nav-zoom" hidden>
+    <button data-z="1" title="Näher (auch Taste + / ↑ / Bild↑)">＋</button><button data-z="-1" title="Weiter weg (auch Taste − / ↓ / Bild↓)">－</button>
+    <button data-z="0" id="navZoomAuto" title="Zoom wieder nach Tempo" hidden>Auto</button>
   </div>
   <div id="sim" class="sim" hidden>
     <div class="sim-turn"><span id="simArrow">↑</span><div><b id="simDist"></b><div id="simText"></div></div></div>
@@ -376,7 +396,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax', 'breakMin', 'dayStart'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
@@ -387,7 +407,7 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '');
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -850,9 +870,11 @@ const etaText = ts => {
   const d = new Date(ts);
   return d.toDateString() === new Date().toDateString() ? hhmm(d) : `${d.toLocaleDateString('de-DE', { weekday: 'short' })} ${hhmm(d)}`;
 };
+// Fahrzeit plus Pausen (je volle 2 h Fahrt eine Pause aus dem Fahrprofil)
+const withBreaks = sec => sec + Math.floor(sec / 7200) * +$('breakMin').value * 60;
 const tripText = s => {
   const t = tripTime(s), min = Math.round(t / 60);
-  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + t * 1000)}`;
+  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + withBreaks(t) * 1000)}`;
 };
 
 // Uhr im Header, auf die volle Minute synchronisiert
@@ -1348,8 +1370,9 @@ function startNav() {
   if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
   stopSim();
   if (me.follow) $('centerBtn').click();
-  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17 });
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null });
   $('nav').hidden = false;
+  $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
   $('navSpeed').textContent = ''; $('navRest').textContent = '';
   setFull(true);
@@ -1370,6 +1393,7 @@ function stopNav() {
   window.speechSynthesis?.cancel();
   nav.marker?.remove(); nav.marker = null;
   $('nav').hidden = true;
+  $('navZoom').hidden = true;
   setFull(false);
 }
 
@@ -1421,12 +1445,36 @@ function navFix(pos) {
     else if (m < far && !nav.said.has(key + 'far')) { nav.said.add(key + 'far'); say(`In ${Math.round(m / 50) * 50} Metern: ${next.verbal || next.text}`); }
   }
   $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : '';
-  $('navRest').textContent = `noch ${distText(restM)} · an ${etaText(Date.now() + (total - nav.km) / (routeKmh || 35) * 3600000)}`;
+  // Mehrtagestour: Ziel des heutigen Tages ist das nächste Etappenende
+  const stageEnd = routeStages.find(e => e > nav.km + 0.05), goal = stageEnd ?? total;
+  const restSec = (goal - nav.km) / (routeKmh || 35) * 3600;
+  $('navRest').innerHTML = `${stageEnd != null ? `🌙 Etappe ${routeStages.indexOf(stageEnd) + 1}: ` : ''}noch ${distText((goal - nav.km) * 1000)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + withBreaks(restSec) * 1000)}`;
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
-  map.setView(ll, nav.zoom, { animate: true });
+  map.setView(ll, nav.manual ?? nav.zoom, { animate: true });
 }
+
+// Handzoom im Navi: große Knöpfe und Tasten einer Bluetooth-Lenkerfernbedienung. Lautstärketasten erreichen
+// Webseiten auf Android/iOS normalerweise nicht; kommen sie doch an (manche Fernbedienungen), zählen sie mit.
+// Die Stufe bleibt, bis "Auto" getippt wird.
+function navZoom(step) {
+  nav.manual = step ? Math.max(12, Math.min(19, Math.round(nav.manual ?? map.getZoom()) + step)) : null;
+  // Läuft noch eine Zoom-Animation vom letzten GPS-Fix, würde sie den Handzoom am Ende überschreiben
+  const apply = () => map.setZoom(nav.manual ?? nav.zoom, { animate: false });
+  if (map._animatingZoom) map.once('zoomend', apply); else apply();
+  $('navZoomAuto').hidden = nav.manual == null;
+}
+map.getContainer().appendChild($('navZoom'));
+L.DomEvent.disableClickPropagation($('navZoom'));
+$('navZoom').onclick = e => { const z = e.target.closest('button')?.dataset.z; if (z != null) navZoom(+z); };
+const NAV_KEYS = { '+': 1, '=': 1, ArrowUp: 1, PageUp: 1, AudioVolumeUp: 1, VolumeUp: 1,
+  '-': -1, ArrowDown: -1, PageDown: -1, AudioVolumeDown: -1, VolumeDown: -1 };
+document.addEventListener('keydown', e => {
+  if (!nav.on || !(e.key in NAV_KEYS) || e.target.closest?.('input, textarea, select')) return;
+  e.preventDefault();
+  navZoom(NAV_KEYS[e.key]);
+});
 
 $('navStart').onclick = startNav;
 $('navStop').onclick = stopNav;
@@ -1521,17 +1569,16 @@ function renderIncidents(incidents) {
 }
 
 // --- Mehrtagestour: Etappen nach Fahrzeit pro Tag, Etappenende auf einen Halt ziehen, Zeltplätze in der Nähe ---
-const DAY_START_HOUR = 9; // Weiterfahrt an Folgetagen
 let stageRequest = 0;
 
-// Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab DAY_START_HOUR
+// Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab der eingestellten Startzeit; Pausen je Tag gezählt
 function etaAtKm(km) {
   const kmh = routeKmh || +$('speed').value * 0.8;
   const day = routeStages.filter(e => e < km - 1e-6).length;
   const from = day ? routeStages[day - 1] : 0;
   let base = Date.now();
-  if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(DAY_START_HOUR, 0, 0, 0); base = d.getTime(); }
-  return base + (km - from) / kmh * 3600000;
+  if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(+$('dayStart').value, 0, 0, 0); base = d.getTime(); }
+  return base + withBreaks((km - from) / kmh * 3600) * 1000;
 }
 
 const stageTripText = s => routeStages.length
@@ -1565,16 +1612,44 @@ function planStages() {
   loadStageCamps();
 }
 
+// Zeltplätze um Punkte: zuerst Overpass, fällt es aus, Nominatim (Sonderbegriff „Campingplatz“ = tourism=camp_site),
+// zuletzt Photon (komoot). Rückgabe { camps: [{ lat, lon, name }], source }
+const PHOTON_URL = 'https://photon.komoot.io/api/';
+async function findCamps(points, radiusM = 8000) {
+  try {
+    const around = points.map(([la, lo]) => `nwr[tourism=camp_site](around:${radiusM},${la.toFixed(5)},${lo.toFixed(5)});`).join('');
+    const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
+    return { source: 'Overpass', camps: data.elements.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags?.name })).filter(c => c.lat != null) };
+  } catch {}
+  // Umkreis als Rechteck um jeden Punkt
+  const boxes = points.map(([la, lo]) => { const dLat = radiusM / 111320, dLon = dLat / Math.cos(la * Math.PI / 180); return [lo - dLon, la - dLat, lo + dLon, la + dLat]; });
+  const dedupe = list => [...new Map(list.map(c => [`${c.lat.toFixed(4)},${c.lon.toFixed(4)}`, c])).values()];
+  try {
+    const camps = [];
+    for (const [w, so, e, n] of boxes) {
+      const res = await fetch(`${NOMINATIM_URL}?format=json&limit=30&bounded=1&accept-language=de&q=Campingplatz&viewbox=${w},${n},${e},${so}`);
+      if (!res.ok) throw new Error();
+      for (const r of await res.json()) if (r.class === 'tourism' && r.type === 'camp_site') camps.push({ lat: +r.lat, lon: +r.lon, name: r.name || r.display_name?.split(',')[0] });
+      await new Promise(ok => setTimeout(ok, 1100)); // Nominatim: höchstens 1 Anfrage pro Sekunde
+    }
+    return { source: 'Nominatim', camps: dedupe(camps) };
+  } catch {}
+  const camps = [];
+  for (const [w, so, e, n] of boxes) {
+    const res = await fetch(`${PHOTON_URL}?q=camping&osm_tag=tourism:camp_site&limit=30&bbox=${w},${so},${e},${n}`);
+    if (!res.ok) throw new Error('Zeltplatz-Suche: kein Dienst erreichbar (Overpass, Nominatim, Photon). 💡 Später erneut versuchen.');
+    for (const f of (await res.json()).features || []) camps.push({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], name: f.properties?.name });
+  }
+  return { source: 'Photon', camps: dedupe(camps) };
+}
+
 async function loadStageCamps() {
   const req = ++stageRequest;
-  const around = routeStages.map(km => pointAtKm(km)).map(([la, lo]) => `nwr[tourism=camp_site](around:8000,${la.toFixed(5)},${lo.toFixed(5)});`).join('');
   try {
-    const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
+    const { camps, source } = await findCamps(routeStages.map(km => pointAtKm(km)));
     if (req !== stageRequest) return;
-    for (const el of data.elements) {
-      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-      if (lat == null) continue;
-      const ll = L.latLng(lat, lon), name = el.tags?.name || 'Zeltplatz';
+    for (const c of camps) {
+      const ll = L.latLng(c.lat, c.lon), name = c.name || 'Zeltplatz';
       L.marker(ll, { icon: L.divIcon({ className: 'poi-icon', html: '⛺', iconSize: [24, 24] }), title: name })
         .bindPopup(() => {
           const box = document.createElement('div');
@@ -1584,20 +1659,21 @@ async function loadStageCamps() {
           return box;
         }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
     }
-    const n = data.elements.length;
-    $('stageSummary').textContent += n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km';
+    const n = camps.length, via = source === 'Overpass' ? '' : ` (über ${source})`;
+    $('stageSummary').textContent += (n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km') + via;
   } catch (err) {
     if (req === stageRequest) $('stageSummary').textContent += ` · ⚠️ Zeltplätze: ${err.message}`;
   }
 }
 
-$('dayMax').addEventListener('change', () => {
+const replanTimes = () => {
   if (!currentTrip || !routeCoords) return;
   planStages();
   loadWeather(currentTrip);
   loadRouteWeather();
   $('summary').textContent = stageTripText(currentTrip.summary);
-});
+};
+['dayMax', 'breakMin', 'dayStart'].forEach(id => $(id).addEventListener('change', replanTimes));
 
 // --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
 const wxRouteLayer = L.layerGroup().addTo(map);
@@ -1610,12 +1686,12 @@ function setWxShelter(on) {
 }
 // Reihenfolge = Vorrang, wenn an einem Punkt mehreres zutrifft
 const WX_HAZARDS = [
-  { id: 'storm', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
-  { id: 'ice', icon: '🧊', name: 'Glättegefahr', test: v => [56, 57, 66, 67].includes(v.code) || (v.temp <= 1 && v.precip > 0) || v.temp <= 0,
+  { id: 'storm', color: '#c0392b', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
+  { id: 'ice', color: '#1f6fb2', icon: '🧊', name: 'Glättegefahr', test: v => [56, 57, 66, 67].includes(v.code) || (v.temp <= 1 && v.precip > 0) || v.temp <= 0,
     detail: v => `${Math.round(v.temp)} °C` },
-  { id: 'snow', icon: '🌨️', name: 'Schnee', test: v => v.snow > 0, detail: v => `${v.snow.toFixed(1)} cm/15 min` },
-  { id: 'wind', icon: '💨', name: 'Sturmböen', test: v => v.gust >= 55, detail: v => `Böen ${Math.round(v.gust)} km/h` },
-  { id: 'rain', icon: '🌧️', name: 'Regen', test: v => v.precip >= 0.3, detail: v => `${v.precip.toFixed(1)} mm/15 min` }
+  { id: 'snow', color: '#5fa8d3', icon: '🌨️', name: 'Schnee', test: v => v.snow > 0, detail: v => `${v.snow.toFixed(1)} cm/15 min` },
+  { id: 'wind', color: '#7a7a7a', icon: '💨', name: 'Sturmböen', test: v => v.gust >= 55, detail: v => `Böen ${Math.round(v.gust)} km/h` },
+  { id: 'rain', color: '#2e86e4', icon: '🌧️', name: 'Regen', test: v => v.precip >= 0.3, detail: v => `${v.precip.toFixed(1)} mm/15 min` }
 ];
 
 async function loadRouteWeather() {
@@ -1663,7 +1739,7 @@ async function loadRouteWeather() {
   for (const sec of sections) {
     const p0 = sec.points[0], hz = sec.hazard;
     const details = hz.detail ? ' · ' + hz.detail(p0.hit) : '';
-    L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'poi-icon', html: hz.icon, iconSize: [24, 24] }) })
+    L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'wx-pin', html: `<span style="border-color:${hz.color}">${hz.icon}</span>`, iconSize: [28, 28] }) })
       .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${etaText(p0.at)}${details}`)
       .addTo(wxRouteLayer);
   }
@@ -1697,7 +1773,7 @@ async function loadWeather(trip) {
     if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000;
     // w.dur = reine Fahrzeit; bei Mehrtagestour liegt die Ankunft am jeweiligen Etappentag
     w.dur = (t - now) / 1000;
-    w.eta = !routeStages.length ? t : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+    w.eta = !routeStages.length ? now + withBreaks(w.dur) * 1000 : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
   });
   const days = routeStages.length + 1;
   // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
@@ -2062,10 +2138,21 @@ async function loadPois() {
   const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
   const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   try {
-    const data = await overpassFetch(query);
+    let elements, note = '';
+    try { elements = (await overpassFetch(query)).elements; }
+    catch (err) {
+      // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
+      const camp = active.find(t => t.id === 'camp');
+      if (!camp) throw err;
+      const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
+      const n = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
+      const { camps, source } = await findCamps(Array.from({ length: n }, (_, i) => pointAtKm(total * i / (n - 1))), rad);
+      elements = camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } }));
+      note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
+    }
     if (req !== poiRequest) return;
 
-    const pois = data.elements.map(el => {
+    const pois = elements.map(el => {
       const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
       const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
       return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
@@ -2079,7 +2166,7 @@ async function loadPois() {
         (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
     }
     $('poiSummary').textContent = (pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
-      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '');
+      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '') + note;
     $('pois').innerHTML = pois.map((p, i) =>
       `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
     $('pois').onclick = e => {
