@@ -1,9 +1,10 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png'];
 const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
 
@@ -30,7 +31,9 @@ async function trimTiles(cache) {
 
 self.addEventListener('fetch', e => {
   const req = e.request, url = new URL(req.url);
-  if (req.method !== 'GET') return;
+  // Range-Anfragen (PMTiles-Kartendatei) nicht anfassen: 206-Antworten lassen sich nicht cachen,
+  // die Kacheln der Vektorkarte speichert die App selbst in IndexedDB
+  if (req.method !== 'GET' || req.headers.has('range') || url.pathname.endsWith('.pmtiles')) return;
 
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
@@ -53,8 +56,9 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Übrige App-Dateien (Leaflet, Icons, Manifest): Speicher zuerst, im Hintergrund auffrischen
-  if (url.origin === location.origin || req.url.startsWith(LEAFLET)) {
+  // Übrige App-Dateien (Leaflet, MapLibre, Icons, Manifest) und Schriften/Symbole der Vektorkarte:
+  // Speicher zuerst, im Hintergrund auffrischen. Dieser Speicher wird nie gekürzt, ohne Schriften keine Vektorkacheln.
+  if (url.origin === location.origin || req.url.startsWith(LEAFLET) || req.url.startsWith(CDN) || url.hostname === 'protomaps.github.io') {
     e.respondWith(caches.open(SHELL).then(async cache => {
       const hit = await cache.match(req);
       const net = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; });
