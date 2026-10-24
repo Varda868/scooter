@@ -255,7 +255,29 @@
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const VALHALLA_HEIGHT_URL = VALHALLA_URL.replace(/\/route$/, '/height');
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+// Hauptserver plus Spiegel; bei Überlast (429/504, oft ohne CORS-Kopf → "NetworkError") wird der nächste versucht
+const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+// Overpass erlaubt je Nutzer nur wenige gleichzeitige Abfragen: alle nacheinander über eine Warteschlange,
+// bei Fehler der Reihe nach die Spiegelserver. Der zuletzt erfolgreiche Server wird zuerst gefragt.
+let overpassQueue = Promise.resolve(), overpassBest = 0;
+function overpassFetch(query) {
+  const run = async () => {
+    for (let n = 0; n < OVERPASS_URLS.length; n++) {
+      const k = (overpassBest + n) % OVERPASS_URLS.length;
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
+      try {
+        const res = await fetch(OVERPASS_URLS[k], { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctl.signal });
+        if (res.ok) { overpassBest = k; return await res.json(); }
+        if (res.status === 400) throw Object.assign(new Error('Abfrage ungültig'), { fatal: true });
+      } catch (err) { if (err.fatal) throw err; }
+      finally { clearTimeout(timer); }
+    }
+    throw new Error('OSM-Datenserver (Overpass) nicht erreichbar oder überlastet. 💡 In einer Minute Route neu berechnen.');
+  };
+  const p = overpassQueue.then(run, run);
+  overpassQueue = p.catch(() => {});
+  return p;
+}
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 
 // Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
@@ -1547,9 +1569,7 @@ async function loadStageCamps() {
   const req = ++stageRequest;
   const around = routeStages.map(km => pointAtKm(km)).map(([la, lo]) => `nwr[tourism=camp_site](around:8000,${la.toFixed(5)},${lo.toFixed(5)});`).join('');
   try {
-    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:30];(${around});out center tags;`) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
     if (req !== stageRequest) return;
     for (const el of data.elements) {
       const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
@@ -1916,9 +1936,7 @@ const PLACE_WEIGHT = { town: 1, village: 0.8, hamlet: 1 };
 const SNAP_ROADS = '^(primary|secondary|tertiary|unclassified|residential|living_street)$';
 
 async function overpass(query) {
-  const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(`[out:json][timeout:25];${query}`) });
-  if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-  return (await res.json()).elements;
+  return (await overpassFetch(`[out:json][timeout:25];${query}`)).elements;
 }
 
 const aroundQuery = (filter, items) => `(${[...new Set(items.map(([ll, rad]) =>
@@ -2044,9 +2062,7 @@ async function loadPois() {
   const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
   const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   try {
-    const res = await fetch(OVERPASS_URL, { method: 'POST', body: 'data=' + encodeURIComponent(query) });
-    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
-    const data = await res.json();
+    const data = await overpassFetch(query);
     if (req !== poiRequest) return;
 
     const pois = data.elements.map(el => {
