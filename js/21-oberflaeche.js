@@ -1,5 +1,6 @@
 // --- Oberfläche: Leiste in Reiter gegliedert (Tour, Unterwegs, Entdecker, Roller, Einstellung).
-// Am Handy liegt die Leiste unten unter der Karte und lässt sich auf Kopf und Reiter einklappen.
+// Am Handy liegt die Leiste unten unter der Karte und lässt sich auf Kopf und Reiter einklappen,
+// auf Tablet und PC links und lässt sich auf eine schmale Spalte mit den Reitern einklappen.
 function showTab(name) {
   if (!$('tab-' + name)) name = 'tour';
   document.querySelectorAll('#tabs [data-tab]').forEach(b => {
@@ -17,11 +18,12 @@ $('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) show
 function setSheet(open) {
   const was = !document.body.classList.contains('sheet-min');
   document.body.classList.toggle('sheet-min', !open);
-  $('sheetBtn').textContent = open ? '▾' : '▴';
+  $('sheetBtn').textContent = innerWidth > 700 ? (open ? '◂' : '▸') : open ? '▾' : '▴';
   $('sheetBtn').setAttribute('aria-expanded', open);
   if (was !== open) setTimeout(() => map.invalidateSize(), 50);
 }
 $('sheetBtn').onclick = () => setSheet(document.body.classList.contains('sheet-min'));
+matchMedia('(max-width:700px)').addEventListener('change', () => setSheet(!document.body.classList.contains('sheet-min')));
 
 // Einzelne Bereiche in eigenem Reiter immer offen
 $('exploreBox').open = $('rollerBox').open = true;
