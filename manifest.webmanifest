@@ -1,15 +1,95 @@
 {
+  "id": "./",
   "name": "Scooterways – Routenplaner für 50er",
   "short_name": "Scooterways",
-  "start_url": "./",
+  "description": "Routen für 50er-Roller: kleine Straßen, Navi mit Sprachansage, Rundtouren, Entdecker-Karte und Gruppenfunk.",
+  "start_url": "./?quelle=app",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "orientation": "any",
+  "background_color": "#e4572e",
   "theme_color": "#e4572e",
   "lang": "de",
+  "dir": "ltr",
+  "categories": [
+    "navigation",
+    "travel",
+    "sports"
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-mono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "monochrome"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Tour planen",
+      "short_name": "Tour",
+      "url": "./?tab=tour",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Talk: Gruppenfunk",
+      "short_name": "Talk",
+      "url": "./?tab=unterwegs&talk=1",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Entdecker-Karte",
+      "short_name": "Entdecker",
+      "url": "./?tab=entdecker",
+      "icons": [
+        {
+          "src": "icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

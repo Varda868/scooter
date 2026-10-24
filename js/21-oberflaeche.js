@@ -43,4 +43,19 @@ function updateBadges() {
 ['pois', 'caches', 'rollerDue'].forEach(id => new MutationObserver(updateBadges).observe($(id), { childList: true, characterData: true, subtree: true }));
 updateBadges();
 
-showTab(settings.tab || 'tour');
+// Verknüpfungen der installierten App (Langdruck aufs Symbol): ?tab=… wählt den Reiter, talk=1 klappt Talk auf
+const startParams = new URLSearchParams(location.search);
+showTab(startParams.get('tab') || settings.tab || 'tour');
+if (startParams.get('talk') === '1') $('talkBox').open = true;
+if (location.search) history.replaceState(null, '', location.pathname);
+
+// Als App installieren: Chrome meldet die Möglichkeit, der Knopf im Reiter Einstellung löst sie aus
+let installPrompt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; $('installBtn').hidden = false; });
+addEventListener('appinstalled', () => { installPrompt = null; $('installBtn').hidden = true; });
+$('installBtn').onclick = async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => {});
+  installPrompt = null; $('installBtn').hidden = true;
+};
