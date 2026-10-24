@@ -180,6 +180,14 @@
       <option value="0" selected>aus</option><option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option>
       <option value="5">5 h</option><option value="6">6 h</option><option value="8">8 h</option>
     </select>
+    <label for="breakMin">Pause je 2 h Fahrt (für Ankunftszeiten)</label>
+    <select id="breakMin">
+      <option value="0" selected>keine</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
+    </select>
+    <label for="dayStart">Mehrtagestour: Weiterfahrt an Folgetagen um</label>
+    <select id="dayStart">
+      <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option>
+    </select>
     </details>
     <details id="poiBox" class="fold">
     <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
@@ -384,7 +392,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax', 'breakMin', 'dayStart'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
@@ -395,7 +403,7 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '');
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -858,9 +866,11 @@ const etaText = ts => {
   const d = new Date(ts);
   return d.toDateString() === new Date().toDateString() ? hhmm(d) : `${d.toLocaleDateString('de-DE', { weekday: 'short' })} ${hhmm(d)}`;
 };
+// Fahrzeit plus Pausen (je volle 2 h Fahrt eine Pause aus dem Fahrprofil)
+const withBreaks = sec => sec + Math.floor(sec / 7200) * +$('breakMin').value * 60;
 const tripText = s => {
   const t = tripTime(s), min = Math.round(t / 60);
-  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + t * 1000)}`;
+  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + withBreaks(t) * 1000)}`;
 };
 
 // Uhr im Header, auf die volle Minute synchronisiert
@@ -1431,8 +1441,10 @@ function navFix(pos) {
     else if (m < far && !nav.said.has(key + 'far')) { nav.said.add(key + 'far'); say(`In ${Math.round(m / 50) * 50} Metern: ${next.verbal || next.text}`); }
   }
   $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : '';
-  const restSec = (total - nav.km) / (routeKmh || 35) * 3600;
-  $('navRest').innerHTML = `noch ${distText(restM)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + restSec * 1000)}`;
+  // Mehrtagestour: Ziel des heutigen Tages ist das nächste Etappenende
+  const stageEnd = routeStages.find(e => e > nav.km + 0.05), goal = stageEnd ?? total;
+  const restSec = (goal - nav.km) / (routeKmh || 35) * 3600;
+  $('navRest').innerHTML = `${stageEnd != null ? `🌙 Etappe ${routeStages.indexOf(stageEnd) + 1}: ` : ''}noch ${distText((goal - nav.km) * 1000)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + withBreaks(restSec) * 1000)}`;
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
@@ -1553,17 +1565,16 @@ function renderIncidents(incidents) {
 }
 
 // --- Mehrtagestour: Etappen nach Fahrzeit pro Tag, Etappenende auf einen Halt ziehen, Zeltplätze in der Nähe ---
-const DAY_START_HOUR = 9; // Weiterfahrt an Folgetagen
 let stageRequest = 0;
 
-// Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab DAY_START_HOUR
+// Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab der eingestellten Startzeit; Pausen je Tag gezählt
 function etaAtKm(km) {
   const kmh = routeKmh || +$('speed').value * 0.8;
   const day = routeStages.filter(e => e < km - 1e-6).length;
   const from = day ? routeStages[day - 1] : 0;
   let base = Date.now();
-  if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(DAY_START_HOUR, 0, 0, 0); base = d.getTime(); }
-  return base + (km - from) / kmh * 3600000;
+  if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(+$('dayStart').value, 0, 0, 0); base = d.getTime(); }
+  return base + withBreaks((km - from) / kmh * 3600) * 1000;
 }
 
 const stageTripText = s => routeStages.length
@@ -1623,13 +1634,14 @@ async function loadStageCamps() {
   }
 }
 
-$('dayMax').addEventListener('change', () => {
+const replanTimes = () => {
   if (!currentTrip || !routeCoords) return;
   planStages();
   loadWeather(currentTrip);
   loadRouteWeather();
   $('summary').textContent = stageTripText(currentTrip.summary);
-});
+};
+['dayMax', 'breakMin', 'dayStart'].forEach(id => $(id).addEventListener('change', replanTimes));
 
 // --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
 const wxRouteLayer = L.layerGroup().addTo(map);
@@ -1729,7 +1741,7 @@ async function loadWeather(trip) {
     if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000;
     // w.dur = reine Fahrzeit; bei Mehrtagestour liegt die Ankunft am jeweiligen Etappentag
     w.dur = (t - now) / 1000;
-    w.eta = !routeStages.length ? t : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+    w.eta = !routeStages.length ? now + withBreaks(w.dur) * 1000 : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
   });
   const days = routeStages.length + 1;
   // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
