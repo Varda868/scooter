@@ -231,6 +231,8 @@ const POI_TYPES = [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
   { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
+  // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis; standardmäßig aus
+  { id: 'camp', icon: '⛺', name: 'Zeltplatz', off: true, minRadius: 2000, filters: [ '[tourism=camp_site]' ] },
   // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis; standardmäßig aus
   { id: 'workshop', icon: '🔧', name: 'Zweiradwerkstatt', off: true, minRadius: 2000, filters: [
     '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]' ] }
@@ -268,6 +270,7 @@ let routeKm = null; // kumulierte km je Routenpunkt
 let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
+let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
@@ -591,6 +594,7 @@ function clearRoute() {
   $('elevation').innerHTML = '';
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
+  wxShelter = false;
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);
@@ -1166,6 +1170,12 @@ function renderIncidents(incidents) {
 // --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
 const wxRouteLayer = L.layerGroup().addTo(map);
 let wxRouteRequest = 0;
+const SHELTER_HAZARDS = ['storm', 'rain', 'snow'];
+function setWxShelter(on) {
+  if (on === wxShelter) return;
+  wxShelter = on;
+  loadPois();
+}
 // Reihenfolge = Vorrang, wenn an einem Punkt mehreres zutrifft
 const WX_HAZARDS = [
   { id: 'storm', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
@@ -1180,7 +1190,7 @@ async function loadRouteWeather() {
   const req = ++wxRouteRequest, win = +$('wxWindow').value;
   wxRouteLayer.clearLayers();
   $('wxRouteSummary').textContent = '';
-  if (!routeCoords || !win) return;
+  if (!routeCoords || !win) return setWxShelter(false);
   const total = routeKm[routeKm.length - 1], step = Math.max(3, total / 40), kmh = routeKmh || +$('speed').value * 0.8;
   const start = Date.now(), samples = [];
   for (let km = 0; km <= total + 0.01; km += step) {
@@ -1225,6 +1235,7 @@ async function loadRouteWeather() {
       .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${hhmm(new Date(p0.at))}${details}`)
       .addTo(wxRouteLayer);
   }
+  setWxShelter(sections.some(sec => SHELTER_HAZARDS.includes(sec.hazard.id)));
   $('wxRouteSummary').textContent = sections.length
     ? '⚠️ Wetter unterwegs: ' + sections.slice(0, 4).map(s => `${s.hazard.icon} ${s.hazard.name} ab km ${s.from.toFixed(0)} (ca. ${hhmm(new Date(s.points[0].at))})`).join(' · ')
       + (sections.length > 4 ? ` · +${sections.length - 4}` : '')
@@ -1605,7 +1616,8 @@ async function loadPois() {
   $('pois').innerHTML = '';
   $('poiSummary').textContent = '';
   if (!routeCoords) return;
-  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked);
+  // Schutzhütten kommen bei Gewitter, Regen oder Schnee unterwegs automatisch dazu
+  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked || (t.id === 'shelter' && wxShelter));
   if (!active.length) return;
 
   const req = ++poiRequest;
@@ -1632,7 +1644,8 @@ async function loadPois() {
       }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
         (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
     }
-    $('poiSummary').textContent = pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.';
+    $('poiSummary').textContent = (pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
+      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '');
     $('pois').innerHTML = pois.map((p, i) =>
       `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
     $('pois').onclick = e => {
