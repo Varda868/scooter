@@ -37,6 +37,10 @@
   #navRest { flex:1; opacity:.85; }
   .nav-stats button { margin:0; width:44px; padding:6px; background:rgba(255,255,255,.15); font-size:18px; }
   #navVoice.off { opacity:.45; }
+  .nav-zoom { position:absolute; z-index:1001; right:10px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px; }
+  .nav-zoom button { margin:0; width:58px; height:58px; padding:0; border-radius:50%; background:#1d3557; color:#fff; font-size:30px;
+    box-shadow:0 2px 8px rgba(0,0,0,.45); }
+  .nav-zoom #navZoomAuto { font-size:14px; }
   .nav-note { font-size:13px; opacity:.85; margin-top:4px; }
   .nav-note:empty { display:none; }
   .nav-dot { width:30px; height:30px; border-radius:50%; background:#1d3557; color:#fff; border:3px solid #fff; display:flex;
@@ -236,6 +240,10 @@
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
       <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
+  </div>
+  <div id="navZoom" class="nav-zoom" hidden>
+    <button data-z="1" title="Näher (auch Taste + / ↑ / Bild↑)">＋</button><button data-z="-1" title="Weiter weg (auch Taste − / ↓ / Bild↓)">－</button>
+    <button data-z="0" id="navZoomAuto" title="Zoom wieder nach Tempo" hidden>Auto</button>
   </div>
   <div id="sim" class="sim" hidden>
     <div class="sim-turn"><span id="simArrow">↑</span><div><b id="simDist"></b><div id="simText"></div></div></div>
@@ -1348,8 +1356,9 @@ function startNav() {
   if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
   stopSim();
   if (me.follow) $('centerBtn').click();
-  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17 });
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null });
   $('nav').hidden = false;
+  $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
   $('navSpeed').textContent = ''; $('navRest').textContent = '';
   setFull(true);
@@ -1370,6 +1379,7 @@ function stopNav() {
   window.speechSynthesis?.cancel();
   nav.marker?.remove(); nav.marker = null;
   $('nav').hidden = true;
+  $('navZoom').hidden = true;
   setFull(false);
 }
 
@@ -1425,8 +1435,29 @@ function navFix(pos) {
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
-  map.setView(ll, nav.zoom, { animate: true });
+  map.setView(ll, nav.manual ?? nav.zoom, { animate: true });
 }
+
+// Handzoom im Navi: große Knöpfe und Tasten einer Bluetooth-Lenkerfernbedienung. Lautstärketasten erreichen
+// Webseiten auf Android/iOS normalerweise nicht; kommen sie doch an (manche Fernbedienungen), zählen sie mit.
+// Die Stufe bleibt, bis "Auto" getippt wird.
+function navZoom(step) {
+  nav.manual = step ? Math.max(12, Math.min(19, Math.round(nav.manual ?? map.getZoom()) + step)) : null;
+  // Läuft noch eine Zoom-Animation vom letzten GPS-Fix, würde sie den Handzoom am Ende überschreiben
+  const apply = () => map.setZoom(nav.manual ?? nav.zoom, { animate: false });
+  if (map._animatingZoom) map.once('zoomend', apply); else apply();
+  $('navZoomAuto').hidden = nav.manual == null;
+}
+map.getContainer().appendChild($('navZoom'));
+L.DomEvent.disableClickPropagation($('navZoom'));
+$('navZoom').onclick = e => { const z = e.target.closest('button')?.dataset.z; if (z != null) navZoom(+z); };
+const NAV_KEYS = { '+': 1, '=': 1, ArrowUp: 1, PageUp: 1, AudioVolumeUp: 1, VolumeUp: 1,
+  '-': -1, ArrowDown: -1, PageDown: -1, AudioVolumeDown: -1, VolumeDown: -1 };
+document.addEventListener('keydown', e => {
+  if (!nav.on || !(e.key in NAV_KEYS) || e.target.closest?.('input, textarea, select')) return;
+  e.preventDefault();
+  navZoom(NAV_KEYS[e.key]);
+});
 
 $('navStart').onclick = startNav;
 $('navStop').onclick = stopNav;
