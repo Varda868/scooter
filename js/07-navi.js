@@ -175,8 +175,6 @@ document.querySelector('#nav .nav-turn').onclick = () => { navOverviewEnd(false)
 
 // Knopf „ganze Strecke“ im Navi: Übersicht für PEEK_MS, danach (oder beim zweiten Tipp) zurück zur Fahrt
 function navOverview() {
-  if (restM < 30 && !nav.done) { nav.done = true; say('Sie haben Ihr Ziel erreicht'); }
-  navArriveWatch(ll);
   if (nav.overview) { navOverviewEnd(); return; }
   navPeekEnd();
   nav.overview = true;
