@@ -43,7 +43,10 @@
   #navRest { flex:1; opacity:.85; }
   .nav-stats button { margin:0; width:44px; padding:6px; background:rgba(255,255,255,.15); font-size:18px; }
   #navVoice.off { opacity:.45; }
-  .nav-zoom { position:absolute; z-index:1001; right:10px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px; }
+  .nav-zoom { position:absolute; z-index:1001; left:10px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:22px; }
+  /* Kartenzoom: + und − getrennt mit Abstand, damit man unterwegs nicht daneben tippt */
+  .leaflet-touch .leaflet-control-zoom, .leaflet-control-zoom { border:0 !important; box-shadow:none !important; display:flex; flex-direction:column; gap:12px; background:none; }
+  .leaflet-control-zoom a { border:2px solid rgba(0,0,0,.2) !important; border-radius:6px !important; background-clip:padding-box; }
   .nav-zoom[hidden] { display:none; }
   .nav-zoom button { margin:0; width:58px; height:58px; padding:0; border-radius:50%; background:#1d3557; color:#fff; font-size:30px;
     box-shadow:0 2px 8px rgba(0,0,0,.45); }
