@@ -40,6 +40,13 @@
   .nav-zoom button { margin:0; width:58px; height:58px; padding:0; border-radius:50%; background:#1d3557; color:#fff; font-size:30px;
     box-shadow:0 2px 8px rgba(0,0,0,.45); }
   .nav-zoom #navZoomAuto { font-size:14px; }
+  .arrive { position:absolute; left:50%; bottom:24px; transform:translateX(-50%); z-index:1000; width:min(420px, calc(100% - 32px));
+    background:#1d3557; color:#fff; border-radius:12px; padding:12px 14px; box-shadow:0 4px 16px #0006; font-size:15px; }
+  .arrive-head { display:flex; justify-content:space-between; align-items:center; font-size:18px; margin-bottom:6px; }
+  .arrive-head button { width:auto; margin:0; padding:0 4px; background:none; border:0; color:#fff; font-size:20px; cursor:pointer; }
+  .arrive-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .arrive-btns button { flex:1 1 45%; margin:0; padding:10px 8px; border:0; border-radius:8px; background:#fff; color:#1d3557; font-size:15px; cursor:pointer; }
+  .arrive-btns button[hidden] { display:none; }
   .nav-note { font-size:13px; opacity:.85; margin-top:4px; }
   .nav-note:empty { display:none; }
   .nav-dot { width:30px; height:30px; border-radius:50%; background:#1d3557; color:#fff; border:3px solid #fff; display:flex;
