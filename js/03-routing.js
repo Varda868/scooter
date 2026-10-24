@@ -129,6 +129,54 @@ async function planRoute(locs, exclude = []) {
   return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
 }
 
+// Hin und zurück: Endet die Tour wieder am Start (≤ 300 m) und ist „Rückweg anders“ an, rechnet der Rückweg
+// ab dem letzten Halt mit Meidepunkten auf dem Hinweg. Valhalla nimmt höchstens 50 Meidepunkte; sie liegen
+// gleichmäßig auf dem Hinweg, nur nicht im ersten und letzten Kilometer (Ortsausfahrt und Wendepunkt dürfen gleich sein).
+const BACK_EXCLUDE_MAX = 50, BACK_FREE_KM = 1, BACK_HOME_M = 300;
+function backSplit(locs) {
+  if (!$('backDiff').checked || locs.length < 3 || locs[0].latlng.distanceTo(locs.at(-1).latlng) > BACK_HOME_M) return -1;
+  for (let i = locs.length - 2; i > 0; i--) if (!locs[i].shaping) return i;
+  return -1;
+}
+function backAvoidPoints(coords, n) {
+  const km = [0];
+  for (let i = 1; i < coords.length; i++) km.push(km[i - 1] + L.latLng(coords[i - 1]).distanceTo(L.latLng(coords[i])) / 1000);
+  const from = BACK_FREE_KM, to = km.at(-1) - BACK_FREE_KM, pts = [];
+  if (n < 1 || to <= from) return pts;
+  for (let j = 0, i = 0; j < n; j++) {
+    const at = from + (to - from) * (j + 0.5) / n;
+    while (km[i + 1] < at) i++;
+    pts.push({ lat: coords[i][0], lon: coords[i][1] });
+  }
+  return pts;
+}
+// Anteil des Rückwegs (alle ~100 m geprüft), der mehr als 30 m vom Hinweg entfernt liegt
+function backShare(outCoords, backCoords) {
+  const step = Math.max(1, Math.round(backCoords.length / 200));
+  let n = 0, other = 0;
+  for (let i = 0; i < backCoords.length; i += step, n++) if (locateOnRoute(backCoords[i][0], backCoords[i][1], outCoords).dist > 30) other++;
+  return n ? other / n : 0;
+}
+async function planTrip(locs, extra = []) {
+  const k = backSplit(locs);
+  if (k < 0) return planRoute(locs, extra);
+  const out = await planRoute(locs.slice(0, k + 1), extra);
+  const outCoords = tripCoords(out.trip);
+  const avoid = backAvoidPoints(outCoords, BACK_EXCLUDE_MAX - excluded.length - extra.length);
+  let back = null;
+  // Findet Valhalla mit allen Meidepunkten keinen Weg (z. B. einzige Brücke), mit jedem zweiten erneut versuchen
+  for (const pts of [avoid, avoid.filter((_, i) => i % 2)]) {
+    if (!pts.length) break;
+    try { back = await planRoute(locs.slice(k), [...extra, ...pts]); break; }
+    catch (err) { if (err.offline) throw err; }
+  }
+  if (back) summaryNote += ` · ↩ Rückweg zu ${Math.round(backShare(outCoords, tripCoords(back.trip)) * 100)} % anders`;
+  else { back = await planRoute(locs.slice(k), extra); summaryNote += ' · ↩ kein anderer Rückweg gefunden'; }
+  const legs = [...out.trip.legs, ...back.trip.legs];
+  const sum = f => legs.reduce((acc, l) => acc + l.summary[f], 0);
+  return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
+}
+
 let summaryNote = '';
 async function route() {
   $('summary').textContent = 'Berechne …';
@@ -141,10 +189,10 @@ async function route() {
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
-    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
     let data;
     try {
-      data = await planRoute(locs);
+      data = await planTrip(locs);
       store.set('lastTrip', { key: tripKey, trip: data.trip });
     } catch (err) {
       const last = store.get('lastTrip', null);
@@ -162,7 +210,7 @@ async function route() {
           incidentPoints(i).some(([lat, lon]) => locateOnRoute(lat, lon, coords).dist < 30)) : [];
         if (closed.length) {
           try {
-            data = await planRoute(locs, closed.flatMap(closurePoints));
+            data = await planTrip(locs, closed.flatMap(closurePoints));
             summaryNote += ` · ${closed.length} Sperrung${closed.length > 1 ? 'en' : ''} umfahren`;
           } catch { summaryNote += ' · ⚠️ Sperrung auf der Route, keine Umfahrung gefunden'; }
         }

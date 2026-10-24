@@ -1,4 +1,4 @@
-// --- Kartenknöpfe: Vollbild und Zentrieren/Mitführen auf den eigenen Standort ---
+// --- Kartenknöpfe: Vollbild, Zentrieren/Mitführen auf den eigenen Standort, ganze Strecke ---
 const me = { watch: null, follow: false, dot: L.circleMarker([0, 0], { radius: 7, color: '#fff', weight: 2, fillColor: '#2e86e4', fillOpacity: 1, interactive: false }),
   ring: L.circle([0, 0], { radius: 1, color: '#2e86e4', weight: 1, fillOpacity: 0.1, interactive: false }) };
 const MapButtons = L.Control.extend({
@@ -6,7 +6,8 @@ const MapButtons = L.Control.extend({
   onAdd() {
     const bar = L.DomUtil.create('div', 'leaflet-bar');
     bar.innerHTML = '<a href="#" id="fullBtn" class="map-btn" title="Vollbild" role="button">⛶</a>' +
-      '<a href="#" id="centerBtn" class="map-btn" title="Auf meinen Standort zentrieren und mitführen" role="button">◎</a>';
+      '<a href="#" id="centerBtn" class="map-btn" title="Auf meinen Standort zentrieren und mitführen" role="button">◎</a>' +
+      '<a href="#" id="fitBtn" class="map-btn" title="Ganze Strecke zeigen" role="button">⤢</a>';
     L.DomEvent.disableClickPropagation(bar);
     return bar;
   }
@@ -56,3 +57,19 @@ $('centerBtn').onclick = e => {
 };
 // Karte von Hand verschieben beendet das Mitführen, der Standortpunkt bleibt
 map.on('dragstart', () => me.follow && setFollow(false));
+
+// Ganze Strecke: Route (sonst die Wegpunkte) einpassen. Mitführen endet, sonst holt der nächste Fix die Karte zurück.
+// Im Navi ist es eine Übersicht auf Zeit wie die Manöver-Vorschau; ein zweiter Tipp geht sofort zurück zur Fahrt.
+function fitRoute() {
+  const pts = routeLayer ? null : waypoints.filter(w => w.latlng).map(w => w.latlng);
+  const bounds = routeLayer ? routeLayer.getBounds() : pts.length ? L.latLngBounds(pts) : null;
+  if (!bounds) return false;
+  if (me.follow) setFollow(false);
+  map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  return true;
+}
+$('fitBtn').onclick = e => {
+  e.preventDefault();
+  if (nav.on) { navOverview(); return; }
+  fitRoute();
+};

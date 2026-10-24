@@ -39,7 +39,7 @@ function startNav() {
   if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
   stopSim();
   if (me.follow) $('centerBtn').click();
-  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null });
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null, peek: null, overview: false, lastPos: null });
   $('nav').hidden = false;
   $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
@@ -49,6 +49,7 @@ function startNav() {
   nav.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
     icon: L.divIcon({ className: '', html: '<div class="nav-dot">➤</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) });
   nav.watch = navigator.geolocation.watchPosition(navFix, err => {
+    if (nav.peek != null) return; // Vorschau nicht überschreiben; der nächste Fehler oder Fix zeigt den Stand
     $('navArrow').textContent = '⚠️'; $('navDist').textContent = 'Kein GPS';
     $('navText').textContent = err.code === 1 ? 'Standortzugriff erlaubt? 💡 In den Browser-Einstellungen für diese Seite freigeben.' : err.message;
   }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
@@ -57,6 +58,7 @@ function startNav() {
 function stopNav() {
   if (!nav.on) return;
   nav.on = false;
+  navPeekEnd(); navOverviewEnd(false);
   navigator.geolocation?.clearWatch(nav.watch); nav.watch = null;
   nav.lock?.release().catch(() => {}); nav.lock = null;
   window.speechSynthesis?.cancel();
@@ -69,6 +71,7 @@ function stopNav() {
 
 function navFix(pos) {
   if (!nav.on || !routeCoords) return;
+  nav.lastPos = pos;
   const { latitude: lat, longitude: lon, accuracy, speed, heading } = pos.coords;
   const ll = L.latLng(lat, lon), total = routeKm.at(-1);
   const kmh = speed != null && speed >= 0 ? speed * 3.6 : null;
@@ -100,6 +103,11 @@ function navFix(pos) {
 
   const next = routeManeuvers.find(m => m.km > nav.km + 0.01);
   const restM = (total - nav.km) * 1000;
+  if (nav.overview) { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
+  if (nav.peek != null) {
+    // Vorschau läuft: Anzeige und Karte gehören ihr; ist das angezeigte Manöver schon erreicht, zurück zur Fahrt
+    if (nav.peekKm <= nav.km + 0.01) navPeekEnd(); else { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
+  }
   if (!next || restM < 30) {
     $('navArrow').textContent = '🏁'; $('navDist').textContent = restM < 30 ? 'Ziel erreicht' : distText(restM);
     $('navText').textContent = routeManeuvers.at(-1)?.text || 'Ziel';
@@ -124,6 +132,58 @@ function navFix(pos) {
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
   map.setView(ll, nav.manual ?? nav.zoom, { animate: true });
+}
+
+// Tipp auf die Abbiegeanzeige: nächste Manöver der Reihe nach ansehen, die Karte springt jeweils hin.
+// Nach 10 s ohne Tipp (oder nach dem letzten Manöver) geht es zurück zur Fahrtansicht.
+const PEEK_MS = 10000;
+function navPeek() {
+  if (!nav.on || !routeManeuvers.length) return;
+  const ahead = routeManeuvers.filter(m => m.km > nav.km + 0.01);
+  const i = nav.peek == null ? 0 : nav.peek + 1;
+  if (i >= ahead.length) { navPeekEnd(); return; }
+  const m = ahead[i];
+  nav.peek = i; nav.peekKm = m.km;
+  $('nav').classList.add('peek');
+  $('navArrow').textContent = TURN_ARROWS[m.type] || (i === ahead.length - 1 ? '🏁' : '↑');
+  $('navDist').textContent = `${i + 1}/${ahead.length} · ${distText((m.km - nav.km) * 1000)}`;
+  $('navText').textContent = m.text;
+  $('navNote').textContent = 'Vorschau · Tippen: nächstes Manöver';
+  const at = pointAtKm(m.km);
+  (nav.peekMark ||= L.circleMarker(at, { radius: 14, color: '#1d3557', weight: 4, fillColor: '#fff', fillOpacity: .6, interactive: false })).setLatLng(at).addTo(map);
+  map.setView(at, Math.max(nav.manual ?? nav.zoom, 17), { animate: true });
+  clearTimeout(nav.peekTimer);
+  nav.peekTimer = setTimeout(navPeekEnd, PEEK_MS);
+}
+function navPeekEnd() {
+  clearTimeout(nav.peekTimer);
+  if (nav.peek == null) return;
+  nav.peek = null;
+  nav.peekMark?.remove();
+  $('nav').classList.remove('peek');
+  $('navNote').textContent = '';
+  if (nav.lastPos) navFix(nav.lastPos);
+}
+document.querySelector('#nav .nav-turn').onclick = () => { navOverviewEnd(false); navPeek(); };
+
+// Knopf „ganze Strecke“ im Navi: Übersicht für PEEK_MS, danach (oder beim zweiten Tipp) zurück zur Fahrt
+function navOverview() {
+  if (nav.overview) { navOverviewEnd(); return; }
+  navPeekEnd();
+  nav.overview = true;
+  $('fitBtn').classList.add('active');
+  $('navNote').textContent = 'Übersicht · ⤢ tippen: zurück';
+  fitRoute();
+  clearTimeout(nav.overviewTimer);
+  nav.overviewTimer = setTimeout(navOverviewEnd, PEEK_MS);
+}
+function navOverviewEnd(refresh = true) {
+  clearTimeout(nav.overviewTimer);
+  if (!nav.overview) return;
+  nav.overview = false;
+  $('fitBtn').classList.remove('active');
+  $('navNote').textContent = '';
+  if (refresh && nav.lastPos) navFix(nav.lastPos);
 }
 
 // Handzoom im Navi: große Knöpfe und Tasten einer Bluetooth-Lenkerfernbedienung. Lautstärketasten erreichen
