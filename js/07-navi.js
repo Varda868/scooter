@@ -25,7 +25,7 @@ function say(text) {
 
 const distText = m => m < 100 ? `${Math.max(0, Math.round(m / 10) * 10)} m` : m < 1000 ? `${Math.round(m / 50) * 50} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
 
-// Position auf der Route: zuerst kurz vor bis ein paar km nach dem letzten Stand suchen, damit Rundtouren
+// Position auf der Route: zuerst kurz vor bis ein paar km nach dem letzten Stand suchen, damit Touren mit Start = Ziel
 // und Kreuzungen der eigenen Strecke nicht auf den falschen Abschnitt springen
 function navLocate(lat, lon) {
   const i0 = Math.max(0, routeKm.findIndex(k => k >= nav.km - 0.3) - 1);

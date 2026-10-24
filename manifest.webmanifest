@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Scooterways – Routenplaner für 50er",
   "short_name": "Scooterways",
-  "description": "Routen für 50er-Roller: kleine Straßen, Navi mit Sprachansage, Rundtouren, Entdecker-Karte und Gruppenfunk.",
+  "description": "Routen für 50er-Roller: kleine Straßen, Navi mit Sprachansage, Entdecker-Karte und Gruppenfunk.",
   "start_url": "./?quelle=app",
   "scope": "./",
   "display": "standalone",
