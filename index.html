@@ -90,6 +90,9 @@
   .roundtrip input { width:64px; }
   .roundtrip button { margin:0; padding:6px 8px; width:auto; flex:1; font-size:13px; }
   .map-menu button.secondary { background:#eee; color:#222; }
+  /* Schließen-Kreuz groß genug für den Finger, Inhalt darunter */
+  .leaflet-popup-close-button { width:32px !important; height:32px !important; font:24px/30px system-ui,sans-serif !important; }
+  .map-menu .leaflet-popup-content { margin-top:28px; }
   #elevation { margin-top:8px; }
   #elevation svg { width:100%; height:110px; display:block; touch-action:none; }
   #elevation .ele-stats { font-size:13px; margin-bottom:2px; }
@@ -370,7 +373,7 @@ function renderWaypoints() {
         if (w.note) box.insertAdjacentHTML('beforeend', `<div class="note">${escapeHtml(w.note)}</div>`);
         box.append(btn);
         return box;
-      }, { className: 'map-menu', closeButton: false });
+      }, { className: 'map-menu' });
   });
 
   exclLayer.clearLayers();
@@ -378,7 +381,7 @@ function renderWaypoints() {
     icon: L.divIcon({ className: 'poi-icon', html: '⛔', iconSize: [22, 22] }), title: 'Gesperrt'
   }).addTo(exclLayer).bindPopup(() => menuBox([['unblock', 'Sperre aufheben']], () => {
     changeWaypoints(() => excluded.splice(i, 1));
-  }), { className: 'map-menu', closeButton: false }));
+  }), { className: 'map-menu' }));
 }
 
 // Kleines Button-Menü für Popups; onPick bekommt die gewählte Aktion
@@ -420,7 +423,7 @@ function setEnd(i, ll) {
   waypoints[i] = { ...waypoints[i], latlng: ll, text: coordText(ll), shaping: false };
 }
 
-const mapMenu = L.popup({ className: 'map-menu', closeButton: false, minWidth: 170 });
+const mapMenu = L.popup({ className: 'map-menu', minWidth: 170 });
 map.on('click', e => {
   const ll = e.latlng, last = waypoints.length - 1;
   const hasStart = !!waypoints[0].latlng, hasEnd = !!waypoints[last].latlng;
@@ -1202,7 +1205,7 @@ function enableRouteEditing(line) {
 }
 
 function openRouteMenu(ll) {
-  L.popup({ className: 'map-menu', closeButton: false, minWidth: 170 }).setLatLng(ll).setContent(menuBox([
+  L.popup({ className: 'map-menu', minWidth: 170 }).setLatLng(ll).setContent(menuBox([
     ['via', 'Zwischenziel hier'], ['shape', 'Formpunkt hier (ohne Halt)'], ['avoid', 'Diese Straße meiden'], ['mypoi', '⭐ Eigenen POI hier']
   ], act => act === 'mypoi' ? openPoiForm(ll) :
     changeWaypoints(() => act === 'avoid' ? excluded.push(ll) : insertVia(ll, act === 'shape')), 'via')).openOn(map);
