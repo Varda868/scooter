@@ -25,6 +25,22 @@
   button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   #summary { margin-top:14px; font-weight:600; }
   #play { margin-top:8px; background:var(--fg); color:var(--bg); }
+  #navStart { margin-top:8px; background:#1d3557; }
+  .nav { position:absolute; z-index:1001; left:8px; right:8px; top:8px; max-width:520px; margin:0 auto; background:#1d3557; color:#fff;
+    border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.45); padding:10px 12px; }
+  .nav-turn { display:flex; gap:14px; align-items:center; }
+  #navArrow { font-size:72px; line-height:1; width:84px; text-align:center; flex:none; }
+  #navDist { font-size:40px; font-weight:800; line-height:1.05; }
+  #navText { font-size:16px; line-height:1.25; margin-top:2px; }
+  .nav-stats { display:flex; gap:12px; align-items:center; margin-top:8px; font-size:15px; }
+  #navSpeed { font-weight:700; }
+  #navRest { flex:1; opacity:.85; }
+  .nav-stats button { margin:0; width:44px; padding:6px; background:rgba(255,255,255,.15); font-size:18px; }
+  #navVoice.off { opacity:.45; }
+  .nav-note { font-size:13px; opacity:.85; margin-top:4px; }
+  .nav-note:empty { display:none; }
+  .nav-dot { width:30px; height:30px; border-radius:50%; background:#1d3557; color:#fff; border:3px solid #fff; display:flex;
+    align-items:center; justify-content:center; font-size:15px; box-shadow:0 1px 5px rgba(0,0,0,.6); }
   .sim { position:absolute; z-index:1000; left:50%; transform:translateX(-50%); top:10px; width:min(360px, calc(100% - 20px));
     background:var(--bg); color:var(--fg); border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,.35); padding:8px 10px; font-size:13px; }
   .sim-turn { display:flex; gap:10px; align-items:center; }
@@ -200,6 +216,7 @@
     <div id="summary"></div>
     <div id="stageSummary" class="hint"></div>
     <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
+    <button id="navStart" hidden title="Mit GPS navigieren, Bildschirm bleibt an">🧭 Navigation starten</button>
     <div id="elevation"></div>
     <div id="wxRouteSummary"></div>
     <div id="incidentSummary"></div>
@@ -214,6 +231,12 @@
     <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
   </div>
   <div id="map"></div>
+  <div id="nav" class="nav" hidden>
+    <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
+    <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
+      <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
+    <div id="navNote" class="nav-note"></div>
+  </div>
   <div id="sim" class="sim" hidden>
     <div class="sim-turn"><span id="simArrow">↑</span><div><b id="simDist"></b><div id="simText"></div></div></div>
     <div class="sim-stats"><span id="simGrade" class="sim-grade"></span><span id="simInfo"></span></div>
@@ -304,6 +327,7 @@ function setRouteCoords(coords) {
   queueMicrotask(loadRouteWeather);
   routeStages = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   $('play').hidden = false;
+  $('navStart').hidden = false;
   routeCoords = coords;
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
@@ -603,6 +627,7 @@ function clearRoute() {
   altLayer.clearLayers();
   stopSim();
   $('play').hidden = true;
+  $('navStart').hidden = true;
   routeLayer = routeCoords = routeKm = null;
   $('summary').textContent = '';
   $('steps').innerHTML = '';
@@ -835,7 +860,8 @@ function showTrip(trip, alternates = []) {
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
-    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type });
+    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type,
+      verbal: m.verbal_pre_transition_instruction || m.instruction });
     off += decode(l.shape).length - 1;
   }
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
@@ -1152,7 +1178,7 @@ function simStep(now) {
   else sim.frame = requestAnimationFrame(simStep);
 }
 
-const ZOOM_GLIDE = 900;
+const ZOOM_GLIDE = 900, TURN_ZOOM = 0.45;
 const baseZoom = factor => factor <= 20 ? 16 : factor <= 60 ? 15 : 14;
 
 function renderSim(now) {
@@ -1180,10 +1206,12 @@ function renderSim(now) {
   const cur = $('simProfile').querySelector('.cur');
   if (cur && eleData) { const x = sim.km / eleData.xs[eleData.xs.length - 1] * 300; cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
 
-  // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln.
-  // Der Wechsel gleitet über ZOOM_GLIDE ms (ease-in-out); dazwischen bleibt ein Mausrad-Zoom des Nutzers stehen
-  const want = next && dist < 0.3 ? 17 : baseZoom(factor);
-  if (Math.abs(want - map.getZoom()) > 0.01 && now - sim.zoomAt > 1500) {
+  // Nah an Abbiegungen etwas heran: Abbiegung voraus oder gerade passiert, so bleibt der Zoom in der Stadt mit
+  // vielen Abbiegungen stehen, statt zu pendeln. Höchstens alle 4 s ein Wechsel, gleitend über ZOOM_GLIDE ms.
+  // Nur TURN_ZOOM (< 0,5) Stufen: Die Kacheln bleiben auf ihrer Zoomstufe und werden nur skaliert, die Karte verschwindet nicht kurz.
+  const nearTurn = routeManeuvers.some(m => m.km > sim.km - 0.15 && m.km < sim.km + 0.3);
+  const want = baseZoom(factor) + (nearTurn ? TURN_ZOOM : 0);
+  if (Math.abs(want - map.getZoom()) > 0.01 && now - sim.zoomAt > 4000) {
     sim.zoomAt = now; sim.zoomFrom = map.getZoom(); sim.zoomTo = want;
   }
   const u = Math.min(1, Math.max(0, (now - sim.zoomAt) / ZOOM_GLIDE)), ease = u * u * (3 - 2 * u);
@@ -1256,6 +1284,136 @@ $('centerBtn').onclick = e => {
 };
 // Karte von Hand verschieben beendet das Mitführen, der Standortpunkt bleibt
 map.on('dragstart', () => me.follow && setFollow(false));
+
+// --- Navigation: echte GPS-Position statt Zeitraffer, Bildschirm bleibt an, Sprachansage, Neuberechnung bei Abweichung ---
+const OFF_ROUTE_M = 40, REROUTE_PAUSE_MS = 20000;
+const nav = { on: false, watch: null, km: 0, off: 0, lastReroute: 0, lock: null, voice: store.get('navVoice', true), said: new Set(), marker: null, done: false };
+map.getContainer().appendChild($('nav'));
+L.DomEvent.disableClickPropagation($('nav'));
+$('navVoice').classList.toggle('off', !nav.voice);
+
+async function keepScreenOn() {
+  if (!nav.on) return;
+  try { nav.lock = await navigator.wakeLock.request('screen'); $('navNote').textContent = ''; }
+  catch { $('navNote').textContent = 'Bildschirm-an wird von diesem Browser nicht unterstützt (braucht HTTPS). Displayzeit in den Handy-Einstellungen hochsetzen.'; }
+}
+// Die Sperre fällt beim Wechsel in eine andere App weg; beim Zurückkommen neu anfordern
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && nav.on) keepScreenOn(); });
+
+function say(text) {
+  if (!nav.voice || !window.speechSynthesis) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'de-DE';
+    speechSynthesis.speak(u);
+  } catch {}
+}
+
+const distText = m => m < 100 ? `${Math.max(0, Math.round(m / 10) * 10)} m` : m < 1000 ? `${Math.round(m / 50) * 50} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
+
+// Position auf der Route: zuerst kurz vor bis ein paar km nach dem letzten Stand suchen, damit Rundtouren
+// und Kreuzungen der eigenen Strecke nicht auf den falschen Abschnitt springen
+function navLocate(lat, lon) {
+  const i0 = Math.max(0, routeKm.findIndex(k => k >= nav.km - 0.3) - 1);
+  let i1 = routeKm.findIndex(k => k > nav.km + 3);
+  if (i1 < 0) i1 = routeKm.length - 1;
+  const near = locateOnRoute(lat, lon, routeCoords.slice(i0, i1 + 1), routeKm.slice(i0, i1 + 1));
+  return near.dist <= OFF_ROUTE_M ? near : locateOnRoute(lat, lon);
+}
+
+function startNav() {
+  if (!routeCoords) return;
+  if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
+  stopSim();
+  if (me.follow) $('centerBtn').click();
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17 });
+  $('nav').hidden = false;
+  $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
+  $('navSpeed').textContent = ''; $('navRest').textContent = '';
+  setFull(true);
+  keepScreenOn();
+  nav.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
+    icon: L.divIcon({ className: '', html: '<div class="nav-dot">➤</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) });
+  nav.watch = navigator.geolocation.watchPosition(navFix, err => {
+    $('navArrow').textContent = '⚠️'; $('navDist').textContent = 'Kein GPS';
+    $('navText').textContent = err.code === 1 ? 'Standortzugriff erlaubt? 💡 In den Browser-Einstellungen für diese Seite freigeben.' : err.message;
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+}
+
+function stopNav() {
+  if (!nav.on) return;
+  nav.on = false;
+  navigator.geolocation?.clearWatch(nav.watch); nav.watch = null;
+  nav.lock?.release().catch(() => {}); nav.lock = null;
+  window.speechSynthesis?.cancel();
+  nav.marker?.remove(); nav.marker = null;
+  $('nav').hidden = true;
+  setFull(false);
+}
+
+function navFix(pos) {
+  if (!nav.on || !routeCoords) return;
+  const { latitude: lat, longitude: lon, accuracy, speed, heading } = pos.coords;
+  const ll = L.latLng(lat, lon), total = routeKm.at(-1);
+  const kmh = speed != null && speed >= 0 ? speed * 3.6 : null;
+  nav.marker.setLatLng(ll).addTo(map);
+  const loc = navLocate(lat, lon);
+
+  // Abweichung: mehrere Fixes nacheinander deutlich neben der Route (bei guter Genauigkeit) → ab hier neu rechnen
+  if (loc.dist > OFF_ROUTE_M + Math.min(accuracy || 0, 30)) nav.off++; else nav.off = 0;
+  if (nav.off >= 3 && Date.now() - nav.lastReroute > REROUTE_PAUSE_MS && !nav.done) {
+    nav.lastReroute = Date.now(); nav.off = 0;
+    $('navNote').textContent = 'Neu berechnen …';
+    say('Route wird neu berechnet');
+    const passedKm = nav.km;
+    changeWaypoints(() => {
+      const located = waypoints.filter(w => w.latlng);
+      // Bereits passierte Zwischenziele fallen weg, Start = aktuelle Position
+      const ahead = located.slice(1, -1).filter(w => locateOnRoute(w.latlng.lat, w.latlng.lng).km > passedKm + 0.05);
+      waypoints = [{ latlng: ll, text: 'Mein Standort' }, ...ahead, located.at(-1)];
+    });
+    nav.km = 0; nav.said = new Set();
+    return;
+  }
+  if (loc.dist <= OFF_ROUTE_M) nav.km = Math.max(nav.km - 0.05, loc.km);
+
+  const dot = nav.marker.getElement()?.firstChild;
+  const dir = heading != null && !isNaN(heading) && kmh > 3 ? heading : bearing(L.latLng(pointAtKm(nav.km)), L.latLng(pointAtKm(Math.min(total, nav.km + 0.03))));
+  if (dot) dot.style.transform = `rotate(${dir - 90}deg)`;
+
+  const next = routeManeuvers.find(m => m.km > nav.km + 0.01);
+  const restM = (total - nav.km) * 1000;
+  if (!next || restM < 30) {
+    $('navArrow').textContent = '🏁'; $('navDist').textContent = restM < 30 ? 'Ziel erreicht' : distText(restM);
+    $('navText').textContent = routeManeuvers.at(-1)?.text || 'Ziel';
+    if (restM < 30 && !nav.done) { nav.done = true; say('Sie haben Ihr Ziel erreicht'); }
+  } else {
+    const m = (next.km - nav.km) * 1000;
+    $('navArrow').textContent = TURN_ARROWS[next.type] || '↑';
+    $('navDist').textContent = distText(m);
+    $('navText').textContent = next.text;
+    // Ansage je Manöver einmal pro Stufe; die weite Stufe hängt vom Tempo ab
+    const far = (kmh || 30) > 35 ? 400 : 250;
+    const key = `${next.km}`;
+    if (m < 40 && !nav.said.has(key + 'now')) { nav.said.add(key + 'now'); nav.said.add(key + 'far'); say(next.verbal || next.text); }
+    else if (m < far && !nav.said.has(key + 'far')) { nav.said.add(key + 'far'); say(`In ${Math.round(m / 50) * 50} Metern: ${next.verbal || next.text}`); }
+  }
+  $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : '';
+  $('navRest').textContent = `noch ${distText(restM)} · an ${etaText(Date.now() + (total - nav.km) / (routeKmh || 35) * 3600000)}`;
+  if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
+  // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
+  if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
+  map.setView(ll, nav.zoom, { animate: true });
+}
+
+$('navStart').onclick = startNav;
+$('navStop').onclick = stopNav;
+$('navVoice').onclick = () => {
+  nav.voice = !nav.voice;
+  store.set('navVoice', nav.voice);
+  $('navVoice').classList.toggle('off', !nav.voice);
+  if (!nav.voice) window.speechSynthesis?.cancel();
+};
 
 // --- Verkehr: TomTom Traffic API (Meldungen v5, Fluss-Kacheln v4). Schlüssel nur im Browser, nie im Repo. ---
 const TOMTOM_URL = 'https://api.tomtom.com/traffic';
