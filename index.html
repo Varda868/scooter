@@ -1431,7 +1431,8 @@ function navFix(pos) {
     else if (m < far && !nav.said.has(key + 'far')) { nav.said.add(key + 'far'); say(`In ${Math.round(m / 50) * 50} Metern: ${next.verbal || next.text}`); }
   }
   $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : '';
-  $('navRest').textContent = `noch ${distText(restM)} · an ${etaText(Date.now() + (total - nav.km) / (routeKmh || 35) * 3600000)}`;
+  const restSec = (total - nav.km) / (routeKmh || 35) * 3600;
+  $('navRest').innerHTML = `noch ${distText(restM)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + restSec * 1000)}`;
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
