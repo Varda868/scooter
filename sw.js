@@ -6,7 +6,7 @@ const MAX_TILES = 4000; // ca. 60–100 MB
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
-const APP_FILES = ['css/app.css', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/12-rundtour.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-opencaching.js', 'js/16-sonden.js', 'js/17-entdecker.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js'];
+const APP_FILES = ['css/app.css', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/12-rundtour.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-opencaching.js', 'js/16-sonden.js', 'js/17-entdecker.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js'];
 const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', ...APP_FILES];
 const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
 
@@ -45,8 +45,8 @@ self.addEventListener('fetch', e => {
     }).catch(() => caches.match('./')));
     return;
   }
-  // Eigene Skripte und CSS ebenso Netz zuerst, damit nie eine neue Seite mit alten Modulen läuft
-  if (url.origin === location.origin && /\/(js|css)\/[^/]+$/.test(url.pathname)) {
+  // Eigene Skripte und CSS ebenso Netz zuerst, damit nie eine neue Seite mit alten Modulen läuft (talk/ wird erst bei Bedarf geladen)
+  if (url.origin === location.origin && /\/(js|css|talk)\/[^/]+$/.test(url.pathname)) {
     e.respondWith(fetch(req).then(res => {
       if (res.ok) caches.open(SHELL).then(c => c.put(req, res.clone()));
       return res;
