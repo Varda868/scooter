@@ -1612,16 +1612,44 @@ function planStages() {
   loadStageCamps();
 }
 
+// Zeltplätze um Punkte: zuerst Overpass, fällt es aus, Nominatim (Sonderbegriff „Campingplatz“ = tourism=camp_site),
+// zuletzt Photon (komoot). Rückgabe { camps: [{ lat, lon, name }], source }
+const PHOTON_URL = 'https://photon.komoot.io/api/';
+async function findCamps(points, radiusM = 8000) {
+  try {
+    const around = points.map(([la, lo]) => `nwr[tourism=camp_site](around:${radiusM},${la.toFixed(5)},${lo.toFixed(5)});`).join('');
+    const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
+    return { source: 'Overpass', camps: data.elements.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags?.name })).filter(c => c.lat != null) };
+  } catch {}
+  // Umkreis als Rechteck um jeden Punkt
+  const boxes = points.map(([la, lo]) => { const dLat = radiusM / 111320, dLon = dLat / Math.cos(la * Math.PI / 180); return [lo - dLon, la - dLat, lo + dLon, la + dLat]; });
+  const dedupe = list => [...new Map(list.map(c => [`${c.lat.toFixed(4)},${c.lon.toFixed(4)}`, c])).values()];
+  try {
+    const camps = [];
+    for (const [w, so, e, n] of boxes) {
+      const res = await fetch(`${NOMINATIM_URL}?format=json&limit=30&bounded=1&accept-language=de&q=Campingplatz&viewbox=${w},${n},${e},${so}`);
+      if (!res.ok) throw new Error();
+      for (const r of await res.json()) if (r.class === 'tourism' && r.type === 'camp_site') camps.push({ lat: +r.lat, lon: +r.lon, name: r.name || r.display_name?.split(',')[0] });
+      await new Promise(ok => setTimeout(ok, 1100)); // Nominatim: höchstens 1 Anfrage pro Sekunde
+    }
+    return { source: 'Nominatim', camps: dedupe(camps) };
+  } catch {}
+  const camps = [];
+  for (const [w, so, e, n] of boxes) {
+    const res = await fetch(`${PHOTON_URL}?q=camping&osm_tag=tourism:camp_site&limit=30&bbox=${w},${so},${e},${n}`);
+    if (!res.ok) throw new Error('Zeltplatz-Suche: kein Dienst erreichbar (Overpass, Nominatim, Photon). 💡 Später erneut versuchen.');
+    for (const f of (await res.json()).features || []) camps.push({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], name: f.properties?.name });
+  }
+  return { source: 'Photon', camps: dedupe(camps) };
+}
+
 async function loadStageCamps() {
   const req = ++stageRequest;
-  const around = routeStages.map(km => pointAtKm(km)).map(([la, lo]) => `nwr[tourism=camp_site](around:8000,${la.toFixed(5)},${lo.toFixed(5)});`).join('');
   try {
-    const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
+    const { camps, source } = await findCamps(routeStages.map(km => pointAtKm(km)));
     if (req !== stageRequest) return;
-    for (const el of data.elements) {
-      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-      if (lat == null) continue;
-      const ll = L.latLng(lat, lon), name = el.tags?.name || 'Zeltplatz';
+    for (const c of camps) {
+      const ll = L.latLng(c.lat, c.lon), name = c.name || 'Zeltplatz';
       L.marker(ll, { icon: L.divIcon({ className: 'poi-icon', html: '⛺', iconSize: [24, 24] }), title: name })
         .bindPopup(() => {
           const box = document.createElement('div');
@@ -1631,8 +1659,8 @@ async function loadStageCamps() {
           return box;
         }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
     }
-    const n = data.elements.length;
-    $('stageSummary').textContent += n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km';
+    const n = camps.length, via = source === 'Overpass' ? '' : ` (über ${source})`;
+    $('stageSummary').textContent += (n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km') + via;
   } catch (err) {
     if (req === stageRequest) $('stageSummary').textContent += ` · ⚠️ Zeltplätze: ${err.message}`;
   }
@@ -2110,10 +2138,21 @@ async function loadPois() {
   const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
   const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   try {
-    const data = await overpassFetch(query);
+    let elements, note = '';
+    try { elements = (await overpassFetch(query)).elements; }
+    catch (err) {
+      // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
+      const camp = active.find(t => t.id === 'camp');
+      if (!camp) throw err;
+      const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
+      const n = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
+      const { camps, source } = await findCamps(Array.from({ length: n }, (_, i) => pointAtKm(total * i / (n - 1))), rad);
+      elements = camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } }));
+      note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
+    }
     if (req !== poiRequest) return;
 
-    const pois = data.elements.map(el => {
+    const pois = elements.map(el => {
       const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
       const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
       return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
@@ -2127,7 +2166,7 @@ async function loadPois() {
         (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
     }
     $('poiSummary').textContent = (pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
-      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '');
+      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '') + note;
     $('pois').innerHTML = pois.map((p, i) =>
       `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
     $('pois').onclick = e => {
