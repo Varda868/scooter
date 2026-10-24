@@ -16,7 +16,7 @@
   h1 { font-size:20px; margin:0 0 12px; display:flex; align-items:baseline; }
   .clock { margin-left:auto; font-size:13px; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
   label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
-  input[type=text], input[type=password] { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  input[type=text], input[type=password], input[type=number]#avgSpeed { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   /* pan-y: senkrechtes Wischen scrollt das Panel, statt den Regler zu verstellen */
   input[type=range] { width:100%; touch-action:pan-y; }
   details.fold { margin-top:12px; border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
@@ -134,6 +134,8 @@
     <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
     <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
     <input id="speed" type="range" min="25" max="60" step="5" value="45">
+    <label for="avgSpeed">Eigener Schnitt für Fahrzeit und Ankunft (km/h, leer = Valhalla-Schätzung)</label>
+    <input id="avgSpeed" type="number" min="5" max="60" step="1" placeholder="z. B. 38" inputmode="numeric">
     <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
@@ -301,7 +303,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
@@ -311,7 +313,7 @@ SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]
 function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
-  $('profileSummary').textContent = `${$('speed').value} km/h · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
+  $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
     (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
@@ -353,6 +355,7 @@ function renderWaypoints() {
     <span class="wp-input"><input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte"><button class="wp-clear" type="button" title="Text löschen" tabindex="-1">✕</button></span>
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
+    ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${hhmm(new Date(w.eta))}">⏱ ${durText(w.dur)}</span>` : ''}
     ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
@@ -679,9 +682,12 @@ async function route() {
 // Bei Zwischenzielen liefert Valhalla einen Abschnitt (leg) je Teilstrecke.
 const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ? 1 : 0));
 const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+// Fahrzeit in s: eigener Schnitt aus dem Fahrprofil, sonst Valhalla (gilt für Abschnitte und ganze Route)
+const tripTime = s => +$('avgSpeed').value > 0 ? s.length / +$('avgSpeed').value * 3600 : s.time;
+const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; };
 const tripText = s => {
-  const min = Math.round(s.time / 60);
-  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${hhmm(new Date(Date.now() + s.time * 1000))}`;
+  const t = tripTime(s), min = Math.round(t / 60);
+  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${hhmm(new Date(Date.now() + t * 1000))}`;
 };
 
 // Uhr im Header, auf die volle Minute synchronisiert
@@ -704,7 +710,7 @@ function showTrip(trip, alternates = []) {
       .addTo(altLayer);
   });
   setRouteCoords(tripCoords(trip));
-  routeKmh = trip.summary.length / (trip.summary.time / 3600);
+  routeKmh = trip.summary.length / (tripTime(trip.summary) / 3600);
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
@@ -887,6 +893,8 @@ function drawGradeSigns() {
   }
 }
 $('gradeWarn').addEventListener('change', drawGradeSigns);
+// Neuer Schnitt: Zeiten, Ankunft und Wetter je Halt neu berechnen
+$('avgSpeed').addEventListener('change', () => ready() && route());
 
 // Kleines Höhenprofil in der Fahrtleiste, steile Abschnitte rot
 function drawSimProfile() {
@@ -1162,7 +1170,10 @@ async function loadWeather(trip) {
   const stops = located.filter((w, i) => !(w.shaping && i && i < located.length - 1));
   waypoints.forEach(w => { delete w.wx; });
   let t = Date.now();
-  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary?.time || 0) * 1000; w.eta = t; });
+  const now = t;
+  stops.forEach((w, k) => { if (k) t += (trip.legs[k - 1]?.summary ? tripTime(trip.legs[k - 1].summary) : 0) * 1000; w.eta = t; w.dur = (t - now) / 1000; });
+  // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
+  renderWaypoints();
   try {
     const qs = new URLSearchParams({
       latitude: stops.map(w => w.latlng.lat.toFixed(3)).join(','),
