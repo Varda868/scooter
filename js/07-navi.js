@@ -39,7 +39,7 @@ function startNav() {
   if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
   stopSim();
   if (me.follow) $('centerBtn').click();
-  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null, peek: null, lastPos: null });
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null, peek: null, overview: false, lastPos: null });
   $('nav').hidden = false;
   $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
@@ -58,7 +58,7 @@ function startNav() {
 function stopNav() {
   if (!nav.on) return;
   nav.on = false;
-  navPeekEnd();
+  navPeekEnd(); navOverviewEnd(false);
   navigator.geolocation?.clearWatch(nav.watch); nav.watch = null;
   nav.lock?.release().catch(() => {}); nav.lock = null;
   window.speechSynthesis?.cancel();
@@ -103,6 +103,7 @@ function navFix(pos) {
 
   const next = routeManeuvers.find(m => m.km > nav.km + 0.01);
   const restM = (total - nav.km) * 1000;
+  if (nav.overview) { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
   if (nav.peek != null) {
     // Vorschau läuft: Anzeige und Karte gehören ihr; ist das angezeigte Manöver schon erreicht, zurück zur Fahrt
     if (nav.peekKm <= nav.km + 0.01) navPeekEnd(); else { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
@@ -163,7 +164,27 @@ function navPeekEnd() {
   $('navNote').textContent = '';
   if (nav.lastPos) navFix(nav.lastPos);
 }
-document.querySelector('#nav .nav-turn').onclick = navPeek;
+document.querySelector('#nav .nav-turn').onclick = () => { navOverviewEnd(false); navPeek(); };
+
+// Knopf „ganze Strecke“ im Navi: Übersicht für PEEK_MS, danach (oder beim zweiten Tipp) zurück zur Fahrt
+function navOverview() {
+  if (nav.overview) { navOverviewEnd(); return; }
+  navPeekEnd();
+  nav.overview = true;
+  $('fitBtn').classList.add('active');
+  $('navNote').textContent = 'Übersicht · ⤢ tippen: zurück';
+  fitRoute();
+  clearTimeout(nav.overviewTimer);
+  nav.overviewTimer = setTimeout(navOverviewEnd, PEEK_MS);
+}
+function navOverviewEnd(refresh = true) {
+  clearTimeout(nav.overviewTimer);
+  if (!nav.overview) return;
+  nav.overview = false;
+  $('fitBtn').classList.remove('active');
+  $('navNote').textContent = '';
+  if (refresh && nav.lastPos) navFix(nav.lastPos);
+}
 
 // Handzoom im Navi: große Knöpfe und Tasten einer Bluetooth-Lenkerfernbedienung. Lautstärketasten erreichen
 // Webseiten auf Android/iOS normalerweise nicht; kommen sie doch an (manche Fernbedienungen), zählen sie mit.

@@ -232,6 +232,14 @@ $('wpList').addEventListener('keydown', e => { if (e.key === 'Escape') e.target.
 
 $('addVia').onclick = () => changeWaypoints(() => waypoints.splice(waypoints.length - 1, 0, { latlng: null, text: '' }), false);
 $('reverse').onclick = () => changeWaypoints(() => waypoints.reverse());
+// Hin und zurück: Start als neues Ziel anhängen, das bisherige Ziel wird zum Halt
+$('backHome').onclick = () => {
+  const start = waypoints[0], end = waypoints.at(-1);
+  if (!start?.latlng || !end?.latlng || start.latlng.distanceTo(end.latlng) < BACK_HOME_M) return;
+  changeWaypoints(() => waypoints.push({ latlng: start.latlng, text: start.text }));
+};
+$('backDiff').checked = !!settings.backDiff;
+$('backDiff').onchange = () => { settings.backDiff = $('backDiff').checked; store.set('settings', settings); if (ready()) route(); };
 $('undo').onclick = () => {
   if (!undoStack.length) return;
   const state = JSON.parse(undoStack.pop());

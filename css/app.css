@@ -143,6 +143,9 @@
   .map-menu button { display:block; width:100%; margin:4px 0; padding:8px 12px; font-size:14px; }
   .wp-badge.shape { background:#fff; color:#555; border:2px solid #555; width:18px; height:18px; }
   .wp-marker.shape { width:16px; height:16px; background:#fff; border:3px solid #555; line-height:10px; }
+  .back-tools { display:flex; gap:6px; margin-top:6px; align-items:center; }
+  .back-tools button { margin:0; padding:6px; width:auto; flex:1; background:var(--bg); color:var(--fg); border:1px solid var(--line); font-weight:400; font-size:13px; }
+  .back-tools label { margin:0; flex:1; font-size:13px; color:var(--fg); display:flex; gap:6px; align-items:center; }
   .roundtrip { display:flex; gap:6px; margin-top:6px; align-items:center; font-size:13px; }
   .roundtrip input, .roundtrip select { width:auto; min-width:0; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   .roundtrip input { width:64px; }
