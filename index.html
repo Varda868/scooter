@@ -150,6 +150,10 @@
       <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
       <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
     </select>
+    <label for="wxWindow">Wetterwarnung an der Strecke (Regen, Schnee, Sturm, Gewitter, Glätte) zur Ankunftszeit</label>
+    <select id="wxWindow">
+      <option value="15">± 15 min</option><option value="30" selected>± 30 min</option><option value="60">± 60 min</option><option value="0">aus</option>
+    </select>
     </details>
     <details id="poiBox" class="fold">
     <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
@@ -190,6 +194,7 @@
     <div id="summary"></div>
     <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
     <div id="elevation"></div>
+    <div id="wxRouteSummary"></div>
     <div id="incidentSummary"></div>
     <ul id="incidents"></ul>
     <div id="poiSummary"></div>
@@ -231,6 +236,8 @@ const POI_TYPES = [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
   { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
+  // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis; standardmäßig aus
+  { id: 'camp', icon: '⛺', name: 'Zeltplatz', off: true, minRadius: 2000, filters: [ '[tourism=camp_site]' ] },
   // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis; standardmäßig aus
   { id: 'workshop', icon: '🔧', name: 'Zweiradwerkstatt', off: true, minRadius: 2000, filters: [
     '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]' ] }
@@ -268,6 +275,7 @@ let routeKm = null; // kumulierte km je Routenpunkt
 let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
+let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
@@ -281,6 +289,10 @@ function setRouteCoords(coords) {
   routeManeuvers = [];
   eleData = null;
   gradeSignLayer.clearLayers();
+  wxRouteLayer.clearLayers();
+  $('wxRouteSummary').textContent = '';
+  // nach showTrip, das routeKmh erst danach setzt
+  queueMicrotask(loadRouteWeather);
   $('play').hidden = false;
   routeCoords = coords;
   routeKm = [0];
@@ -308,7 +320,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
@@ -586,6 +598,8 @@ function clearRoute() {
   $('steps').innerHTML = '';
   $('elevation').innerHTML = '';
   renderIncidents([]);
+  wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
+  wxShelter = false;
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);
@@ -1225,6 +1239,82 @@ function renderIncidents(incidents) {
   };
 }
 
+// --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
+const wxRouteLayer = L.layerGroup().addTo(map);
+let wxRouteRequest = 0;
+const SHELTER_HAZARDS = ['storm', 'rain', 'snow'];
+function setWxShelter(on) {
+  if (on === wxShelter) return;
+  wxShelter = on;
+  loadPois();
+}
+// Reihenfolge = Vorrang, wenn an einem Punkt mehreres zutrifft
+const WX_HAZARDS = [
+  { id: 'storm', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
+  { id: 'ice', icon: '🧊', name: 'Glättegefahr', test: v => [56, 57, 66, 67].includes(v.code) || (v.temp <= 1 && v.precip > 0) || v.temp <= 0,
+    detail: v => `${Math.round(v.temp)} °C` },
+  { id: 'snow', icon: '🌨️', name: 'Schnee', test: v => v.snow > 0, detail: v => `${v.snow.toFixed(1)} cm/15 min` },
+  { id: 'wind', icon: '💨', name: 'Sturmböen', test: v => v.gust >= 55, detail: v => `Böen ${Math.round(v.gust)} km/h` },
+  { id: 'rain', icon: '🌧️', name: 'Regen', test: v => v.precip >= 0.3, detail: v => `${v.precip.toFixed(1)} mm/15 min` }
+];
+
+async function loadRouteWeather() {
+  const req = ++wxRouteRequest, win = +$('wxWindow').value;
+  wxRouteLayer.clearLayers();
+  $('wxRouteSummary').textContent = '';
+  if (!routeCoords || !win) return setWxShelter(false);
+  const total = routeKm[routeKm.length - 1], step = Math.max(3, total / 40), kmh = routeKmh || +$('speed').value * 0.8;
+  const start = Date.now(), samples = [];
+  for (let km = 0; km <= total + 0.01; km += step) {
+    const k = Math.min(km, total);
+    samples.push({ km: k, ll: pointAtKm(k), at: start + k / kmh * 3600000 });
+  }
+  try {
+    const qs = new URLSearchParams({
+      latitude: samples.map(p => p.ll[0].toFixed(3)).join(','), longitude: samples.map(p => p.ll[1].toFixed(3)).join(','),
+      minutely_15: 'precipitation,snowfall,weather_code,temperature_2m,wind_gusts_10m',
+      forecast_days: 2, timeformat: 'unixtime', wind_speed_unit: 'kmh'
+    });
+    const res = await fetch(`${WEATHER_URL}?${qs}`);
+    if (!res.ok || req !== wxRouteRequest) return;
+    let data = await res.json();
+    if (req !== wxRouteRequest) return;
+    if (!Array.isArray(data)) data = [data];
+    // Je Punkt das schlimmste Ereignis im Fenster um die Durchfahrt
+    samples.forEach((p, k) => {
+      const m = data[k]?.minutely_15;
+      if (!m) return;
+      for (const hz of WX_HAZARDS) {
+        const hits = m.time.map((ts, j) => ({ ts: ts * 1000, code: m.weather_code?.[j], temp: m.temperature_2m?.[j] ?? 99,
+          precip: m.precipitation?.[j] ?? 0, snow: m.snowfall?.[j] ?? 0, gust: m.wind_gusts_10m?.[j] ?? 0 }))
+          .filter(v => Math.abs(v.ts - p.at) <= win * 60000 && hz.test(v));
+        if (hits.length) { p.hazard = hz; p.hit = hits[0]; break; }
+      }
+    });
+  } catch { return; }
+  // Gleiche Gefahr an aufeinanderfolgenden Punkten zu einem Abschnitt zusammenfassen, ein Symbol am Anfang
+  const sections = [];
+  samples.forEach((p, i) => {
+    if (!p.hazard) return;
+    const last = sections.at(-1);
+    if (last && last.hazard === p.hazard && last.end === i - 1) { last.to = p.km; last.end = i; }
+    else sections.push({ hazard: p.hazard, from: p.km, to: p.km, end: i, points: [p] });
+  });
+  for (const sec of sections) {
+    const p0 = sec.points[0], hz = sec.hazard;
+    const details = hz.detail ? ' · ' + hz.detail(p0.hit) : '';
+    L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'poi-icon', html: hz.icon, iconSize: [24, 24] }) })
+      .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${hhmm(new Date(p0.at))}${details}`)
+      .addTo(wxRouteLayer);
+  }
+  setWxShelter(sections.some(sec => SHELTER_HAZARDS.includes(sec.hazard.id)));
+  $('wxRouteSummary').textContent = sections.length
+    ? '⚠️ Wetter unterwegs: ' + sections.slice(0, 4).map(s => `${s.hazard.icon} ${s.hazard.name} ab km ${s.from.toFixed(0)} (ca. ${hhmm(new Date(s.points[0].at))})`).join(' · ')
+      + (sections.length > 4 ? ` · +${sections.length - 4}` : '')
+    : '';
+}
+$('wxWindow').addEventListener('change', loadRouteWeather);
+
 // --- Wetter je Halt zur voraussichtlichen Ankunft (Open-Meteo, stündlich, bis 3 Tage) ---
 const WMO = [
   [[0], '☀️', 'klar'], [[1], '🌤️', 'überwiegend klar'], [[2], '⛅', 'teils bewölkt'], [[3], '☁️', 'bedeckt'],
@@ -1598,7 +1688,8 @@ async function loadPois() {
   $('pois').innerHTML = '';
   $('poiSummary').textContent = '';
   if (!routeCoords) return;
-  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked);
+  // Schutzhütten kommen bei Gewitter, Regen oder Schnee unterwegs automatisch dazu
+  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked || (t.id === 'shelter' && wxShelter));
   if (!active.length) return;
 
   const req = ++poiRequest;
@@ -1625,7 +1716,8 @@ async function loadPois() {
       }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
         (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
     }
-    $('poiSummary').textContent = pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.';
+    $('poiSummary').textContent = (pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
+      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '');
     $('pois').innerHTML = pois.map((p, i) =>
       `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
     $('pois').onclick = e => {
