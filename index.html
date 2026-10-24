@@ -38,6 +38,7 @@
   .nav-stats button { margin:0; width:44px; padding:6px; background:rgba(255,255,255,.15); font-size:18px; }
   #navVoice.off { opacity:.45; }
   .nav-zoom { position:absolute; z-index:1001; right:10px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:10px; }
+  .nav-zoom[hidden] { display:none; }
   .nav-zoom button { margin:0; width:58px; height:58px; padding:0; border-radius:50%; background:#1d3557; color:#fff; font-size:30px;
     box-shadow:0 2px 8px rgba(0,0,0,.45); }
   .nav-zoom #navZoomAuto { font-size:14px; }
@@ -77,6 +78,9 @@
   .file-btn { display:block; margin-top:14px; padding:8px; border:1px dashed var(--line); border-radius:6px; text-align:center; cursor:pointer; color:var(--fg); font-size:14px; }
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
+  /* Unwetter: schlanker farbiger Ring je Gefahr */
+  .wx-pin span { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border:1.5px solid; border-radius:50%;
+    background:rgba(255,255,255,.75); font-size:15px; line-height:1; box-shadow:0 0 2px rgba(0,0,0,.3); }
   #wpList { list-style:none; padding:0; margin:0; }
   #wpList li { margin:4px 0; position:relative; }
   .suggest { position:absolute; left:26px; right:0; top:32px; z-index:1000; background:var(--bg); border:1px solid var(--line); border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,.2); max-height:260px; overflow-y:auto; }
@@ -1654,12 +1658,12 @@ function setWxShelter(on) {
 }
 // Reihenfolge = Vorrang, wenn an einem Punkt mehreres zutrifft
 const WX_HAZARDS = [
-  { id: 'storm', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
-  { id: 'ice', icon: '🧊', name: 'Glättegefahr', test: v => [56, 57, 66, 67].includes(v.code) || (v.temp <= 1 && v.precip > 0) || v.temp <= 0,
+  { id: 'storm', color: '#c0392b', icon: '⛈️', name: 'Gewitter', test: v => [95, 96, 99].includes(v.code) },
+  { id: 'ice', color: '#1f6fb2', icon: '🧊', name: 'Glättegefahr', test: v => [56, 57, 66, 67].includes(v.code) || (v.temp <= 1 && v.precip > 0) || v.temp <= 0,
     detail: v => `${Math.round(v.temp)} °C` },
-  { id: 'snow', icon: '🌨️', name: 'Schnee', test: v => v.snow > 0, detail: v => `${v.snow.toFixed(1)} cm/15 min` },
-  { id: 'wind', icon: '💨', name: 'Sturmböen', test: v => v.gust >= 55, detail: v => `Böen ${Math.round(v.gust)} km/h` },
-  { id: 'rain', icon: '🌧️', name: 'Regen', test: v => v.precip >= 0.3, detail: v => `${v.precip.toFixed(1)} mm/15 min` }
+  { id: 'snow', color: '#5fa8d3', icon: '🌨️', name: 'Schnee', test: v => v.snow > 0, detail: v => `${v.snow.toFixed(1)} cm/15 min` },
+  { id: 'wind', color: '#7a7a7a', icon: '💨', name: 'Sturmböen', test: v => v.gust >= 55, detail: v => `Böen ${Math.round(v.gust)} km/h` },
+  { id: 'rain', color: '#2e86e4', icon: '🌧️', name: 'Regen', test: v => v.precip >= 0.3, detail: v => `${v.precip.toFixed(1)} mm/15 min` }
 ];
 
 async function loadRouteWeather() {
@@ -1707,7 +1711,7 @@ async function loadRouteWeather() {
   for (const sec of sections) {
     const p0 = sec.points[0], hz = sec.hazard;
     const details = hz.detail ? ' · ' + hz.detail(p0.hit) : '';
-    L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'poi-icon', html: hz.icon, iconSize: [24, 24] }) })
+    L.marker(p0.ll, { keyboard: false, icon: L.divIcon({ className: 'wx-pin', html: `<span style="border-color:${hz.color}">${hz.icon}</span>`, iconSize: [28, 28] }) })
       .bindTooltip(`${hz.name} km ${sec.from.toFixed(0)}${sec.to > sec.from ? `–${sec.to.toFixed(0)}` : ''} · ca. ${etaText(p0.at)}${details}`)
       .addTo(wxRouteLayer);
   }
