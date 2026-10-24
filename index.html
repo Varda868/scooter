@@ -64,6 +64,11 @@
   .suggest div:hover, .suggest div.active { background:var(--line); }
   .wp-row { display:flex; gap:4px; align-items:center; }
   .wp-row input { flex:1; min-width:0; }
+  .wp-input { flex:1; min-width:0; position:relative; display:flex; }
+  .wp-input input { padding-right:28px !important; }
+  .wp-clear { position:absolute; right:2px; top:50%; transform:translateY(-50%); width:24px; height:24px; margin:0; padding:0;
+    border:0; border-radius:50%; background:transparent; color:var(--muted); font-size:15px; line-height:24px; cursor:pointer; }
+  .wp-input input:placeholder-shown + .wp-clear { display:none; }
   #wpList textarea, .poi-form textarea, .poi-form input, .poi-form select { width:100%; margin-top:4px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:13px system-ui,sans-serif; box-sizing:border-box; }
   .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
@@ -90,6 +95,9 @@
   .roundtrip input { width:64px; }
   .roundtrip button { margin:0; padding:6px 8px; width:auto; flex:1; font-size:13px; }
   .map-menu button.secondary { background:#eee; color:#222; }
+  /* Schließen-Kreuz groß genug für den Finger, Inhalt darunter */
+  .leaflet-popup-close-button { width:32px !important; height:32px !important; font:24px/30px system-ui,sans-serif !important; }
+  .map-menu .leaflet-popup-content { margin-top:28px; }
   #elevation { margin-top:8px; }
   #elevation svg { width:100%; height:110px; display:block; touch-action:none; }
   #elevation .ele-stats { font-size:13px; margin-bottom:2px; }
@@ -157,15 +165,21 @@
     <label><input id="ttAvoid" type="checkbox" checked> Sperrungen automatisch umfahren</label>
     <label><input id="ttFlow" type="checkbox"> Verkehrsfluss auf der Karte (verbraucht Kachel-Kontingent)</label>
     </details>
-    <label class="file-btn">📂 GPX laden (Track oder Geocaches)
+    <label class="file-btn">📂 GPX-Track laden
       <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
     </label>
-    <label><input id="cachesNearRoute" type="checkbox" checked> Geocaches nur entlang der Route</label>
     <details id="ocBox" class="fold">
-    <summary>🧭 Opencaching.de <span id="ocSummary" class="hint"></span></summary>
-    <label for="ocKey">OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
+    <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
+    <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
+      <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
+    </label>
+    <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
+    <fieldset id="cacheTypes">
+      <legend>Cache-Typen</legend>
+    </fieldset>
+    <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
     <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
-    <label><input id="ocOn" type="checkbox" checked> Caches entlang der Route live laden</label>
+    <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
     </details>
     <button id="go">Route berechnen</button>
     <div id="summary"></div>
@@ -338,7 +352,7 @@ function renderWaypoints() {
   const last = waypoints.length - 1;
   $('wpList').innerHTML = waypoints.map((w, i) => `<li data-i="${i}"><div class="wp-row">
     <span class="wp-badge${wpClass(i)}">${isEnd(i) || !w.shaping ? wpLabel(i) : ''}</span>
-    <input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte">
+    <span class="wp-input"><input type="text" value="${escapeHtml(w.text)}" placeholder="${i === 0 ? 'Start' : i === last ? 'Ziel' : w.shaping ? 'Formpunkt' : 'Zwischenziel'}: Adresse oder Karte"><button class="wp-clear" type="button" title="Text löschen" tabindex="-1">✕</button></span>
     <button class="icon-btn" data-act="up" title="Nach oben" ${i ? '' : 'disabled'}>↑</button>
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
     ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${hhmm(new Date(w.eta))}">⏱ ${durText(w.dur)}</span>` : ''}
@@ -367,7 +381,7 @@ function renderWaypoints() {
         if (w.note) box.insertAdjacentHTML('beforeend', `<div class="note">${escapeHtml(w.note)}</div>`);
         box.append(btn);
         return box;
-      }, { className: 'map-menu', closeButton: false });
+      }, { className: 'map-menu' });
   });
 
   exclLayer.clearLayers();
@@ -375,7 +389,7 @@ function renderWaypoints() {
     icon: L.divIcon({ className: 'poi-icon', html: '⛔', iconSize: [22, 22] }), title: 'Gesperrt'
   }).addTo(exclLayer).bindPopup(() => menuBox([['unblock', 'Sperre aufheben']], () => {
     changeWaypoints(() => excluded.splice(i, 1));
-  }), { className: 'map-menu', closeButton: false }));
+  }), { className: 'map-menu' }));
 }
 
 // Kleines Button-Menü für Popups; onPick bekommt die gewählte Aktion
@@ -417,7 +431,7 @@ function setEnd(i, ll) {
   waypoints[i] = { ...waypoints[i], latlng: ll, text: coordText(ll), shaping: false };
 }
 
-const mapMenu = L.popup({ className: 'map-menu', closeButton: false, minWidth: 170 });
+const mapMenu = L.popup({ className: 'map-menu', minWidth: 170 });
 map.on('click', e => {
   const ll = e.latlng, last = waypoints.length - 1;
   const hasStart = !!waypoints[0].latlng, hasEnd = !!waypoints[last].latlng;
@@ -529,6 +543,16 @@ function pickSuggestion(i, it) {
     { timeout: 10000, maximumAge: 60000 });
 }
 
+// Kreuz im Adressfeld: nur den Text leeren und Feld fokussiert lassen (Vorschläge erscheinen),
+// pointerdown statt click, damit das Feld nicht erst den Fokus verliert und die Eingabe übernimmt
+$('wpList').addEventListener('pointerdown', e => {
+  if (!e.target.matches('.wp-clear')) return;
+  e.preventDefault();
+  const input = e.target.previousElementSibling;
+  input.value = '';
+  input.focus();
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+});
 $('wpList').addEventListener('focusin', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
 $('wpList').addEventListener('input', e => { if (e.target.matches('.wp-row input')) showSuggestions(e.target); });
 $('wpList').addEventListener('focusout', e => {
@@ -1207,7 +1231,7 @@ function enableRouteEditing(line) {
 }
 
 function openRouteMenu(ll) {
-  L.popup({ className: 'map-menu', closeButton: false, minWidth: 170 }).setLatLng(ll).setContent(menuBox([
+  L.popup({ className: 'map-menu', minWidth: 170 }).setLatLng(ll).setContent(menuBox([
     ['via', 'Zwischenziel hier'], ['shape', 'Formpunkt hier (ohne Halt)'], ['avoid', 'Diese Straße meiden'], ['mypoi', '⭐ Eigenen POI hier']
   ], act => act === 'mypoi' ? openPoiForm(ll) :
     changeWaypoints(() => act === 'avoid' ? excluded.push(ll) : insertVia(ll, act === 'shape')), 'via')).openOn(map);
@@ -1584,6 +1608,7 @@ function thin(coords, minMeters = 15) {
   return out;
 }
 
+$('gpxCaches').onchange = e => $('gpx').onchange(e);
 $('gpx').onchange = async e => {
   let tracks = 0, added = 0;
   try {
@@ -1621,6 +1646,27 @@ $('gpx').onchange = async e => {
   e.target.value = '';
 };
 
+// Cache-Typen zum Filtern; Typnamen aus GPX (Groundspeak) und OKAPI landen per Teilwort in einer Gruppe
+const CACHE_GROUPS = [
+  { id: 'trad', icon: '📦', color: '#02874d', name: 'Tradi', words: ['traditional'] },
+  { id: 'multi', icon: '🧩', color: '#e98300', name: 'Multi', words: ['multi'] },
+  { id: 'mystery', icon: '❓', color: '#0b5fb4', name: 'Mystery/Quiz', words: ['unknown', 'mystery', 'quiz', 'math'] },
+  { id: 'virtual', icon: '🌍', color: '#0aa3a3', name: 'Earth/Virtual/Webcam', words: ['earth', 'virtual', 'webcam'] },
+  { id: 'event', icon: '🎉', color: '#c0392b', name: 'Event', words: ['event'] },
+  { id: 'other', icon: '📍', color: '#777', name: 'Andere', words: [] }
+];
+const cacheGroup = c => !c.isCache ? 'other'
+  : (CACHE_GROUPS.find(g => g.words.some(w => (c.type || '').toLowerCase().includes(w))) || CACHE_GROUPS.at(-1)).id;
+const cacheTypesOn = new Set(store.get('cacheTypes', CACHE_GROUPS.map(g => g.id)));
+$('cacheTypes').insertAdjacentHTML('beforeend', CACHE_GROUPS.map(g =>
+  `<label><input type="checkbox" value="${g.id}"${cacheTypesOn.has(g.id) ? ' checked' : ''}> ${g.icon} ${g.name}</label>`).join(''));
+$('cacheTypes').onchange = e => {
+  e.target.checked ? cacheTypesOn.add(e.target.value) : cacheTypesOn.delete(e.target.value);
+  store.set('cacheTypes', [...cacheTypesOn]);
+  updateCacheBoxSummary();
+  renderCaches();
+};
+
 // --- Opencaching.de (OKAPI, Level 1: nur Consumer Key). Kein CORS dokumentiert, daher JSONP. ---
 const OKAPI_URL = 'https://www.opencaching.de/okapi/services/';
 Object.assign(oc, store.get('opencaching', {}));
@@ -1628,7 +1674,13 @@ $('ocKey').value = oc.key; $('ocOn').checked = oc.on;
 function applyOc() {
   oc.key = $('ocKey').value.trim(); oc.on = $('ocOn').checked;
   store.set('opencaching', { key: oc.key, on: oc.on });
-  $('ocSummary').textContent = !oc.key ? 'kein Schlüssel' : oc.on ? 'live an' : 'aus';
+  updateCacheBoxSummary();
+}
+// Kopfzeile: gewählte Typen und Opencaching-Status
+function updateCacheBoxSummary() {
+  const on = CACHE_GROUPS.filter(g => cacheTypesOn.has(g.id));
+  $('ocSummary').textContent = (on.length === CACHE_GROUPS.length ? 'alle Typen' : on.map(g => g.icon).join('') || 'keine Typen') +
+    ' · Opencaching ' + (!oc.key ? 'ohne Schlüssel' : oc.on ? 'live' : 'aus');
 }
 applyOc();
 ['ocKey', 'ocOn'].forEach(id => $(id).addEventListener('change', () => { applyOc(); loadOpencaching(); }));
@@ -1691,6 +1743,13 @@ async function loadOpencaching() {
   renderCaches();
 }
 
+// Schmale Stecknadel in der Typfarbe (angelehnt an die Geocaching-Farben), Spitze auf dem Cache
+function cachePin(c) {
+  const color = CACHE_GROUPS.find(g => g.id === cacheGroup(c)).color;
+  return L.divIcon({ className: '', iconSize: [12, 22], iconAnchor: [6, 22], popupAnchor: [0, -20],
+    html: `<svg width="12" height="22" viewBox="0 0 12 22"><path d="M6 21.5 L1.6 9.5 A5 5 0 1 1 10.4 9.5 Z" fill="${color}" stroke="#fff" stroke-width="1.2"/><circle cx="6" cy="6" r="1.8" fill="#fff"/></svg>` });
+}
+
 function renderCaches() {
   cacheLayer.clearLayers();
   $('caches').innerHTML = '';
@@ -1698,18 +1757,25 @@ function renderCaches() {
   const radius = +$('radius').value;
   const filter = $('cachesNearRoute').checked && routeCoords;
   const shown = caches.map(c => ({ ...c, ...(routeCoords ? locateOnRoute(c.lat, c.lon) : {}) }))
-    .filter(c => !filter || c.dist <= radius)
+    .filter(c => (!filter || c.dist <= radius) && cacheTypesOn.has(cacheGroup(c)))
     .sort((a, b) => (a.km ?? 0) - (b.km ?? 0));
 
   for (const c of shown) {
-    const icon = cacheIcon(c.type, c.isCache);
     const dt = c.difficulty ? `<br>D ${escapeHtml(c.difficulty)} / T ${escapeHtml(c.terrain)}` + (c.container ? ` · ${escapeHtml(c.container)}` : '') : '';
     const pos = c.km != null ? `<br>km ${c.km.toFixed(1)} · ${Math.round(c.dist)} m neben der Route` : '';
     const link = /^https?:\/\//.test(c.url) ? `<br><a href="${escapeHtml(c.url)}" target="_blank" rel="noopener">Cache-Seite</a>` : '';
-    c.marker = L.marker([c.lat, c.lon], {
-      icon: L.divIcon({ className: 'poi-icon', html: icon, iconSize: [24, 24] }), title: c.title
-    }).bindPopup(`<b>${escapeHtml(c.title)}</b><br>${escapeHtml(c.code)}${c.type ? ' · ' + escapeHtml(c.type) : ''}${dt}${pos}${link}`)
-      .addTo(cacheLayer);
+    const box = document.createElement('div');
+    box.innerHTML = `<b>${escapeHtml(c.title)}</b><br>${escapeHtml(c.code)}${c.type ? ' · ' + escapeHtml(c.type) : ''}${dt}${pos}${link}`;
+    // Cache direkt anfahren: als Zwischenziel (minimaler Umweg) oder als Ziel
+    box.append(menuBox([['via', 'Als Zwischenziel'], ['end', 'Als Ziel']], act => {
+      const ll = L.latLng(c.lat, c.lon), text = `${c.code} ${c.title !== c.code ? c.title : ''}`.trim();
+      changeWaypoints(() => {
+        if (act === 'end') setEnd(waypoints.length - 1, ll); else insertVia(ll);
+        waypoints.find(w => w.latlng === ll).text = text;
+      });
+    }, 'via'));
+    c.marker = L.marker([c.lat, c.lon], { icon: cachePin(c), title: c.title })
+      .bindPopup(box, { minWidth: 200 }).addTo(cacheLayer);
   }
   const label = caches.some(c => c.isCache) ? 'Geocaches' : 'Wegpunkte';
   $('cacheSummary').textContent = filter
