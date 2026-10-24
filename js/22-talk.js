@@ -33,8 +33,10 @@ function talkLaden() {
     talk.mic.beiRahmen = talkRahmen;
     talk.vox = new Vox.Erkenner({ empf: talkPrefs.empf, halt_ms: talkPrefs.halt });
     await Sprechfunk.laden();
-    talk.opus = !!window.MediaStreamTrackProcessor && !!window.AudioDecoder &&
-      !!(await window.AudioEncoder?.isConfigSupported({ ...OPUS_CFG, sampleRate: 48000 }).catch(() => null))?.supported;
+    const fehlt = ['AudioEncoder', 'AudioDecoder', 'AudioData', 'AudioWorkletNode'].filter(k => !window[k]);
+    talk.opusGrund = fehlt.length ? 'fehlt ' + fehlt.join(', ')
+      : (await AudioEncoder.isConfigSupported({ ...OPUS_CFG, sampleRate: 48000 }).catch(() => null))?.supported ? '' : 'Opus-Kodierer nicht unterstützt';
+    talk.opus = !talk.opusGrund;
   })().catch(e => { talkLibs = null; throw e; });
 }
 // Eigener Schlüssel dieser App, bleibt im Browser
@@ -79,7 +81,8 @@ async function talkDruecken(vonVox = false) {
     const probe = new Sprechfunk.Codec(TALK_CODEC), n = probe.n; probe.frei();
     await talk.mic.oeffnen(n);
     if (talk.tx !== t) return;
-    if (talk.opus && talkLeser()) { talkOpusStart(t); return; }
+    if (talk.opus && await talkOpusBereit() && talk.tx === t && talkLeser()) { talkOpusStart(t); return; }
+    if (talk.tx !== t) return;
     const codec = new Sprechfunk.Codec(TALK_CODEC);
     t.a = new talk.mod.Aufnahme(talk.netz.sk, talkKopf(TALK_CODEC), codec.nb);
     t.codec = codec;
@@ -115,31 +118,57 @@ async function talkSenden(a, ms) {
   } catch (e) { talkLog('⚠️ Senden: ' + e.message); }
 }
 
-// ---- Opus: liest das Mikrofon in voller Rate über eine Kopie der Spur (Sprechfunk.Mikrofon liefert nur 8 kHz und
-// bleibt für VOX zuständig). Bei VOX laufen die letzten 600 ms als Vorlauf mit, damit der Wortanfang nicht fehlt.
-function talkLeser() {
-  const spur = talk.mic?.spur;
-  if (!spur || spur.readyState !== 'live') return null;
-  if (talk.leser?.spur === spur && !talk.leser.aus) return talk.leser;
-  talk.leser?.stop();
-  const klon = spur.clone(), reader = new MediaStreamTrackProcessor({ track: klon }).readable.getReader();
-  const l = talk.leser = { spur, ring: [], ringUs: 0, aus: false,
-    stop() { this.aus = true; klon.stop(); reader.cancel().catch(() => {}); this.ring.forEach(a => a.close()); this.ring = []; } };
-  (async () => {
-    while (!l.aus) {
-      const { value: a, done } = await reader.read().catch(() => ({ done: true }));
-      if (done) break;
-      if (spur.readyState !== 'live') { a.close(); break; } // Mikrofon geschlossen: Kopie mit beenden
-      const t = talk.tx;
-      if (t?.enc && t.enc.state === 'configured') { t.enc.encode(a); a.close(); }
-      else if (talkPrefs.mode === 'vox') {
-        l.ring.push(a); l.ringUs += a.duration;
-        while (l.ring.length > 1 && l.ringUs > 600000) { const o = l.ring.shift(); l.ringUs -= o.duration; o.close(); }
-      } else a.close();
+// ---- Opus: eigener Worklet am Mikrofon-Eingang von Sprechfunk.Mikrofon, in der Rate des AudioContext (meist 48 kHz),
+// Blöcke zu 20 ms als AudioData. Sprechfunk.Mikrofon selbst liefert nur 8 kHz und bleibt für VOX zuständig.
+// Bei VOX laufen die letzten 600 ms als Vorlauf mit, damit der Wortanfang nicht fehlt.
+const LESER_WORKLET = `class Leser extends AudioWorkletProcessor {
+  constructor() { super(); this.n = Math.round(sampleRate / 50); this.buf = new Float32Array(this.n); this.i = 0; }
+  process(ein) {
+    const x = ein[0] && ein[0][0];
+    if (x) for (let k = 0; k < x.length; k++) {
+      this.buf[this.i++] = x[k];
+      if (this.i === this.n) { this.port.postMessage(this.buf, [this.buf.buffer]); this.buf = new Float32Array(this.n); this.i = 0; }
     }
-    l.stop();
-    if (talk.leser === l) talk.leser = null;
-  })();
+    return true;
+  }
+}
+registerProcessor('scooter-leser', Leser);`;
+// Einmal je AudioContext: Worklet laden und prüfen, ob der Kodierer diese Rate kann (sonst Codec2)
+async function talkOpusBereit() {
+  try {
+    const c = await Sprechfunk.audio();
+    if (talk.leserCtx === c) return talk.opus;
+    talk.leserLaden ||= c.audioWorklet.addModule(URL.createObjectURL(new Blob([LESER_WORKLET], { type: 'application/javascript' })));
+    await talk.leserLaden;
+    if (!(await AudioEncoder.isConfigSupported({ ...OPUS_CFG, sampleRate: c.sampleRate }))?.supported) {
+      talk.opus = false; talk.opusGrund = `Opus-Kodierer kann ${c.sampleRate} Hz nicht`;
+    }
+    talk.leserCtx = c;
+  } catch (e) { talk.opus = false; talk.opusGrund = 'Opus-Aufnahme: ' + e.message; }
+  return talk.opus;
+}
+function talkLeser() {
+  const q = talk.mic?.quelle, c = talk.leserCtx;
+  if (!q || !c || !talk.opus) return null;
+  if (talk.leser?.quelle === q) return talk.leser;
+  talk.leser?.stop();
+  const node = new AudioWorkletNode(c, 'scooter-leser'), stumm = c.createGain();
+  stumm.gain.value = 0;
+  q.connect(node); node.connect(stumm).connect(c.destination); // ohne Ausgang läuft der Worklet nicht überall
+  let ts = 0;
+  const l = talk.leser = { quelle: q, ring: [], ringUs: 0,
+    stop() { node.port.onmessage = null; try { q.disconnect(node); } catch {} node.disconnect(); this.ring.forEach(a => a.close()); this.ring = []; } };
+  node.port.onmessage = e => {
+    if (talk.mic.quelle !== q) { l.stop(); if (talk.leser === l) talk.leser = null; return; } // Mikrofon neu geöffnet
+    const a = new AudioData({ format: 'f32-planar', sampleRate: c.sampleRate, numberOfFrames: e.data.length, numberOfChannels: 1, timestamp: ts, data: e.data });
+    ts += e.data.length / c.sampleRate * 1e6;
+    const t = talk.tx;
+    if (t?.enc && t.enc.state === 'configured') { t.enc.encode(a); a.close(); }
+    else if (talkPrefs.mode === 'vox') {
+      l.ring.push(a); l.ringUs += a.duration;
+      while (l.ring.length > 1 && l.ringUs > 600000) { const o = l.ring.shift(); l.ringUs -= o.duration; o.close(); }
+    } else a.close();
+  };
   return l;
 }
 function talkOpusStart(t) {
@@ -154,7 +183,7 @@ function talkOpusStart(t) {
     },
     error: e => { talkLog('⚠️ Opus: ' + e.message); if (talk.tx === t) talkLoslassen(); }
   });
-  t.enc.configure({ ...OPUS_CFG, sampleRate: l.ring[0]?.sampleRate || talk.mic.spur.getSettings().sampleRate || 48000 });
+  t.enc.configure({ ...OPUS_CFG, sampleRate: talk.leserCtx.sampleRate });
   // Vorlauf (nur VOX) zuerst, danach kommen die neuen Blöcke direkt aus dem Leser
   if (t.vox) for (const a of l.ring) { t.enc.encode(a); a.close(); }
   l.ring = []; l.ringUs = 0;
@@ -309,7 +338,7 @@ function talkZeigen() {
   $('talkVoxBox').hidden = talkPrefs.mode !== 'vox';
   const netzText = n ? `${n.verbunden}/${n.leitungen.length} Relays` : '';
   $('talkStatus').textContent = !on ? '' : !n ? $('talkStatus').textContent
-    : `${netzText} verbunden · ${talk.opus ? 'Opus' : 'Codec2 3200'} · Region ${n.region}${talkPrefs.pw ? ' · Gruppe 🔒' : ' · offen (ohne Passwort hört die ganze Region)'}` +
+    : `${netzText} verbunden · ${talk.opus ? 'Opus' : `Codec2 3200${talk.opusGrund ? ` (kein Opus: ${talk.opusGrund})` : ''}`} · Region ${n.region}${talkPrefs.pw ? ' · Gruppe 🔒' : ' · offen (ohne Passwort hört die ganze Region)'}` +
       (n.gesperrt ? ` · ${n.gesperrt} Relay(s) lehnen ab` : '');
   $('talkSummary').textContent = on ? (n ? netzText : 'startet …') : 'aus';
   const sek = t?.codec || t?.enc ? Math.floor(t.ms / 1000) : 0;
@@ -344,7 +373,7 @@ document.addEventListener('pointerdown', () => {
   Sprechfunk.audio().then(() => setTimeout(talkMikro, 50)).catch(() => {});
 }, { capture: true });
 // Wache: Anzeige und Mikrofon nach Unterbrechungen (Anruf, andere App) neu öffnen
-setInterval(() => { if (talkPrefs.on && talk.mod) { talkZeigen(); talkMikro(); if (talk.opus && talkPrefs.mode === 'vox') talkLeser(); } }, 1000);
+setInterval(() => { if (talkPrefs.on && talk.mod) { talkZeigen(); talkMikro(); if (talk.opus && talkPrefs.mode === 'vox' && Sprechfunk.tonBereit()) talkOpusBereit().then(talkLeser); } }, 1000);
 
 $('talkOn').checked = talkPrefs.on;
 $('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkPw').value = talkPrefs.pw;
