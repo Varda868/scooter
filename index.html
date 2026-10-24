@@ -30,6 +30,12 @@
   .sim-turn { display:flex; gap:10px; align-items:center; }
   #simArrow { font-size:30px; line-height:1; width:36px; text-align:center; }
   #simDist { font-size:17px; }
+  #simProfile { display:block; width:100%; height:44px; margin-top:6px; }
+  #simProfile .area { fill:var(--accent); fill-opacity:.25; stroke:var(--accent); stroke-width:1; }
+  #simProfile .steep { stroke:#c0392b; stroke-width:3; }
+  #simProfile .cur { stroke:var(--fg); stroke-width:1.5; }
+  #simProfileBtn:not(.active) { opacity:.45; }
+  .grade-sign { filter:drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
   .sim-stats { display:flex; gap:8px; align-items:center; margin-top:6px; color:var(--muted); }
   .sim-grade { color:#fff; font-weight:700; border-radius:4px; padding:1px 6px; }
   .sim-ctl { display:flex; gap:6px; align-items:center; margin-top:6px; }
@@ -124,6 +130,11 @@
     <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
     <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
     <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+    <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
+    <select id="gradeWarn">
+      <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
+      <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
+    </select>
     </details>
     <details id="poiBox" class="fold">
     <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
@@ -167,8 +178,10 @@
   <div id="sim" class="sim" hidden>
     <div class="sim-turn"><span id="simArrow">↑</span><div><b id="simDist"></b><div id="simText"></div></div></div>
     <div class="sim-stats"><span id="simGrade" class="sim-grade"></span><span id="simInfo"></span></div>
+    <svg id="simProfile" viewBox="0 0 300 44" preserveAspectRatio="none" style="display:none"></svg>
     <div class="sim-ctl">
       <button id="simPause" title="Pause/Weiter">⏸</button>
+      <button id="simProfileBtn" title="Höhenprofil ein/aus">📈</button>
       <input id="simSpeed" type="range" min="5" max="200" step="5" value="30" title="Zeitraffer"><span id="simSpeedVal">30×</span>
       <button id="simStop" title="Beenden">✕</button>
     </div>
@@ -228,7 +241,8 @@ let routeKm = null; // kumulierte km je Routenpunkt
 let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
-const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null, gradeLayer: L.layerGroup() };
+const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, marker: null, profile: false };
+const gradeSignLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
 const cacheLayer = L.layerGroup().addTo(map);
 let caches = [];
@@ -238,6 +252,7 @@ function setRouteCoords(coords) {
   stopSim();
   routeManeuvers = [];
   eleData = null;
+  gradeSignLayer.clearLayers();
   $('play').hidden = false;
   routeCoords = coords;
   routeKm = [0];
@@ -264,7 +279,7 @@ const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju
 $('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
 $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
-const SETTING_IDS = ['speed', 'primary', 'hills', 'radius'];
+const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn'];
 const settings = store.get('settings', {});
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
@@ -274,7 +289,8 @@ SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]
 function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
-  $('profileSummary').textContent = `${$('speed').value} km/h · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}`;
+  $('profileSummary').textContent = `${$('speed').value} km/h · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -729,6 +745,7 @@ function renderElevation(pts, lenM) {
   }
   const totalKm = xs[xs.length - 1];
   eleData = { xs, hs };
+  drawGradeSigns();
   $('elevation').innerHTML = `<div class="ele-stats">↑ ${up} m · ↓ ${down} m · ${Math.round(minH)}–${Math.round(maxH)} m ü. NN · max. ${maxGrade.toFixed(0)} % Steigung</div>
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Höhenprofil">
       <line class="ele-grid" x1="${L0}" x2="${W - R0}" y1="${Y(hi)}" y2="${Y(hi)}"/>
@@ -796,32 +813,79 @@ function heightAt(km) {
 const gradeAt = km => eleData ? (heightAt(km + 0.1) - heightAt(Math.max(0, km - 0.1))) / (Math.min(km, 0.1) + 0.1) / 10 : null;
 const gradeColor = g => g > 8 ? '#c0392b' : g > 5 ? '#e67e22' : g > 2 ? '#e6b800' : g < -5 ? '#1f5fbf' : g < -2 ? '#5aa9e6' : '#2e9e4f';
 
-// Route nach Steigung einfärben, gleiche Farben zu einer Linie zusammenfassen
-function drawGrades() {
-  sim.gradeLayer.clearLayers();
-  if (!eleData) return;
-  const total = routeKm[routeKm.length - 1], step = Math.max(0.05, total / 800);
-  let seg = [pointAtKm(0)], color = gradeColor(gradeAt(0));
-  for (let km = step; km < total + step; km += step) {
-    const k = Math.min(km, total), c = gradeColor(gradeAt(k));
-    seg.push(pointAtKm(k));
-    if (c !== color || k === total) {
-      L.polyline(seg, { color, weight: 7, interactive: false }).addTo(sim.gradeLayer);
-      seg = [pointAtKm(k)]; color = c;
+// Steile Abschnitte: Beginn ab Schwelle, Ende erst unter 70 % davon (Hysterese gegen Flackern im Höhenmodell),
+// mindestens 100 m lang. Richtung = Fahrtrichtung der Route.
+function steepSections(limit) {
+  const out = [], total = routeKm[routeKm.length - 1];
+  let cur = null;
+  for (let km = 0; km <= total; km += 0.05) {
+    const g = gradeAt(km), dir = Math.sign(g);
+    if (cur && (Math.abs(g) < limit * 0.7 || dir !== cur.dir)) {
+      if (km - cur.from >= 0.1) out.push({ ...cur, to: km });
+      cur = null;
     }
+    if (!cur && Math.abs(g) >= limit) cur = { from: km, dir, max: 0 };
+    if (cur) cur.max = Math.max(cur.max, Math.abs(g));
+  }
+  if (cur && total - cur.from >= 0.1) out.push({ ...cur, to: total });
+  return out;
+}
+
+// Warnschild wie Zeichen 108/110: rotes Dreieck, Keil in Fahrtrichtung, Prozentzahl
+function gradeSignSvg(dir, pct) {
+  const wedge = dir > 0 ? '7,19 21,19 21,12' : '7,12 7,19 21,19';
+  return `<svg class="grade-sign" width="28" height="25" viewBox="0 0 28 25"><path d="M14 1.5 L26.5 23.5 H1.5 Z" fill="#fff" stroke="#c0392b" stroke-width="2.5" stroke-linejoin="round"/>
+    <polygon points="${wedge}" fill="#222"/><text x="14" y="13" font-size="6" font-family="system-ui,sans-serif" font-weight="700" text-anchor="middle" fill="#222">${pct}%</text></svg>`;
+}
+
+function drawGradeSigns() {
+  gradeSignLayer.clearLayers();
+  const limit = +$('gradeWarn').value;
+  if (!eleData || !routeCoords || !limit) return;
+  for (const sec of steepSections(limit)) {
+    const pos = pointAtKm(sec.from), ahead = pointAtKm(Math.min(sec.from + 0.05, sec.to));
+    // Schild rechts neben die Straße: senkrecht zur Fahrtrichtung in Bildschirmpixeln versetzen (Mercator ist winkeltreu)
+    const b = (bearing(L.latLng(pos), L.latLng(ahead)) + 90) * Math.PI / 180, dx = Math.sin(b) * 22, dy = -Math.cos(b) * 22;
+    const pct = Math.round(sec.max);
+    L.marker(pos, { keyboard: false, icon: L.divIcon({ className: '', html: gradeSignSvg(sec.dir, pct), iconSize: [28, 25], iconAnchor: [14 - dx, 12.5 - dy] }) })
+      .bindTooltip(`${sec.dir > 0 ? 'Steigung' : 'Gefälle'} bis ${pct} % über ${Math.round((sec.to - sec.from) * 1000)} m · km ${sec.from.toFixed(1)}`)
+      .addTo(gradeSignLayer);
   }
 }
+$('gradeWarn').addEventListener('change', drawGradeSigns);
+
+// Kleines Höhenprofil in der Fahrtleiste, steile Abschnitte rot
+function drawSimProfile() {
+  const svg = $('simProfile');
+  // SVG-Elemente kennen die hidden-Eigenschaft nicht, daher style.display
+  const show = sim.profile && !!eleData;
+  svg.style.display = show ? '' : 'none';
+  $('simProfileBtn').classList.toggle('active', sim.profile);
+  if (!show) return;
+  const { xs, hs } = eleData, total = xs[xs.length - 1];
+  const lo = Math.min(...hs), hi = Math.max(lo + 30, Math.max(...hs));
+  const X = km => km / total * 300, Y = h => 42 - (h - lo) / (hi - lo) * 38;
+  const line = xs.map((x, i) => `${X(x).toFixed(1)},${Y(hs[i]).toFixed(1)}`).join(' ');
+  const limit = +$('gradeWarn').value;
+  const steep = limit ? steepSections(limit).map(s => `<line class="steep" x1="${X(s.from)}" x2="${X(s.to)}" y1="43" y2="43"/>`).join('') : '';
+  svg.innerHTML = `<polygon class="area" points="0,44 ${line} 300,44"/>${steep}<line class="cur" y1="0" y2="44"/>`;
+}
+$('simProfileBtn').onclick = () => {
+  sim.profile = !sim.profile;
+  store.set('simProfile', sim.profile);
+  drawSimProfile();
+  if (sim.marker && !sim.running) renderSim(performance.now());
+};
+sim.profile = store.get('simProfile', true);
 
 function startSim() {
   if (!routeCoords) return;
   stopSim();
   sim.km = 0;
   $('sim').hidden = false;
-  drawGrades();
-  sim.gradeLayer.addTo(map);
+  drawSimProfile();
   sim.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
     icon: L.divIcon({ className: '', html: '<div class="sim-dot">➤</div>', iconSize: [22, 22], iconAnchor: [11, 11] }) }).addTo(map);
-  if (eleData) eleCursor.addTo(map);
   map.setView(routeCoords[0], 16, { animate: false });
   sim.zoomAt = performance.now();
   resumeSim();
@@ -845,7 +909,6 @@ function stopSim() {
   if (!sim.marker) return;
   pauseSim();
   sim.marker.remove(); sim.marker = null;
-  sim.gradeLayer.remove();
   eleCursor.remove();
   $('sim').hidden = true;
 }
@@ -889,6 +952,8 @@ function renderSim(now) {
   }
   $('simInfo').textContent = `km ${sim.km.toFixed(1)} / ${total.toFixed(1)}` + (eleData ? ` · ${Math.round(heightAt(sim.km))} m` : '');
   if (eleData && eleShowKm) eleShowKm(sim.km);
+  const cur = $('simProfile').querySelector('.cur');
+  if (cur && eleData) { const x = sim.km / eleData.xs[eleData.xs.length - 1] * 300; cur.setAttribute('x1', x); cur.setAttribute('x2', x); }
 
   // Nah an der Abbiegung näher heran, bei schnellem Zeitraffer weiter weg; höchstens alle 1,5 s wechseln
   const want = next && dist < 0.3 ? 17 : baseZoom(factor);
