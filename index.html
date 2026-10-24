@@ -286,10 +286,12 @@ const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overp
 // Overpass erlaubt je Nutzer nur wenige gleichzeitige Abfragen: alle nacheinander über eine Warteschlange,
 // bei Fehler der Reihe nach die Spiegelserver. Der zuletzt erfolgreiche Server wird zuerst gefragt.
 let overpassQueue = Promise.resolve(), overpassBest = 0;
-function overpassFetch(query) {
+// onTry(host, n) meldet, welcher Server gerade gefragt wird (für die Statuszeile)
+function overpassFetch(query, onTry) {
   const run = async () => {
     for (let n = 0; n < OVERPASS_URLS.length; n++) {
       const k = (overpassBest + n) % OVERPASS_URLS.length;
+      onTry?.(new URL(OVERPASS_URLS[k]).hostname, n);
       const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
       try {
         const res = await fetch(OVERPASS_URLS[k], { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctl.signal });
@@ -2196,7 +2198,9 @@ async function loadPois() {
   try {
     let elements, note = '';
     try {
-      elements = (await overpassFetch(query)).elements;
+      elements = (await overpassFetch(query, (host, n) => {
+        if (req === poiRequest) $('poiSummary').textContent = n ? `Suche POIs … ${host} (Ausweichserver ${n})` : `Suche POIs … ${host}`;
+      })).elements;
       store.set('lastPois', { query, elements });
     } catch (err) {
       const camp = active.find(t => t.id === 'camp'), lastPois = store.get('lastPois', null);
