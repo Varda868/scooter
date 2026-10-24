@@ -14,157 +14,177 @@
 <body>
 <div id="app">
   <div id="panel">
-    <h1>🛵 Scooterways <span id="clock" class="clock"></span></h1>
-    <ul id="wpList"></ul>
-    <div class="wp-tools">
-      <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
-      <button id="reverse" title="Reihenfolge umkehren">⇅ Umkehren</button>
-      <button id="undo" title="Letzten Schritt rückgängig machen">↶ Zurück</button>
-    </div>
-    <div class="roundtrip">
-      <input id="rtKm" type="number" min="5" max="300" step="5" value="40" title="Länge der Rundtour in km"> km
-      <select id="rtDir" title="Richtung">
-        <option value="">zufällig</option><option value="0">Nord</option><option value="90">Ost</option>
-        <option value="180">Süd</option><option value="270">West</option>
+    <h1>🛵 Scooterways <span id="clock" class="clock"></span><button id="sheetBtn" class="sheet-btn" title="Leiste ein-/ausklappen" aria-expanded="true">▾</button></h1>
+    <nav id="tabs" class="tabs" role="tablist">
+      <button role="tab" data-tab="tour">🧭<span>Tour</span></button>
+      <button role="tab" data-tab="unterwegs">📍<span>Unterwegs</span><b id="tabBadgeUnterwegs" class="badge" hidden></b></button>
+      <button role="tab" data-tab="entdecker">🗺<span>Entdecker</span></button>
+      <button role="tab" data-tab="roller">🛵<span>Roller</span><b id="tabBadgeRoller" class="badge" hidden>!</b></button>
+      <button role="tab" data-tab="setup">⚙<span>Einstellung</span></button>
+    </nav>
+    <section id="tab-tour" class="tab" role="tabpanel">
+      <ul id="wpList"></ul>
+      <div class="wp-tools">
+        <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
+        <button id="reverse" title="Reihenfolge umkehren">⇅ Umkehren</button>
+        <button id="undo" title="Letzten Schritt rückgängig machen">↶ Zurück</button>
+      </div>
+      <div class="roundtrip">
+        <input id="rtKm" type="number" min="5" max="300" step="5" value="40" title="Länge der Rundtour in km"> km
+        <select id="rtDir" title="Richtung">
+          <option value="">zufällig</option><option value="0">Nord</option><option value="90">Ost</option>
+          <option value="180">Süd</option><option value="270">West</option>
+        </select>
+        <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
+      </div>
+      <div id="profileLine" class="hint profile-line" title="Fahrprofil ändern"></div>
+      <button id="go">Route berechnen</button>
+      <div id="summary"></div>
+      <div id="stageSummary" class="hint"></div>
+      <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
+      <button id="navStart" hidden title="Mit GPS navigieren, Bildschirm bleibt an">🧭 Navigation starten</button>
+      <button id="mapSave" hidden title="Vektorkarte im Korridor von 2 km um die Route im Gerät speichern">⬇ Karte für diese Tour offline speichern</button>
+      <div id="mapSaveInfo" class="hint"></div>
+      <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
+      <div id="elevation"></div>
+      <div id="wxRouteSummary"></div>
+      <div id="incidentSummary"></div>
+      <ul id="incidents"></ul>
+      <details id="stepsBox" class="fold"><summary>↱ Abbiegehinweise</summary>
+      <ol id="steps"></ol>
+      </details>
+    </section>
+    <section id="tab-unterwegs" class="tab" role="tabpanel" hidden>
+      <div id="poiSummary"></div>
+      <ul id="pois"></ul>
+      <div id="cacheSummary"></div>
+      <ul id="caches"></ul>
+      <details id="poiBox" class="fold">
+      <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
+      <fieldset id="poiTypes">
+        <legend>Anzeigen</legend>
+      </fieldset>
+      <fieldset id="brands">
+        <legend>🔧 Werkstätten: Marken (keine = alle)</legend>
+      </fieldset>
+      <input id="brand" type="text" placeholder="weitere Marken, z. B. Sherco, Motron">
+      <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
+      <input id="radius" type="range" min="100" max="2000" step="100" value="500">
+      </details>
+      <div class="section-title">⭐ Meine POIs <span id="myPoiCount"></span><button id="exportPois" title="Als GPX speichern, z. B. für ein anderes Gerät">GPX speichern</button></div>
+      <ul id="myPois"></ul>
+      <details id="ocBox" class="fold">
+      <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
+      <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
+        <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+      <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
+      <fieldset id="cacheTypes">
+        <legend>Cache-Typen</legend>
+      </fieldset>
+      <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
+      <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
+      <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
+      </details>
+      <details id="sondeBox" class="fold">
+      <summary>🎈 Wettersonden <span id="sondeSummary" class="hint"></span></summary>
+      <label><input id="sondeOn" type="checkbox"> Live laden (SondeHub, jede Minute)</label>
+      <label for="sondeRadius">Umkreis um die Kartenmitte</label>
+      <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
+      <ul id="sondes" class="sonde-list"></ul>
+      <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
+      </details>
+      <label class="file-btn">📂 GPX-Track laden
+        <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+    </section>
+    <section id="tab-entdecker" class="tab" role="tabpanel" hidden>
+      <details id="exploreBox" class="fold">
+      <summary>🗺 Entdecker <span id="exploreSummary" class="hint"></span></summary>
+      <label class="file-btn">📂 Gefahrene Touren importieren (GPX, mehrere Dateien)
+        <input id="gpxRides" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+      <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
+      <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
+      <label><input id="expPrefer" type="checkbox"> Rundtour: unbefahrene Kacheln bevorzugen</label>
+      <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
+      <div id="exploreStats" class="hint"></div>
+      <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
+      </details>
+    </section>
+    <section id="tab-roller" class="tab" role="tabpanel" hidden>
+      <details id="rollerBox" class="fold">
+      <summary>🛵 Mein Roller <span id="rollerSummary" class="hint"></span></summary>
+      <p class="hint">Bleibt nur auf diesem Gerät, nie auf dem Server. „Sicherung speichern“ für ein neues Handy.</p>
+      <div id="rollerLinks" class="roller-links"></div>
+      <div id="rollerCard" class="roller-card"></div>
+      <details id="rollerEdit" class="roller-edit"><summary>✏️ Fahrzeugdaten bearbeiten</summary>
+      <label for="rl_model">Modell</label><input id="rl_model" type="text" autocomplete="off" spellcheck="false" placeholder="z. B. Vespa Primavera 50">
+      <label for="rl_year">Baujahr</label><input id="rl_year" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_plate">Versicherungskennzeichen</label><input id="rl_plate" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_vin">Fahrgestellnummer (FIN)</label><input id="rl_vin" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_insurer">Versicherung</label><input id="rl_insurer" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_policy">Vertragsnummer</label><input id="rl_policy" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_assist">Pannenhilfe (Telefon)</label><input id="rl_assist" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_shop">Heimatwerkstatt</label><input id="rl_shop" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_shopTel">Telefon Werkstatt</label><input id="rl_shopTel" type="text" autocomplete="off" spellcheck="false">
+      <label for="rl_shopAddr">Adresse Werkstatt</label><input id="rl_shopAddr" type="text" autocomplete="off" spellcheck="false" placeholder="Straße, Ort">
+      <label for="rl_odo">km-Stand laut Tacho</label><input id="rl_odo" type="number" min="0" step="1">
+      <label for="rl_oilEvery">Ölwechsel alle … km (0 = keine Erinnerung)</label><input id="rl_oilEvery" type="number" min="0" step="100">
+      <label for="rl_serviceMonths">Inspektion alle … Monate (0 = keine Erinnerung)</label><input id="rl_serviceMonths" type="number" min="0" step="1">
+      </details>
+      <div id="odoHint" class="hint"></div>
+      <div id="rollerDue" class="hint"></div>
+      <div class="section-title">🔧 Wartungsbuch</div>
+      <div class="roller-add"><input id="mtWhat" type="text" placeholder="z. B. Ölwechsel, Zündkerze, Reifen"><input id="mtKm" type="number" min="0" placeholder="km"><button id="mtAdd" title="Eintrag mit heutigem Datum">+</button></div>
+      <ul id="mtList" class="mt-list"></ul>
+      <div class="roller-io"><button id="rollerExport" class="secondary">Sicherung speichern</button>
+      <label class="file-btn">Sicherung laden<input id="rollerImport" type="file" accept=".json,application/json"></label></div>
+      </details>
+    </section>
+    <section id="tab-setup" class="tab" role="tabpanel" hidden>
+      <details id="profileBox" class="fold">
+      <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
+      <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
+      <input id="speed" type="range" min="25" max="60" step="5" value="45">
+      <label for="avgSpeed">Eigener Schnitt für Fahrzeit und Ankunft (km/h, leer = Valhalla-Schätzung)</label>
+      <input id="avgSpeed" type="number" min="5" max="60" step="1" placeholder="z. B. 38" inputmode="numeric">
+      <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
+      <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
+      <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
+      <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+      <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
+      <select id="gradeWarn">
+        <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
+        <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
       </select>
-      <button id="roundtrip" title="Rundtour ab Start">⟳ Rundtour</button>
-    </div>
-    <details id="profileBox" class="fold">
-    <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
-    <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
-    <input id="speed" type="range" min="25" max="60" step="5" value="45">
-    <label for="avgSpeed">Eigener Schnitt für Fahrzeit und Ankunft (km/h, leer = Valhalla-Schätzung)</label>
-    <input id="avgSpeed" type="number" min="5" max="60" step="1" placeholder="z. B. 38" inputmode="numeric">
-    <label for="primary">Hauptstraßen: <span id="primaryVal">meiden</span></label>
-    <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
-    <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
-    <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
-    <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
-    <select id="gradeWarn">
-      <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
-      <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
-    </select>
-    <label for="wxWindow">Wetterwarnung an der Strecke (Regen, Schnee, Sturm, Gewitter, Glätte) zur Ankunftszeit</label>
-    <select id="wxWindow">
-      <option value="15">± 15 min</option><option value="30" selected>± 30 min</option><option value="60">± 60 min</option><option value="0">aus</option>
-    </select>
-    <label for="dayMax">Mehrtagestour: Fahrzeit pro Tag höchstens (Etappenende mit Zeltplätzen in der Nähe)</label>
-    <select id="dayMax">
-      <option value="0" selected>aus</option><option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option>
-      <option value="5">5 h</option><option value="6">6 h</option><option value="8">8 h</option>
-    </select>
-    <label for="breakMin">Pause je 2 h Fahrt (für Ankunftszeiten)</label>
-    <select id="breakMin">
-      <option value="0" selected>keine</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
-    </select>
-    <label for="dayStart">Mehrtagestour: Weiterfahrt an Folgetagen um</label>
-    <select id="dayStart">
-      <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option>
-    </select>
-    </details>
-    <details id="poiBox" class="fold">
-    <summary>📍 POIs entlang der Route <span id="poiBoxSummary" class="hint"></span></summary>
-    <fieldset id="poiTypes">
-      <legend>Anzeigen</legend>
-    </fieldset>
-    <fieldset id="brands">
-      <legend>🔧 Werkstätten: Marken (keine = alle)</legend>
-    </fieldset>
-    <input id="brand" type="text" placeholder="weitere Marken, z. B. Sherco, Motron">
-    <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
-    <input id="radius" type="range" min="100" max="2000" step="100" value="500">
-    </details>
-    <details id="trafficBox" class="fold">
-    <summary>🚦 Verkehr (TomTom) <span id="trafficSummary" class="hint"></span></summary>
-    <label for="ttKey">TomTom-API-Schlüssel (bleibt nur in diesem Browser)</label>
-    <input id="ttKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
-    <label><input id="ttAvoid" type="checkbox" checked> Sperrungen automatisch umfahren</label>
-    <label><input id="ttFlow" type="checkbox"> Verkehrsfluss auf der Karte (verbraucht Kachel-Kontingent)</label>
-    </details>
-    <label class="file-btn">📂 GPX-Track laden
-      <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
-    </label>
-    <details id="ocBox" class="fold">
-    <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
-    <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
-      <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
-    </label>
-    <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
-    <fieldset id="cacheTypes">
-      <legend>Cache-Typen</legend>
-    </fieldset>
-    <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
-    <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
-    <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
-    </details>
-    <details id="sondeBox" class="fold">
-    <summary>🎈 Wettersonden <span id="sondeSummary" class="hint"></span></summary>
-    <label><input id="sondeOn" type="checkbox"> Live laden (SondeHub, jede Minute)</label>
-    <label for="sondeRadius">Umkreis um die Kartenmitte</label>
-    <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
-    <ul id="sondes" class="sonde-list"></ul>
-    <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
-    </details>
-    <details id="exploreBox" class="fold">
-    <summary>🗺 Entdecker <span id="exploreSummary" class="hint"></span></summary>
-    <label class="file-btn">📂 Gefahrene Touren importieren (GPX, mehrere Dateien)
-      <input id="gpxRides" type="file" accept=".gpx,application/gpx+xml" multiple>
-    </label>
-    <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
-    <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
-    <label><input id="expPrefer" type="checkbox"> Rundtour: unbefahrene Kacheln bevorzugen</label>
-    <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
-    <div id="exploreStats" class="hint"></div>
-    <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
-    </details>
-    <details id="rollerBox" class="fold">
-    <summary>🛵 Mein Roller <span id="rollerSummary" class="hint"></span></summary>
-    <p class="hint">Bleibt nur auf diesem Gerät, nie auf dem Server. „Sicherung speichern“ für ein neues Handy.</p>
-    <div id="rollerLinks" class="roller-links"></div>
-    <div id="rollerCard" class="roller-card"></div>
-    <details id="rollerEdit" class="roller-edit"><summary>✏️ Fahrzeugdaten bearbeiten</summary>
-    <label for="rl_model">Modell</label><input id="rl_model" type="text" autocomplete="off" spellcheck="false" placeholder="z. B. Vespa Primavera 50">
-    <label for="rl_year">Baujahr</label><input id="rl_year" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_plate">Versicherungskennzeichen</label><input id="rl_plate" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_vin">Fahrgestellnummer (FIN)</label><input id="rl_vin" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_insurer">Versicherung</label><input id="rl_insurer" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_policy">Vertragsnummer</label><input id="rl_policy" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_assist">Pannenhilfe (Telefon)</label><input id="rl_assist" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_shop">Heimatwerkstatt</label><input id="rl_shop" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_shopTel">Telefon Werkstatt</label><input id="rl_shopTel" type="text" autocomplete="off" spellcheck="false">
-    <label for="rl_shopAddr">Adresse Werkstatt</label><input id="rl_shopAddr" type="text" autocomplete="off" spellcheck="false" placeholder="Straße, Ort">
-    <label for="rl_odo">km-Stand laut Tacho</label><input id="rl_odo" type="number" min="0" step="1">
-    <label for="rl_oilEvery">Ölwechsel alle … km (0 = keine Erinnerung)</label><input id="rl_oilEvery" type="number" min="0" step="100">
-    <label for="rl_serviceMonths">Inspektion alle … Monate (0 = keine Erinnerung)</label><input id="rl_serviceMonths" type="number" min="0" step="1">
-    </details>
-    <div id="odoHint" class="hint"></div>
-    <div id="rollerDue" class="hint"></div>
-    <div class="section-title">🔧 Wartungsbuch</div>
-    <div class="roller-add"><input id="mtWhat" type="text" placeholder="z. B. Ölwechsel, Zündkerze, Reifen"><input id="mtKm" type="number" min="0" placeholder="km"><button id="mtAdd" title="Eintrag mit heutigem Datum">+</button></div>
-    <ul id="mtList" class="mt-list"></ul>
-    <div class="roller-io"><button id="rollerExport" class="secondary">Sicherung speichern</button>
-    <label class="file-btn">Sicherung laden<input id="rollerImport" type="file" accept=".json,application/json"></label></div>
-    </details>
-    <button id="go">Route berechnen</button>
-    <div id="summary"></div>
-    <div id="stageSummary" class="hint"></div>
-    <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
-    <button id="navStart" hidden title="Mit GPS navigieren, Bildschirm bleibt an">🧭 Navigation starten</button>
-    <button id="mapSave" hidden title="Vektorkarte im Korridor von 2 km um die Route im Gerät speichern">⬇ Karte für diese Tour offline speichern</button>
-    <div id="mapSaveInfo" class="hint"></div>
-    <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
-    <div id="elevation"></div>
-    <div id="wxRouteSummary"></div>
-    <div id="incidentSummary"></div>
-    <ul id="incidents"></ul>
-    <div id="poiSummary"></div>
-    <ul id="pois"></ul>
-    <div id="cacheSummary"></div>
-    <ul id="caches"></ul>
-    <div class="section-title">⭐ Meine POIs <span id="myPoiCount"></span><button id="exportPois" title="Als GPX speichern, z. B. für ein anderes Gerät">GPX speichern</button></div>
-    <ul id="myPois"></ul>
-    <ol id="steps"></ol>
-    <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+      <label for="wxWindow">Wetterwarnung an der Strecke (Regen, Schnee, Sturm, Gewitter, Glätte) zur Ankunftszeit</label>
+      <select id="wxWindow">
+        <option value="15">± 15 min</option><option value="30" selected>± 30 min</option><option value="60">± 60 min</option><option value="0">aus</option>
+      </select>
+      <label for="dayMax">Mehrtagestour: Fahrzeit pro Tag höchstens (Etappenende mit Zeltplätzen in der Nähe)</label>
+      <select id="dayMax">
+        <option value="0" selected>aus</option><option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option>
+        <option value="5">5 h</option><option value="6">6 h</option><option value="8">8 h</option>
+      </select>
+      <label for="breakMin">Pause je 2 h Fahrt (für Ankunftszeiten)</label>
+      <select id="breakMin">
+        <option value="0" selected>keine</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
+      </select>
+      <label for="dayStart">Mehrtagestour: Weiterfahrt an Folgetagen um</label>
+      <select id="dayStart">
+        <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option>
+      </select>
+      </details>
+      <details id="trafficBox" class="fold">
+      <summary>🚦 Verkehr (TomTom) <span id="trafficSummary" class="hint"></span></summary>
+      <label for="ttKey">TomTom-API-Schlüssel (bleibt nur in diesem Browser)</label>
+      <input id="ttKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
+      <label><input id="ttAvoid" type="checkbox" checked> Sperrungen automatisch umfahren</label>
+      <label><input id="ttFlow" type="checkbox"> Verkehrsfluss auf der Karte (verbraucht Kachel-Kontingent)</label>
+      </details>
+      <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+    </section>
   </div>
   <div id="map"></div>
   <div id="nav" class="nav" hidden>
@@ -210,5 +230,6 @@
 <script src="js/18-roller.js"></script>
 <script src="js/19-vektorkarte.js"></script>
 <script src="js/20-start.js"></script>
+<script src="js/21-oberflaeche.js"></script>
 </body>
 </html>
