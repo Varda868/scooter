@@ -157,21 +157,30 @@ function backShare(outCoords, backCoords) {
   for (let i = 0; i < backCoords.length; i += step, n++) if (locateOnRoute(backCoords[i][0], backCoords[i][1], outCoords).dist > 30) other++;
   return n ? other / n : 0;
 }
-async function planTrip(locs, extra = []) {
-  const k = backSplit(locs);
-  if (k < 0) return planRoute(locs, extra);
-  const out = await planRoute(locs.slice(0, k + 1), extra);
-  const outCoords = tripCoords(out.trip);
+// Rückweg mit Meidepunkten auf dem Hinweg (outCoords); findet Valhalla mit allen keinen Weg (z. B. einzige Brücke),
+// mit jedem zweiten erneut versuchen, zuletzt ohne
+async function planBack(locs, outCoords, extra) {
   const avoid = backAvoidPoints(outCoords, BACK_EXCLUDE_MAX - excluded.length - extra.length);
-  let back = null;
-  // Findet Valhalla mit allen Meidepunkten keinen Weg (z. B. einzige Brücke), mit jedem zweiten erneut versuchen
   for (const pts of [avoid, avoid.filter((_, i) => i % 2)]) {
     if (!pts.length) break;
-    try { back = await planRoute(locs.slice(k), [...extra, ...pts]); break; }
-    catch (err) { if (err.offline) throw err; }
+    try {
+      const back = await planRoute(locs, [...extra, ...pts]);
+      summaryNote += ` · ↩ Rückweg zu ${Math.round(backShare(outCoords, tripCoords(back.trip)) * 100)} % anders`;
+      return back;
+    } catch (err) { if (err.offline) throw err; }
   }
-  if (back) summaryNote += ` · ↩ Rückweg zu ${Math.round(backShare(outCoords, tripCoords(back.trip)) * 100)} % anders`;
-  else { back = await planRoute(locs.slice(k), extra); summaryNote += ' · ↩ kein anderer Rückweg gefunden'; }
+  summaryNote += ' · ↩ kein anderer Rückweg gefunden';
+  return planRoute(locs, extra);
+}
+// Rückweg nach der Ankunft (Navi): Hinweg ist die gefahrene Spur; gilt nur, solange Start und Ziel noch dazu passen
+let backOf = null;
+const backOfMatch = locs => !!backOf && locs.length === 2 &&
+  locs[0].latlng.distanceTo(backOf.from) < BACK_HOME_M && locs[1].latlng.distanceTo(backOf.to) < BACK_HOME_M;
+async function planTrip(locs, extra = []) {
+  const k = backSplit(locs);
+  if (k < 0) return backOfMatch(locs) ? planBack(locs, backOf.coords, extra) : planRoute(locs, extra);
+  const out = await planRoute(locs.slice(0, k + 1), extra);
+  const back = await planBack(locs.slice(k), tripCoords(out.trip), extra);
   const legs = [...out.trip.legs, ...back.trip.legs];
   const sum = f => legs.reduce((acc, l) => acc + l.summary[f], 0);
   return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
@@ -189,7 +198,7 @@ async function route() {
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
-    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
     let data;
     try {
       data = await planTrip(locs);

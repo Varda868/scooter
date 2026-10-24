@@ -1,7 +1,8 @@
 // --- Navigation: echte GPS-Position statt Zeitraffer, Bildschirm bleibt an, Sprachansage, Neuberechnung bei Abweichung ---
-const OFF_ROUTE_M = 40, REROUTE_PAUSE_MS = 20000;
+const OFF_ROUTE_M = 40, REROUTE_PAUSE_MS = 20000, ARRIVE_M = 80, ARRIVE_MS = 90000;
 const nav = { on: false, watch: null, km: 0, off: 0, lastReroute: 0, lock: null, voice: store.get('navVoice', true), said: new Set(), marker: null, done: false };
 map.getContainer().appendChild($('nav'));
+map.getContainer().appendChild($('arrive'));
 L.DomEvent.disableClickPropagation($('nav'));
 $('navVoice').classList.toggle('off', !nav.voice);
 
@@ -39,7 +40,10 @@ function startNav() {
   if (!navigator.geolocation) { $('summary').textContent = '⚠️ Standort wird von diesem Browser nicht unterstützt. 💡 Anderen Browser verwenden.'; return; }
   stopSim();
   if (me.follow) $('centerBtn').click();
-  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null, peek: null, overview: false, lastPos: null });
+  Object.assign(nav, { on: true, km: 0, off: 0, said: new Set(), done: false, zoom: 17, manual: null, peek: null, overview: false, lastPos: null,
+    t0: Date.now(), odo: 0, moveSec: 0, prevFix: null, home: { ...waypoints.find(w => w.latlng) } });
+  clearTimeout(nav.arriveTimer); nav.arriveTimer = null;
+  $('arrive').hidden = true;
   $('nav').hidden = false;
   $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
@@ -55,15 +59,17 @@ function startNav() {
   }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
 }
 
-function stopNav() {
+// keepRec: die Ankunftskarte entscheidet, ob die mitgeschriebene Fahrt gespeichert wird
+function stopNav(keepRec = false) {
   if (!nav.on) return;
   nav.on = false;
   navPeekEnd(); navOverviewEnd(false);
+  clearTimeout(nav.arriveTimer); nav.arriveTimer = null;
   navigator.geolocation?.clearWatch(nav.watch); nav.watch = null;
   nav.lock?.release().catch(() => {}); nav.lock = null;
   window.speechSynthesis?.cancel();
   nav.marker?.remove(); nav.marker = null;
-  expSaveRecording();
+  if (keepRec !== true) expSaveRecording();
   $('nav').hidden = true;
   $('navZoom').hidden = true;
   setFull(false);
@@ -76,7 +82,7 @@ function navFix(pos) {
   const ll = L.latLng(lat, lon), total = routeKm.at(-1);
   const kmh = speed != null && speed >= 0 ? speed * 3.6 : null;
   nav.marker.setLatLng(ll).addTo(map);
-  if ((accuracy || 0) < 50) expRecord(lat, lon);
+  if ((accuracy || 0) < 50) { expRecord(lat, lon); navOdo(ll, pos.timestamp); }
   const loc = navLocate(lat, lon);
 
   // Abweichung: mehrere Fixes nacheinander deutlich neben der Route (bei guter Genauigkeit) → ab hier neu rechnen
@@ -103,6 +109,8 @@ function navFix(pos) {
 
   const next = routeManeuvers.find(m => m.km > nav.km + 0.01);
   const restM = (total - nav.km) * 1000;
+  if (restM < 30 && !nav.done) { nav.done = true; say('Sie haben Ihr Ziel erreicht'); }
+  navArriveWatch(ll);
   if (nav.overview) { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
   if (nav.peek != null) {
     // Vorschau läuft: Anzeige und Karte gehören ihr; ist das angezeigte Manöver schon erreicht, zurück zur Fahrt
@@ -111,7 +119,6 @@ function navFix(pos) {
   if (!next || restM < 30) {
     $('navArrow').textContent = '🏁'; $('navDist').textContent = restM < 30 ? 'Ziel erreicht' : distText(restM);
     $('navText').textContent = routeManeuvers.at(-1)?.text || 'Ziel';
-    if (restM < 30 && !nav.done) { nav.done = true; say('Sie haben Ihr Ziel erreicht'); }
   } else {
     const m = (next.km - nav.km) * 1000;
     $('navArrow').textContent = TURN_ARROWS[next.type] || '↑';
@@ -208,7 +215,64 @@ document.addEventListener('keydown', e => {
 });
 
 $('navStart').onclick = startNav;
-$('navStop').onclick = stopNav;
+// ✕ nach dem Ziel zeigt ebenfalls die Ankunftskarte
+$('navStop').onclick = () => nav.done ? navArrive() : stopNav();
+
+// --- Ankunft: Gefahrene km und Fahrzeit mitzählen; nach ARRIVE_MS am Ziel endet das Navi von selbst ---
+function navOdo(ll, t) {
+  const p = nav.prevFix;
+  if (!p) { nav.prevFix = { ll, t }; return; }
+  const d = map.distance(p.ll, ll), dt = (t - p.t) / 1000;
+  if (d < 10) return; // Stehen und GPS-Zittern zählen nicht
+  nav.odo += d / 1000;
+  if (dt > 0 && dt < 120 && d / dt > 1.5) nav.moveSec += dt;
+  nav.prevFix = { ll, t };
+}
+function navArriveWatch(ll) {
+  const near = nav.done && ll.distanceTo(L.latLng(routeCoords.at(-1))) < ARRIVE_M;
+  if (near && !nav.arriveTimer) {
+    nav.arriveTimer = setTimeout(navArrive, ARRIVE_MS);
+    $('navNote').textContent = 'Angekommen · Navi endet gleich von selbst';
+  } else if (!near && nav.arriveTimer) {
+    clearTimeout(nav.arriveTimer); nav.arriveTimer = null;
+    $('navNote').textContent = '';
+  }
+}
+let arrival = null;
+function navArrive() {
+  if (!nav.on) return;
+  const here = nav.lastPos ? L.latLng(nav.lastPos.coords.latitude, nav.lastPos.coords.longitude) : L.latLng(routeCoords.at(-1));
+  const ride = exp.rec.length > 1 ? exp.rec.slice() : null;
+  arrival = { here, home: nav.home, coords: ride || routeCoords.slice() };
+  const kmh = nav.moveSec > 60 ? nav.odo / nav.moveSec * 3600 : null;
+  const tiles = ride && exp.tiles.size ? newTilesOf(ride).size : null;
+  stopNav(true);
+  say('Navigation beendet');
+  $('arriveStats').innerHTML = [`<b>${nav.odo.toFixed(1).replace('.', ',')} km</b>`, `${durText(nav.moveSec)} Fahrzeit`,
+    kmh ? `Ø ${Math.round(kmh)} km/h` : '', tiles != null ? `🧭 ${tiles} neue Kacheln` : ''].filter(Boolean).join(' · ');
+  const canBack = !!arrival.home?.latlng && here.distanceTo(arrival.home.latlng) > BACK_HOME_M;
+  $('arriveBack').hidden = $('arriveBackDiff').hidden = !canBack;
+  $('arriveSave').hidden = $('arriveDrop').hidden = !ride;
+  $('arrive').hidden = false;
+}
+// Schließen ohne Wahl speichert die Fahrt, wie bisher beim Beenden
+function arriveClose(save = true) {
+  $('arrive').hidden = true;
+  if (save) expSaveRecording(); else exp.rec = [];
+}
+function arriveBack(diff) {
+  const { here, home, coords } = arrival;
+  arriveClose();
+  backOf = diff ? { from: here, to: home.latlng, coords } : null;
+  showTab('tour');
+  changeWaypoints(() => { waypoints = [{ latlng: here, text: 'Mein Standort' }, { latlng: home.latlng, text: home.text || 'Start' }]; });
+}
+L.DomEvent.disableClickPropagation($('arrive'));
+$('arriveBack').onclick = () => arriveBack(false);
+$('arriveBackDiff').onclick = () => arriveBack(true);
+$('arriveSave').onclick = () => arriveClose(true);
+$('arriveDrop').onclick = () => arriveClose(false);
+$('arriveClose').onclick = () => arriveClose(true);
 $('navVoice').onclick = () => {
   nav.voice = !nav.voice;
   store.set('navVoice', nav.voice);

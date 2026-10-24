@@ -222,6 +222,16 @@
     <div id="navNote" class="nav-note"></div>
   </div>
   <div id="talkPtt" class="talk-ptt" hidden><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
+  <div id="arrive" class="arrive" hidden>
+    <div class="arrive-head"><b>🏁 Angekommen</b><button id="arriveClose" title="Schließen (Fahrt wird gespeichert)">✕</button></div>
+    <div id="arriveStats"></div>
+    <div class="arrive-btns">
+      <button id="arriveBack" title="Route von hier zurück zum Start">↩ Zurück, gleicher Weg</button>
+      <button id="arriveBackDiff" title="Rückweg meidet die gefahrene Strecke">↩ Zurück, anderer Weg</button>
+      <button id="arriveSave" title="Fahrt für den Entdecker speichern">💾 Fahrt speichern</button>
+      <button id="arriveDrop" title="Mitgeschriebene Fahrt verwerfen">🗑 Verwerfen</button>
+    </div>
+  </div>
   <div id="navZoom" class="nav-zoom" hidden>
     <button data-z="1" title="Näher (auch Taste + / ↑ / Bild↑)">＋</button><button data-z="-1" title="Weiter weg (auch Taste − / ↓ / Bild↓)">－</button>
     <button data-z="0" id="navZoomAuto" title="Zoom wieder nach Tempo" hidden>Auto</button>
