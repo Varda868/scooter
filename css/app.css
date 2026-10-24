@@ -162,3 +162,25 @@
   .map-btn { font-size:18px; line-height:30px; text-align:center; cursor:pointer; }
   .map-btn.active { background:#2e86e4 !important; color:#fff !important; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
+  /* Reiter der Leiste */
+  .tabs { display:flex; gap:2px; margin:0 -6px 6px; position:sticky; top:-16px; z-index:5; background:var(--bg); padding-top:4px; border-bottom:1px solid var(--line); }
+  .tabs button { margin:0; width:auto; flex:1; padding:6px 2px 5px; background:transparent; color:var(--muted); font-size:18px; font-weight:500;
+    border-radius:6px 6px 0 0; border-bottom:3px solid transparent; position:relative; line-height:1.1; }
+  .tabs button span { display:block; font-size:11px; margin-top:2px; }
+  .tabs button.on { color:var(--fg); border-bottom-color:var(--accent); }
+  .tabs .badge { position:absolute; top:1px; right:6px; min-width:16px; padding:0 4px; border-radius:8px; background:var(--accent); color:#fff; font-size:10px; line-height:16px; font-weight:700; }
+  .tab > details.fold:first-child { margin-top:4px; }
+  #exploreBox, #rollerBox { border:0; padding:0; }
+  .profile-line { margin-top:10px; cursor:pointer; text-decoration:underline dotted; }
+  .sheet-btn { display:none; }
+  /* Handy: Karte oben, Leiste unten; eingeklappt nur Kopf und Reiter */
+  @media (max-width:700px) {
+    #app { flex-direction:column-reverse; }
+    #panel { max-height:50%; padding:8px 12px 12px; border-bottom:0; border-top:1px solid var(--line); }
+    h1 { margin-bottom:4px; font-size:17px; }
+    .tabs { top:-8px; }
+    .sheet-btn { display:block; margin:0 0 0 10px; width:auto; padding:2px 12px; background:transparent; color:var(--fg); border:1px solid var(--line); font-size:16px; }
+    body.sheet-min #panel { overflow:hidden; }
+    body.sheet-min #panel .tab { display:none; }
+    body.sheet-min .tabs { margin-bottom:0; border-bottom:0; }
+  }
