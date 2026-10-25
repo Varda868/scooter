@@ -2,7 +2,22 @@
 const climbCache = new Map();
 let compareRequest = 0;
 
-async function routeClimb(coords) {
+// Höhen aus der Route selbst (elevation_interval), sonst null; jeder Abschnitt beginnt bei seiner Länge davor
+function tripElevation(trip) {
+  if (!trip?.legs?.length || !trip.legs.every(l => l.elevation?.length > 1)) return null;
+  const pts = [];
+  let off = 0;
+  for (const l of trip.legs) {
+    const iv = l.elevation_interval || 30, len = l.summary.length * 1000;
+    l.elevation.forEach((h, i) => { if (h != null && h > -1000) pts.push([off + Math.min(i * iv, len), h]); });
+    off += len;
+  }
+  return pts.length > 1 ? pts : null;
+}
+
+async function routeClimb(coords, trip) {
+  const eigen = tripElevation(trip);
+  if (eigen) return climb(eigen).up;
   const shape = simplify(coords, 200);
   const key = shape.map(([a, b]) => a.toFixed(4) + ',' + b.toFixed(4)).join(';');
   if (!climbCache.has(key)) climbCache.set(key, (async () => {
@@ -51,7 +66,7 @@ async function compareRoutes(trips, pick) {
       r.fresh == null ? '' : val(r, 'fresh', `+${r.fresh} 🆕`)].filter(Boolean).join(' · ')));
   };
   render();
-  await Promise.all(coords.map((c, i) => routeClimb(c).then(up => { rows[i].up = up; }).catch(() => {})));
+  await Promise.all(coords.map((c, i) => routeClimb(c, trips[i]).then(up => { rows[i].up = up; }).catch(() => {})));
   if (req === compareRequest && altLayer.hasLayer(tips[0])) render();
 }
 
@@ -59,11 +74,13 @@ async function compareRoutes(trips, pick) {
 let elevationRequest = 0;
 const eleCursor = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, fillColor: '#222', fillOpacity: 1, interactive: false });
 
-async function loadElevation() {
+async function loadElevation(trip) {
   const req = ++elevationRequest;
   tripClimb = null;
   $('elevation').innerHTML = '<div class="ele-stats">Höhenprofil wird geladen …</div>';
   const lenM = routeKm[routeKm.length - 1] * 1000;
+  const eigen = tripElevation(trip);
+  if (eigen) { renderElevation(eigen, lenM); return; }
   try {
     const res = await fetch(VALHALLA_HEIGHT_URL, { method: 'POST', body: JSON.stringify({
       range: true,

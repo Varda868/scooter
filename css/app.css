@@ -47,6 +47,11 @@
   .arrive-btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
   .arrive-btns button { flex:1 1 45%; margin:0; padding:10px 8px; border:0; border-radius:8px; background:#fff; color:#1d3557; font-size:15px; cursor:pointer; }
   .arrive-btns button[hidden] { display:none; }
+  .nav-lanes { display:flex; gap:3px; margin-top:6px; justify-content:center; }
+  .nav-lanes:empty { display:none; }
+  .nav-lanes span { min-width:28px; padding:1px 4px; text-align:center; border-radius:5px; background:#ffffff1f; color:#ffffff59; font-size:20px; line-height:26px; }
+  .nav-lanes span.ok { color:#ffffffb3; }
+  .nav-lanes span.on { background:#fff; color:#1d3557; font-weight:700; }
   .nav-note { font-size:13px; opacity:.85; margin-top:4px; }
   .nav-note:empty { display:none; }
   .nav-dot { width:30px; height:30px; border-radius:50%; background:#1d3557; color:#fff; border:3px solid #fff; display:flex;
@@ -235,6 +240,14 @@
 .talk-row label { flex:1; }
 .talk-row input { width:100%; }
 #talkBox select { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+.pos-chip { pointer-events:auto; margin:0; width:auto; padding:2px 8px; border:0; border-radius:10px; background:#2a9d8fd9; color:#fff; font-size:12px; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pos-chip.aus { background:#6c757dd9; }
+.pos-chip[hidden] { display:none; }
+.pos-pfeil { width:26px; height:26px; border-radius:50%; background:#2a9d8f; color:#fff; border:2px solid #fff; box-sizing:border-box; display:flex; align-items:center; justify-content:center; font-size:13px; box-shadow:0 1px 4px #0006; }
+.pos-pfeil.privat { background:#7b2cbf; }
+.pos-pfeil.alt { background:#8d99ae; }
+.pos-name { position:absolute; left:50%; top:27px; transform:translateX(-50%); background:#fffe; color:#1d3557; font:bold 11px/15px system-ui,sans-serif; padding:0 4px; border-radius:6px; white-space:nowrap; }
+.pos-name.alt { color:#8d99ae; }
 .talk-log { list-style:none; padding:0; margin:4px 0; font-size:13px; opacity:.85; }
 
 /* Streckenstufe im Reiter Tour */

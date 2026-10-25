@@ -27,6 +27,7 @@
       <div class="wp-tools">
         <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
         <button id="reverse" title="Reihenfolge umkehren">⇅ Umkehren</button>
+        <button id="optimize" title="Zwischenziele in die kürzeste Reihenfolge bringen (Start und Ziel bleiben)">⚡ Reihenfolge</button>
         <button id="undo" title="Letzten Schritt rückgängig machen">↶ Zurück</button>
       </div>
       <div class="back-tools">
@@ -164,6 +165,7 @@
       <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
       <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
       <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+      <label><input id="unpaved" type="checkbox" checked> Schotter, Feld- und Waldwege meiden</label>
       <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
       <select id="gradeWarn">
         <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
@@ -206,6 +208,9 @@
       </div>
       <label for="talkRelays">Relays (mit Leerzeichen getrennt)</label>
       <input id="talkRelays" type="text" spellcheck="false" autocomplete="off">
+      <label for="posAn">📍 Standort teilen</label>
+      <div class="talk-row"><select id="posAn"></select><select id="posDauer" title="Danach endet das Teilen von selbst"><option value="1">1 h</option><option value="3">3 h</option><option value="8">8 h</option><option value="14">14 h</option></select></div>
+      <div id="posStatus" class="hint"></div>
       <div id="talkStatus" class="hint"></div>
       <ul id="talkLog" class="talk-log"></ul>
       <p class="hint">Alle in der Gruppe tragen dieselbe PLZ-Region und dasselbe Passwort ein. Die Sprache wird im Handy mit Opus (Breitband, sonst Codec2) kodiert, signiert und über öffentliche Nostr-Relays verteilt, mit Passwort verschlüsselt; die Relays löschen sie nach 1 h. Jede Durchsage kommt als Ganzes an, die Verzögerung ist etwa die Sprechdauer. Bildschirm anlassen. Talk stammt aus der b:con-App (AGPL-3.0, siehe talk/QUELLE.md).</p>
@@ -216,11 +221,12 @@
   <div id="map"></div>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
+    <div id="navLanes" class="nav-lanes"></div>
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
       <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
   </div>
-  <div id="talkPtt" class="talk-ptt" hidden><div id="talkAnMenu" class="talk-an-menu" hidden></div><button id="talkAn" class="talk-an" hidden>an alle ▾</button><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
+  <button id="posChip" class="pos-chip" hidden></button><div id="talkPtt" class="talk-ptt" hidden><div id="talkAnMenu" class="talk-an-menu" hidden></div><button id="talkAn" class="talk-an" hidden>an alle ▾</button><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
   <div id="arrive" class="arrive" hidden>
     <div class="arrive-head"><b>🏁 Angekommen</b><button id="arriveClose" title="Schließen (Fahrt wird gespeichert)">✕</button></div>
     <div id="arriveStats"></div>
@@ -269,6 +275,7 @@
 <script src="js/20-start.js"></script>
 <script src="js/21-oberflaeche.js"></script>
 <script src="js/22-talk.js"></script>
+<script src="js/23-standort.js"></script>
 <script src="js/24-tank.js"></script>
 </body>
 </html>
