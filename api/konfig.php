@@ -10,5 +10,6 @@ sw_json([
   'photon' => $w['photon_url'],
   'overpass' => $w['overpass_urls'],
   'openMeteo' => $w['open_meteo_url'],
-  'tomtomAmServer' => $w['tomtom_key'] !== '',
+  'proxy' => (bool)$w['proxy_an'],
+  'tomtomAmServer' => $w['proxy_an'] && $w['tomtom_key'] !== '',
 ]);

@@ -279,7 +279,7 @@ async function route() {
       summaryNote += ' · 📴 offline: gespeicherte Route';
     }
     let incidents = [];
-    if (tt.key) {
+    if (ttKeyDa()) {
       try {
         incidents = await loadIncidents(tripCoords(data.trip));
         // Gesperrte Straßen auf der Route: Punkte der Sperrung an Valhalla als "meiden" geben und neu rechnen

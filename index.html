@@ -189,10 +189,15 @@
       </details>
       <details id="trafficBox" class="fold">
       <summary>🚦 Verkehr (TomTom) <span id="trafficSummary" class="hint"></span></summary>
-      <label for="ttKey">TomTom-API-Schlüssel (bleibt nur in diesem Browser)</label>
+      <label for="ttKey">TomTom-API-Schlüssel (bleibt nur in diesem Browser; leer lassen, wenn der eigene Server einen hat)</label>
       <input id="ttKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
       <label><input id="ttAvoid" type="checkbox" checked> Sperrungen automatisch umfahren</label>
       <label><input id="ttFlow" type="checkbox"> Verkehrsfluss auf der Karte (verbraucht Kachel-Kontingent)</label>
+      </details>
+      <details id="serverBox" class="fold">
+      <summary>🖥 Eigener Server <span id="serverSummary" class="hint"></span></summary>
+      <label><input id="useServer" type="checkbox" checked> Wetter, Ortssuche, Overpass und Verkehr über den eigenen Server (Zwischenspeicher)</label>
+      <div class="hint">Fällt der Server aus, geht die App wie bisher direkt an die Dienste.</div>
       </details>
       <details id="talkBox" class="fold">
       <summary>📻 Talk: Gruppenfunk übers Netz <span id="talkSummary" class="hint"></span></summary>
@@ -311,5 +316,6 @@
 <script src="js/24-tank.js"></script>
 <script src="js/25-faehre.js"></script>
 <script src="js/26-profil.js"></script>
+<script src="js/27-server.js"></script>
 </body>
 </html>

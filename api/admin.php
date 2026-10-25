@@ -88,12 +88,14 @@ function bereich_werte(): void {
         if (preg_match('/^[\x21-\x7e]{8,200}$/', $neu)) $w[$k] = $neu; else $fehler[] = ADMIN_SCHLUESSEL[$k] . ': Zeichen ungültig';
       }
     }
+    $w['proxy_an'] = !empty($_POST['proxy_an']);
     if (!$fehler) { $c['werte'] = $w; sw_config_speichern($c); admin_zurueck('werte', 'Gespeichert.'); }
   }
   $html = admin_hinweis($OK, $fehler ? implode(' · ', $fehler) : null) . '<form method="post">' . admin_csrf_feld();
   foreach (ADMIN_URLS as $k => $name) $html .= '<label>' . h($name) . ' <input name="' . $k . '" value="' . h($w[$k]) . '" required></label>';
   $html .= '<label>Overpass-Server (einer pro Zeile) <textarea name="overpass_urls" rows="3">' . h(implode("\n", $w['overpass_urls'])) . '</textarea></label>';
   $html .= '<label>Erlaubte Herkunft (Origin) für die API <textarea name="origins" rows="2">' . h(implode("\n", $w['origins'])) . '</textarea></label>';
+  $html .= '<label class="zeile"><input type="checkbox" name="proxy_an" value="1"' . ($w['proxy_an'] ? ' checked' : '') . '> Proxy mit Zwischenspeicher für die App einschalten</label>';
   foreach (ADMIN_SCHLUESSEL as $k => $name) {
     $gesetzt = $w[$k] !== '';
     $html .= '<label>' . h($name) . ' <span class="leise">' . ($gesetzt ? 'gesetzt (…' . h(substr($w[$k], -4)) . ')' : 'nicht gesetzt') . '</span>' .
