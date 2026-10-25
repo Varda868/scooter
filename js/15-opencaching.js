@@ -45,6 +45,7 @@ function routeBoxes(padM) {
 }
 
 async function loadOpencaching() {
+  if (globalThis.navPause?.('caches', loadOpencaching)) return;
   const req = ++oc.request;
   caches = caches.filter(c => !c.oc);
   if (!oc.key || !oc.on || !routeCoords) { renderCaches(); return; }

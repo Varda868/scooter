@@ -81,7 +81,7 @@ async function loadSondes() {
 }
 function sondeSchedule() {
   clearInterval(sondeTimer); sondeTimer = null;
-  if (sondePrefs.on) sondeTimer = setInterval(() => { if (!document.hidden) loadSondes(); }, 60000);
+  if (sondePrefs.on) sondeTimer = setInterval(() => { if (!document.hidden && !globalThis.navPause?.('sonden', loadSondes)) loadSondes(); }, 60000);
   loadSondes();
 }
 $('sondeOn').checked = sondePrefs.on;
