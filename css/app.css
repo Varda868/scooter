@@ -290,3 +290,15 @@
 .dev-log { width:min(680px, calc(100vw - 24px)); max-height:calc(100vh - 24px); background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; }
 .dev-log pre { white-space:pre-wrap; word-break:break-word; font-size:11px; max-height:60vh; overflow:auto; background:rgba(127,127,127,.1); padding:6px; }
 .dev-kopf { display:flex; gap:6px; align-items:center; } .dev-kopf b { flex:1; }
+/* Pfeil-Modus im Navi: schwarzer Bildschirm, großer Pfeil, keine Karte (OLED spart, Kacheln ruhen) */
+body.nav-pfeil #nav { position:absolute; inset:0; max-width:none; margin:0; border-radius:0; background:#000; box-shadow:none;
+  display:flex; flex-direction:column; justify-content:center; padding:16px; }
+body.nav-pfeil #nav .nav-turn { flex-direction:column; text-align:center; gap:4px; }
+body.nav-pfeil #navArrow { font-size:min(55vw, 40vh); width:auto; }
+body.nav-pfeil #navDist { font-size:min(16vw, 72px); }
+body.nav-pfeil #navText { font-size:18px; color:#bbb; }
+body.nav-pfeil .nav-lanes { justify-content:center; }
+body.nav-pfeil .nav-stats { justify-content:center; flex-wrap:wrap; color:#bbb; }
+body.nav-pfeil .nav-zoom { display:none; }
+body.nav-pfeil .talk-ptt { z-index:1002; }
+#navPfeil.active { outline:2px solid #fff; }
