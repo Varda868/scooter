@@ -16,5 +16,6 @@
   <If "%{REQUEST_URI} =~ m#^/poi/#">
     Header set Access-Control-Allow-Origin "*"
     Header set Access-Control-Expose-Headers "ETag, Content-Range, Content-Length, Accept-Ranges"
+    Header set Access-Control-Allow-Headers "Range"
   </If>
 </IfModule>
