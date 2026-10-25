@@ -123,13 +123,14 @@ $('gpxTour').onclick = () => {
   });
   const title = `${located[0]?.text || 'Start'} – ${located.at(-1)?.text || 'Ziel'}`;
   // Dateiname, der sagt, was drin ist: scooterways_2026-10-25_Augsburg-Athen_2050km_6Tage_Faehre.gpx
-  const ortTeil = w => (w?.text || '').split(',')[0].replace(/^[^\p{L}\d]+/u, '').trim().replace(/[^\p{L}\d]+/gu, '-').replace(/^-|-$/g, '').slice(0, 30) || 'Punkt';
+  const ortTeil = w => (w?.text || '').split(',')[0].replace(/^[^\p{L}\d]+/u, '').trim()
+    .replace(/[äöüÄÖÜß]/g, c => ({ ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss' })[c]).replace(/[^\p{L}\d]+/gu, '-').replace(/^-|-$/g, '').slice(0, 30) || 'Punkt';
   const tage = tourDays(), heute = new Date().toLocaleDateString('sv-SE'); // Ortszeit, nicht UTC
   const datei = ['scooterways', heute, `${ortTeil(located[0])}-${ortTeil(located.at(-1))}`,
     `${Math.round(routeKm.at(-1))}km`, tage > 1 && `${tage}Tage`, routeFaehren.length && 'Faehre'].filter(Boolean).join('_');
   downloadGpx(`${datei}.gpx`, `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Scooterways" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${xmlEscape(title)}</name></metadata>
+  <metadata><name>${xmlEscape(title)}</name><desc>${xmlEscape([`${Math.round(routeKm.at(-1))} km`, tage > 1 && `${tage} Tage`, routeFaehren.length && `Fähren: ${routeFaehren.map(f => f.name || 'Fähre').join(', ')}`].filter(Boolean).join(' · '))}</desc></metadata>
 ${wpts.join('\n')}
   <trk><name>${xmlEscape(title)}</name><type>moped</type>
 ${segs.filter(sg => sg.length > 1).map(sg => `    <trkseg>\n      ${sg.join('\n      ')}\n    </trkseg>`).join('\n')}
