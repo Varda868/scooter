@@ -3,7 +3,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font:15px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
   #app { display:flex; height:100%; }
-  #panel { width:340px; padding:16px; overflow-y:auto; border-right:1px solid var(--line); }
+  #panel { width:min(455px, 45vw); padding:16px; overflow-y:auto; border-right:1px solid var(--line); }
   #map { flex:1; }
   h1 { font-size:20px; margin:0 0 12px; display:flex; align-items:baseline; }
   .clock { margin-left:auto; font-size:13px; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
