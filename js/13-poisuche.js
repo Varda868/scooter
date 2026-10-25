@@ -23,6 +23,20 @@ function locateOnRoute(lat, lon, coords = routeCoords, kms = coords === routeCoo
 }
 
 let poiRequest = 0;
+// Overpass-Ergebnisse je Routenabschnitt (Schlüssel = Punktliste der Abfrage): { at, r: { typ: Umkreis }, els }.
+// Im Browser gespeichert, damit auch nach Neuladen oder offline die zuletzt gefragten Abschnitte da sind.
+const POI_CACHE_MS = 864e5, POI_CACHE_MAX = 40;
+const poiCache = new Map(store.get('poiCache', []));
+try { localStorage.removeItem('scooterways.lastPois'); } catch {} // Vorgänger dieses Speichers
+function savePoiCache() {
+  const all = [...poiCache].slice(-POI_CACHE_MAX);
+  poiCache.clear(); all.forEach(([k, v]) => poiCache.set(k, v));
+  // localStorage ist knapp (≈5 MB): passt es nicht, die ältere Hälfte weglassen
+  for (let list = all; list.length; list = list.slice(Math.ceil(list.length / 2))) {
+    try { localStorage.setItem('scooterways.poiCache', JSON.stringify(list)); return; } catch {}
+  }
+}
+const poiRadius = t => Math.max(+$('radius').value, t.minRadius || 0);
 // Lange Touren abschnittsweise abfragen (je höchstens 50 km): kleinere Overpass-Abfragen laufen seltener in die
 // Zeitgrenze, und die ersten POIs stehen schon auf der Karte, während der Rest noch lädt.
 const POI_CHUNK_KM = 50;
@@ -43,6 +57,7 @@ function routeChunks() {
 // Liegen neben der App unter poi/ (Plesk, später ggf. Raspi). Fehlen sie oder deckt der Stand die Route nicht ab: Overpass.
 const POI_TILE_URL = 'poi/';
 let poiIndex = null;
+const poiTiles = new Map();
 function poiTileIndex() {
   poiIndex ??= fetch(POI_TILE_URL + 'index.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null)
     .then(ix => ix && { ...ix, set: new Set(ix.tiles) }, () => null)
@@ -72,8 +87,14 @@ async function tileElements(points, maxR, radiusFor) {
   }
   const have = [...keys].filter(k => ix.set.has(k));
   if (have.length < keys.size * 0.9) return null;
-  const tiles = await Promise.all(have.map(k => fetch(`${POI_TILE_URL}t/${k}.json?v=${ix.date}`, { signal: AbortSignal.timeout(20000) })
-    .then(r => { if (!r.ok) throw new Error(`POI-Kachel ${k}: ${r.status}`); return r.json(); })));
+  // Geladene Kacheln für die Sitzung behalten: neu berechnen oder Typ umschalten liest sie nur noch aus dem Speicher
+  const tiles = await Promise.all(have.map(k => {
+    const url = `${POI_TILE_URL}t/${k}.json?v=${ix.date}`;
+    if (!poiTiles.has(url)) poiTiles.set(url, fetch(url, { signal: AbortSignal.timeout(20000) })
+      .then(r => { if (!r.ok) throw new Error(`POI-Kachel ${k}: ${r.status}`); return r.json(); })
+      .catch(err => { poiTiles.delete(url); throw err; }));
+    return poiTiles.get(url);
+  }));
   // Gitter (0,02°) über die Punkte, damit nicht jedes Element gegen jeden Punkt geprüft wird
   const CELL = 0.02, grid = new Map(), cellOf = (la, lo) => `${Math.floor(la / CELL)},${Math.floor(lo / CELL)}`;
   for (const p of points) { const g = cellOf(p[0], p[1]); if (!grid.has(g)) grid.set(g, []); grid.get(g).push(p); }
@@ -104,7 +125,7 @@ async function loadPois() {
 
   const req = ++poiRequest;
   const busy = (text, ms) => { if (req === poiRequest) mapBusy('poi', text, ms); };
-  const radiusOf = t => Math.max(+$('radius').value, t.minRadius || 0);
+  const radiusOf = poiRadius;
   try {
     busy('📍 POIs laden …');
     const local = await tileElements(routeSamples(0.25), Math.max(...active.map(radiusOf)), tags => {
@@ -118,47 +139,59 @@ async function loadPois() {
     }
   } catch {} // Kachel fehlt oder offline ohne Speicher: weiter mit Overpass
   if (req !== poiRequest) return;
-  const queries = routeChunks().map(chunk => {
+  // Je Abschnitt nur fragen, was im Zwischenspeicher fehlt (Typ neu an, Umkreis größer, Eintrag älter als ein Tag)
+  const now = Date.now(), jobs = routeChunks().map(chunk => {
     const line = simplify(chunk, 100).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
-    const around = t => `(around:${radiusOf(t)},${line})`;
-    return `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
+    const hit = poiCache.get(line), fresh = hit && now - hit.at < POI_CACHE_MS;
+    const need = active.filter(t => !(fresh && hit.r[t.id] >= radiusOf(t)));
+    const query = need.length && `[out:json][timeout:60];(${need.flatMap(t => t.filters.map(f => `nwr${f}(around:${radiusOf(t)},${line});`)).join('')});out center tags;`;
+    return { line, hit, need, query };
   });
-  const key = queries.join('|'), n = queries.length;
   const seen = new Set(), elements = [];
   let note = '', failed = 0, lastErr = null;
   const add = els => { for (const el of els) { const id = el.type + el.id; if (!el.id || !seen.has(id)) { seen.add(id); elements.push(el); } } };
-  // Alle Abschnitte gleichzeitig anstoßen; overpassFetch verteilt sie auf die Server (je Server eine zur Zeit)
-  let done = 0;
-  const progress = host => busy(`📍 POIs laden${n > 1 ? ` ${done}/${n}` : ''} …${host ? ' ' + host : ''}`);
-  progress();
-  $('poiSummary').textContent = 'Suche POIs …';
-  await Promise.all(queries.map(q => overpassFetch(q, host => {
-    if (req !== poiRequest) return;
-    $('poiSummary').textContent = `Suche POIs … ${host}`;
-    progress(host);
-  }, () => req !== poiRequest).then(data => {
-    if (req !== poiRequest) return;
-    add(data?.elements || []); done++;
+  jobs.forEach(j => { if (j.hit) add(j.hit.els); });
+  const open = jobs.filter(j => j.query), n = open.length;
+  if (n) {
+    // Alle offenen Abschnitte gleichzeitig anstoßen; overpassFetch verteilt sie auf die Server (je Server eine zur Zeit)
+    let done = 0;
+    const progress = host => busy(`📍 POIs laden${n > 1 ? ` ${done}/${n}` : ''} …${host ? ' ' + host : ''}`);
     progress();
-    showPois(elements, active, '', done < n);
-  }, err => { failed++; lastErr = err; })));
+    if (elements.length) showPois(elements, active, '', true); else $('poiSummary').textContent = 'Suche POIs …';
+    await Promise.all(open.map(j => overpassFetch(j.query, host => {
+      if (req !== poiRequest) return;
+      $('poiSummary').textContent = `Suche POIs … ${host}`;
+      progress(host);
+    }, () => req !== poiRequest).then(data => {
+      const els = data?.elements || [];
+      // Ergebnis merken, auch wenn die Anzeige inzwischen überholt ist: die nächste Abfrage braucht es vermutlich
+      const e = j.hit && now - j.hit.at < POI_CACHE_MS ? j.hit : { at: now, r: {}, els: [] };
+      const ids = new Set(e.els.map(el => el.type + el.id));
+      e.els.push(...els.filter(el => !ids.has(el.type + el.id)));
+      j.need.forEach(t => { e.r[t.id] = radiusOf(t); });
+      poiCache.delete(j.line); poiCache.set(j.line, e);
+      if (req !== poiRequest) return;
+      add(els); done++;
+      progress();
+      showPois(elements, active, '', done < n);
+    }, err => { failed++; lastErr = err; })));
+    savePoiCache();
+  }
   if (req !== poiRequest) return;
   try {
-    if (failed < n) {
-      store.set('lastPois', { query: key, elements });
-      if (failed) note = ` · ⚠️ ${failed} von ${n} Abschnitten nicht geladen`;
-    } else {
-      const camp = active.find(t => t.id === 'camp'), lastPois = store.get('lastPois', null);
-      if (lastPois?.query === key) { // offline oder Server weg: letzte Abfrage für genau diese Route
-        add(lastPois.elements); note = ' · 📴 gespeicherte POIs';
-      } else if (camp) { // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
-        busy('📍 Overpass weg, suche Zeltplätze …');
-        const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
-        const k = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
-        const { camps, source } = await findCamps(Array.from({ length: k }, (_, i) => pointAtKm(total * i / (k - 1))), rad);
-        add(camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } })));
-        note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
-      } else throw lastErr;
+    if (failed && failed === n && !jobs.some(j => j.hit)) {
+      const camp = active.find(t => t.id === 'camp');
+      if (!camp) throw lastErr;
+      // Overpass weg und nichts gespeichert: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
+      busy('📍 Overpass weg, suche Zeltplätze …');
+      const rad = radiusOf(camp), total = routeKm.at(-1);
+      const k = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
+      const { camps, source } = await findCamps(Array.from({ length: k }, (_, i) => pointAtKm(total * i / (k - 1))), rad);
+      add(camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...c.tags, ...(c.name ? { name: c.name } : {}) } })));
+      note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
+    } else if (failed) {
+      // Offline oder Server weg: ältere gespeicherte Ergebnisse dieser Abschnitte sind besser als nichts
+      note = jobs.some(j => j.hit) ? ' · 📴 teils gespeicherte POIs' : ` · ⚠️ ${failed} von ${n} Abschnitten nicht geladen`;
     }
     if (req !== poiRequest) return;
     const count = showPois(elements, active, note, false);
@@ -176,7 +209,10 @@ function showPois(elements, active, note, laeuft) {
   const pois = elements.map(el => {
     const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
     const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
-    return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
+    if (!type || lat == null) return null;
+    const at = locateOnRoute(lat, lon);
+    // Zwischenspeicher kann einen größeren Umkreis enthalten als gerade eingestellt
+    return at.dist <= poiRadius(type) + 50 ? { lat, lon, type, tags: el.tags || {}, km: at.km } : null;
   }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
 
   for (const p of pois) {
