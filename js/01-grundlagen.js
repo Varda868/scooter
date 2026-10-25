@@ -78,7 +78,7 @@ let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufa
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
 let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
-let routeStages = [], currentTrip = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
+let routeStages = [], currentTrip = null, tripClimb = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const stageLayer = L.layerGroup().addTo(map);
@@ -131,6 +131,8 @@ $('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
 const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax', 'breakMin', 'dayStart'];
 const settings = store.get('settings', {});
+// Mehrtagestour ist jetzt ab 6 h automatisch an; ältere Einstellungen hatten „aus“ als Vorgabe gespeichert
+if (settings.dayAuto == null) { settings.dayAuto = 1; if (!+settings.dayMax) settings.dayMax = '6'; }
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
   $(id).open = !!settings[id];
@@ -144,8 +146,8 @@ function updateFoldSummaries() {
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
-$('panel').addEventListener('input', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
-$('panel').addEventListener('change', e => { if (e.target.closest('details.fold')) updateFoldSummaries(); });
+$('panel').addEventListener('input', e => { if (e.target.closest('details.fold') || SETTING_IDS.includes(e.target.id)) updateFoldSummaries(); });
+$('panel').addEventListener('change', e => { if (e.target.closest('details.fold') || SETTING_IDS.includes(e.target.id)) updateFoldSummaries(); });
 $('speedVal').textContent = $('speed').value;
 $('radiusVal').textContent = $('radius').value;
 $('primary').oninput({ target: $('primary') });

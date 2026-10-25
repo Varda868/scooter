@@ -259,7 +259,7 @@ tick();
 
 function showTrip(trip, alternates = []) {
   waypoints.forEach(w => w.latlng && !w.shaping && rememberPlace(w.text, w.latlng));
-  currentTrip = trip;
+  currentTrip = trip; tripClimb = null;
   if (routeLayer) map.removeLayer(routeLayer);
   altLayer.clearLayers();
   // Alternativen grau darunter; Antippen macht sie zur Hauptroute
