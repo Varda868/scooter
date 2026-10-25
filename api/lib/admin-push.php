@@ -23,7 +23,7 @@ function bereich_push(): void {
     foreach ($liste as $r) $html .= '<tr><td>' . h($r['name'] ?: '–') . '</td><td>' . h(parse_url($r['endpoint'], PHP_URL_HOST)) . '</td><td>' . admin_zeit((int)$r['t']) .
       '</td><td>' . ($r['zuletzt'] ? admin_zeit((int)$r['zuletzt']) : '–') . '</td><td>' . (int)$r['fehler'] . '</td><td><form method="post">' . admin_csrf_feld() .
       '<input type="hidden" name="id" value="' . (int)$r['id'] . '"><button class="klein">✕</button></form></td></tr>';
-    $html .= '</table><form method="post">' . admin_csrf_feld() . '<input type="hidden" name="gruppe" value="' . h($g) . '"><button class="gefahr">Ganze Gruppe löschen</button></form>';
+    $html .= '</table><form method="post">' . admin_csrf_feld() . '<input type="hidden" name="gruppe" value="' . h($g) . '"><button class="gefahr">' . ($liste[0]['art'] === 'post' ? 'Postfach löschen' : 'Ganze Gruppe löschen') . '</button></form>';
   }
-  admin_seite('Push-Abos', $html . '<p class="leise">Die Gruppen-Kennung ist aus dem Gruppen-Passwort abgeleitet; Passwort und Nachrichteninhalt kennt der Server nicht.</p>');
+  admin_seite('Push-Abos', $html . '<p class="leise">Ein Gerät kann zweimal auftauchen: in seiner Gruppe (Halt, Treffpunkt, Kurznachricht; Kennung aus dem Gruppen-Passwort) und in seinem Postfach (Sprachpost; Kennung aus dem Talk-Schlüssel). Passwort und Inhalt kennt der Server nicht.</p>');
 }
