@@ -164,6 +164,7 @@
       <label><input id="pushAn" type="checkbox"> Push für meine Talk-Gruppe (auch bei geschlossener App)</label>
       <label><input id="pushHalt" type="checkbox" checked> Panne, Tanken, Pause melden</label>
       <label><input id="pushTreff" type="checkbox" checked> Treffpunkt-Vorschläge melden</label>
+      <label><input id="pushPost" type="checkbox" checked> Sprachpost: 🔒-Durchsagen an Kontakte zusätzlich per Push (bis 14 s, Codec2), und selbst Sprachpost empfangen</label>
       <div class="push-text"><input id="pushText" maxlength="200" placeholder="Kurznachricht an die Gruppe" autocomplete="off"><button id="pushSenden" title="Als Push an alle in der Gruppe">📣</button></div>
       <div id="pushSchnell" class="push-schnell"><button data-t="Wartet auf mich" class="secondary">⏳ wartet</button><button data-t="Alles ok, fahre weiter" class="secondary">👍 ok</button><button data-t="Bin gleich da" class="secondary">🛵 gleich da</button></div>
       <div id="pushHint" class="hint"></div>
@@ -194,6 +195,7 @@
       <div class="talk-row"><select id="posAn"></select><select id="posDauer" title="Danach endet das Teilen von selbst"><option value="1">1 h</option><option value="3">3 h</option><option value="8">8 h</option><option value="14">14 h</option></select></div>
       <div id="posStatus" class="hint"></div>
       <div id="talkStatus" class="hint"></div>
+      <div id="postBox" class="post-box" hidden><b>📮 Sprachpost<span id="postZahl"></span></b><ul id="postListe"></ul></div>
       <ul id="talkLog" class="talk-log"></ul>
       <p class="hint">Alle in der Gruppe tragen dieselbe PLZ-Region und dasselbe Passwort ein. Die Sprache wird im Handy mit Opus (Breitband, sonst Codec2) kodiert, signiert und über öffentliche Nostr-Relays verteilt, mit Passwort verschlüsselt; die Relays löschen sie nach 1 h. Jede Durchsage kommt als Ganzes an, die Verzögerung ist etwa die Sprechdauer. Bildschirm anlassen. Talk stammt aus der b:con-App (AGPL-3.0, siehe talk/QUELLE.md).</p>
       </details>
