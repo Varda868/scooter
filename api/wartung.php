@@ -50,6 +50,8 @@ function wartung_relays(array &$p, array &$i): void {
     if ($e['cert_bis'] && $e['cert_bis'] - time() < 2 * 86400)
       $p[] = "Zertifikat von {$r['url']} läuft ab: " . date('d.m.Y H:i', (int)$e['cert_bis']);
   }
+  // Adresswechsel des eigenen Relays (relay_adresswechsel) steht unter der neuen Adresse
+  foreach ($erg as $u => $e) if (str_starts_with((string)($e['fehler'] ?? ''), 'Adresse gewechselt')) $i[] = "neu  $u – {$e['fehler']}";
   if (!$an) $p[] = 'Kein eingeschaltetes Relay erreichbar, Talk geht nicht';
 }
 

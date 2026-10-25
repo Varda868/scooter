@@ -1,12 +1,15 @@
 <?php
 // Talk-Relays prüfen: TLS und Zertifikat, WebSocket-Handshake, NIP-11, Lesetest (REQ bis EOSE).
 // Ohne Bibliothek: ein kleiner WebSocket-Client über stream_socket_client. Den Schreibtest macht der Browser des Admins
-// (admin.js), denn PHP bräuchte dafür Schnorr-Signaturen (secp256k1), die openssl nicht kann.
+// (admin.js), denn PHP bräuchte dafür Schnorr-Signaturen (secp256k1), die openssl nicht kann. Nur zum Prüfen gibt es
+// sie in schnorr.php (Adress-Event des eigenen Relays, siehe relay_adresswechsel).
 defined('SW_API') || exit;
+require_once __DIR__ . '/schnorr.php';
 
 const RELAY_ZEIT_S = 6;               // je Schritt höchstens so lange warten
 const RELAY_VERLAUF_TAGE = 7;
 const RELAY_CRON_ABSTAND_S = 240;     // Cron-Aufrufe öfter als alle 4 min werden übergangen
+const RELAY_ART_ADRESSE = 34424;      // Adress-Event der b:con-Relays (bcon-core doc/ARTEN.md), d = "bcon-relay"
 
 // Gespeicherte Liste bereinigen: nur wss://, keine Doppelten
 function relay_liste(): array {
@@ -15,7 +18,8 @@ function relay_liste(): array {
     $u = relay_url_norm((string)($r['url'] ?? ''));
     if ($u === null || isset($gesehen[$u])) continue;
     $gesehen[$u] = 1;
-    $out[] = ['url' => $u, 'an' => !empty($r['an']), 'eigen' => !empty($r['eigen'])];
+    $pk = strtolower((string)($r['pk'] ?? ''));
+    $out[] = ['url' => $u, 'an' => !empty($r['an']), 'eigen' => !empty($r['eigen']), 'pk' => preg_match('/^[0-9a-f]{64}$/', $pk) ? $pk : ''];
   }
   return $out;
 }
@@ -113,6 +117,7 @@ function relay_nip11(array $t): ?array {
   $lim = is_array($j['limitation'] ?? null) ? $j['limitation'] : [];
   return ['ok' => true, 'ms' => $ms, 'name' => relay_text((string)($j['name'] ?? '')), 'software' => relay_text(basename((string)($j['software'] ?? ''))),
     'version' => relay_text((string)($j['version'] ?? '')), 'nips' => array_values(array_filter((array)($j['supported_nips'] ?? []), 'is_int')),
+    'self' => preg_match('/^[0-9a-f]{64}$/', (string)($j['self'] ?? '')) ? $j['self'] : null,
     'auth' => !empty($lim['auth_required']), 'bezahlt' => !empty($lim['payment_required'])];
 }
 
@@ -181,10 +186,98 @@ function relay_merken(array $r, string $quelle): void {
       $r['ip'], $r['cert_bis'], $r['nip11'] === null ? null : json_encode($r['nip11']), $r['fehler'] === null ? null : relay_text($r['fehler'])]);
   $db->prepare('DELETE FROM sw_relay WHERE t < ?')->execute([time() - RELAY_VERLAUF_TAGE * 86400]);
 }
-// Alle eingetragenen Relays (auch ausgeschaltete) prüfen
+// Alle eingetragenen Relays (auch ausgeschaltete) prüfen; beim eigenen Relay danach Schlüssel merken bzw. Adresswechsel
 function relay_alle_pruefen(): array {
   $out = [];
-  foreach (relay_liste() as $r) { $e = relay_pruefen($r['url']); relay_merken($e, 'server'); $out[] = $e; }
+  foreach (relay_liste() as $r) {
+    $e = relay_pruefen($r['url']);
+    if ($r['eigen']) $e = relay_adresswechsel($r, $e);
+    relay_merken($e, 'server');
+    $out[] = $e;
+  }
+  return $out;
+}
+
+// --- Adresswechsel des eigenen Relays (b:con-Relay, Bauplan P8) ---
+// Nach einem IPv6-Präfixwechsel hat das Relay eine neue Adresse und veröffentlicht sie als Adress-Event (Art 34424),
+// signiert mit seinem Schlüssel (NIP-11 "self"), auf öffentlichen Relays. Den Schlüssel merkt sich der Server bei der
+// ersten erfolgreichen Prüfung (oder er steht von Hand in der Liste). Schlägt die Prüfung fehl, holt der Server das
+// neueste Adress-Event dieses Schlüssels, prüft ID und Signatur, prüft die neue Adresse und tauscht sie nur aus, wenn
+// auch diese Prüfung klappt.
+function relay_adresswechsel(array $r, array $e): array {
+  if ($e['ok']) {
+    $self = $e['nip11']['self'] ?? null;
+    if ($r['pk'] === '' && $self) relay_eintrag_aendern($r['url'], ['pk' => $self]);
+    return $e;
+  }
+  if ($r['pk'] === '' || !schnorr_rechenweg()) return $e;
+  $quellen = array_column(array_filter(relay_liste(), fn($x) => $x['an'] && !$x['eigen']), 'url') ?: array_column(SW_STANDARD['relays'], 'url');
+  $neu = relay_adresse_suchen($r['pk'], $quellen);
+  if ($neu === null || $neu === $r['url']) return $e;
+  $e2 = relay_pruefen($neu);
+  if (!$e2['ok']) {
+    $e['fehler'] .= ' · neue Adresse ' . $neu . ' gefunden, aber nicht erreichbar: ' . $e2['fehler'];
+    return $e;
+  }
+  relay_eintrag_aendern($r['url'], ['url' => $neu]);
+  relay_merken($e, 'server');  // der Fehlschlag der alten Adresse bleibt im Verlauf
+  $e2['fehler'] = 'Adresse gewechselt, vorher ' . $r['url'];
+  return $e2;
+}
+// Eintrag in der gespeicherten Liste ändern (gefunden über die URL)
+function relay_eintrag_aendern(string $url, array $neu): void {
+  $c = sw_config();
+  $liste = (array)($c['werte']['relays'] ?? []);
+  foreach ($liste as &$x) if (relay_url_norm((string)($x['url'] ?? '')) === $url) $x = array_merge($x, $neu);
+  unset($x);
+  $c['werte']['relays'] = $liste;
+  sw_config_speichern($c);
+}
+// Neuestes gültiges Adress-Event des Schlüssels von den Quellen; Rückgabe die wss-Adresse daraus oder null
+function relay_adresse_suchen(string $pk, array $quellen): ?string {
+  $best = null;
+  foreach (array_slice($quellen, 0, 3) as $q) {
+    try { $evs = relay_abfragen($q, ['kinds' => [RELAY_ART_ADRESSE], 'authors' => [$pk], '#d' => ['bcon-relay'], 'limit' => 2]); }
+    catch (RuntimeException $x) { continue; }
+    foreach ($evs as $ev) {
+      if (($ev['pubkey'] ?? '') !== $pk || ($ev['kind'] ?? 0) !== RELAY_ART_ADRESSE || !is_int($ev['created_at'] ?? null)) continue;
+      if (($best && $ev['created_at'] <= $best['created_at']) || $ev['created_at'] > time() + 600 || !nostr_event_pruefen($ev)) continue;
+      $best = $ev;
+    }
+  }
+  if (!$best) return null;
+  $url = null;
+  foreach ($best['tags'] as $t) {
+    if (!is_array($t)) continue;
+    if (($t[0] ?? '') === 'expiration' && (int)($t[1] ?? 0) < time()) return null;
+    if (!$url && ($t[0] ?? '') === 'r' && str_starts_with((string)($t[1] ?? ''), 'wss://')) $url = relay_url_norm((string)$t[1]);
+  }
+  return $url;
+}
+// REQ an ein Relay, alle Events bis EOSE (höchstens 20)
+function relay_abfragen(string $url, array $filter): array {
+  $t = relay_teile($url);
+  $ctx = ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $t['name'], 'SNI_enabled' => !$t['ip6'] && !filter_var($t['name'], FILTER_VALIDATE_IP)];
+  $s = @stream_socket_client("ssl://{$t['host']}:{$t['port']}", $errno, $errstr, RELAY_ZEIT_S, STREAM_CLIENT_CONNECT, stream_context_create(['ssl' => $ctx]));
+  if (!$s) throw new RuntimeException('keine Verbindung');
+  stream_set_timeout($s, RELAY_ZEIT_S);
+  $out = [];
+  try {
+    relay_handshake($s, $t);
+    $sub = 'sa' . bin2hex(random_bytes(4));
+    relay_senden($s, json_encode(['REQ', $sub, $filter], JSON_UNESCAPED_SLASHES));
+    $ende = microtime(true) + RELAY_ZEIT_S;
+    while (microtime(true) < $ende && count($out) < 20) {
+      $m = relay_lesen($s, $ende);
+      if ($m === null) break;
+      $j = json_decode($m, true);
+      if (!is_array($j) || ($j[1] ?? '') !== $sub) continue;
+      if ($j[0] === 'EVENT' && is_array($j[2] ?? null)) $out[] = $j[2];
+      elseif ($j[0] === 'EOSE' || $j[0] === 'CLOSED') break;
+    }
+    relay_senden($s, json_encode(['CLOSE', $sub]));
+    relay_senden($s, '', 0x8);
+  } finally { fclose($s); }
   return $out;
 }
 
