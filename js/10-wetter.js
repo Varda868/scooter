@@ -32,7 +32,7 @@ async function loadRouteWeather() {
     const qs = new URLSearchParams({
       latitude: samples.map(p => p.ll[0].toFixed(3)).join(','), longitude: samples.map(p => p.ll[1].toFixed(3)).join(','),
       minutely_15: 'precipitation,snowfall,weather_code,temperature_2m,wind_gusts_10m',
-      forecast_days: Math.min(7, routeStages.length + 2), timeformat: 'unixtime', wind_speed_unit: 'kmh'
+      forecast_days: Math.min(7, tourDays() + 1), timeformat: 'unixtime', wind_speed_unit: 'kmh'
     });
     const res = await fetch(`${WEATHER_URL}?${qs}`);
     if (!res.ok || req !== wxRouteRequest) return;
@@ -98,7 +98,7 @@ async function loadWeather(trip) {
     w.dur = (t - now) / 1000;
     w.eta = !routeStages.length ? now + withBreaks(w.dur) * 1000 : etaAtKm(k === stops.length - 1 ? routeKm.at(-1) : locateOnRoute(w.latlng.lat, w.latlng.lng).km);
   });
-  const days = routeStages.length + 1;
+  const days = tourDays();
   // Fahrzeit je Halt sofort zeigen, das Wetter kommt danach
   renderWaypoints();
   try {

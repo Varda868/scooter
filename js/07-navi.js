@@ -134,7 +134,7 @@ function navFix(pos) {
   // Mehrtagestour: Ziel des heutigen Tages ist das nächste Etappenende
   const stageEnd = routeStages.find(e => e > nav.km + 0.05), goal = stageEnd ?? total;
   const restSec = (goal - nav.km) / (routeKmh || 35) * 3600;
-  $('navRest').innerHTML = `${stageEnd != null ? `🌙 Etappe ${routeStages.indexOf(stageEnd) + 1}: ` : ''}noch ${distText((goal - nav.km) * 1000)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + withBreaks(restSec) * 1000)}`;
+  $('navRest').innerHTML = `${stageEnd != null ? `🌙 Tag ${1 + nightsBefore(routeStages.indexOf(stageEnd))}: ` : ''}noch ${distText((goal - nav.km) * 1000)} · <b>${durText(restSec)}</b> · an ${etaText(Date.now() + withBreaks(restSec) * 1000)}`;
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;

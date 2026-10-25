@@ -79,6 +79,7 @@ let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
 let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
 let routeStages = [], currentTrip = null, tripClimb = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
+let routeStageNights = []; // je Etappenende: Nächte dort (2 = Ruhetag), parallel zu routeStages
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const stageLayer = L.layerGroup().addTo(map);
@@ -107,7 +108,7 @@ function setRouteCoords(coords) {
   $('wxRouteSummary').textContent = '';
   // nach showTrip, das routeKmh erst danach setzt
   queueMicrotask(loadRouteWeather);
-  routeStages = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
+  routeStages = []; routeStageNights = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   $('play').hidden = false;
   $('navStart').hidden = false;
   $('gpxTour').hidden = false;
