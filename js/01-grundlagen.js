@@ -64,6 +64,7 @@ const rasterBase = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
 // Übersichten (ganze Route, GPX) in Zehntel-Zoomstufen einpassen, sonst bleibt bei langen Touren links und rechts
 // bis zur Hälfte der Breite leer; danach wieder ganze Stufen für Tippen und Ziehen. Links Platz für die Kartenknöpfe.
 function fitFein(bounds, opts = {}) {
+  if (globalThis.navOhneKarte?.()) return; // Pfeil-Modus im Navi: keine Kacheln laden
   map.options.zoomSnap = 0.1;
   try { map.fitBounds(bounds, { paddingTopLeft: [52, 24], paddingBottomRight: [16, 24], ...opts }); }
   finally { map.options.zoomSnap = 1; }
