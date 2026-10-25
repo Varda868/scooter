@@ -18,7 +18,6 @@
     <nav id="tabs" class="tabs" role="tablist">
       <button role="tab" data-tab="tour">🧭<span>Tour</span></button>
       <button role="tab" data-tab="unterwegs">📍<span>Unterwegs</span><b id="tabBadgeUnterwegs" class="badge" hidden></b></button>
-      <button role="tab" data-tab="entdecker">🗺<span>Entdecker</span></button>
       <button role="tab" data-tab="roller">🛵<span>Roller</span><b id="tabBadgeRoller" class="badge" hidden>!</b></button>
       <button role="tab" data-tab="setup">⚙<span>Einstellung</span></button>
     </nav>
@@ -85,46 +84,6 @@
       <label class="file-btn">📂 GPX-Track laden
         <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
       </label>
-    </section>
-    <section id="tab-entdecker" class="tab" role="tabpanel" hidden>
-      <details id="exploreBox" class="fold">
-      <summary>🗺 Entdecker <span id="exploreSummary" class="hint"></span></summary>
-      <label class="file-btn">📂 Gefahrene Touren importieren (GPX, mehrere Dateien)
-        <input id="gpxRides" type="file" accept=".gpx,application/gpx+xml" multiple>
-      </label>
-      <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
-      <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
-      <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
-      <div id="exploreStats" class="hint"></div>
-      <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
-      </details>
-      <details id="experimentBox" class="fold">
-      <summary>🧪 Experimentell <span class="hint">Geocaches, Wettersonden</span></summary>
-      <p class="hint">Spielereien, die nicht zum Fahren nötig sind. Sie laden nur, wenn sie eingeschaltet sind.</p>
-      <div id="cacheSummary"></div>
-      <ul id="caches"></ul>
-      <details id="ocBox" class="fold">
-      <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
-      <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
-        <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
-      </label>
-      <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
-      <fieldset id="cacheTypes">
-        <legend>Cache-Typen</legend>
-      </fieldset>
-      <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
-      <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
-      <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
-      </details>
-      <details id="sondeBox" class="fold">
-      <summary>🎈 Wettersonden <span id="sondeSummary" class="hint"></span></summary>
-      <label><input id="sondeOn" type="checkbox"> Live laden (SondeHub, jede Minute)</label>
-      <label for="sondeRadius">Umkreis um die Kartenmitte</label>
-      <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
-      <ul id="sondes" class="sonde-list"></ul>
-      <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
-      </details>
-      </details>
     </section>
     <section id="tab-roller" class="tab" role="tabpanel" hidden>
       <details id="rollerBox" class="fold">
@@ -249,6 +208,44 @@
       </details>
       <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+      <details id="experimentBox" class="fold">
+      <summary>🧪 Experimentell <span class="hint">Entdecker, Geocaches, Wettersonden</span></summary>
+      <p class="hint">Spielereien, die nicht zum Fahren nötig sind. Sie laden nur, wenn sie eingeschaltet sind.</p>
+      <details id="exploreBox" class="fold">
+      <summary>🗺 Entdecker <span id="exploreSummary" class="hint"></span></summary>
+      <label class="file-btn">📂 Gefahrene Touren importieren (GPX, mehrere Dateien)
+        <input id="gpxRides" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+      <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
+      <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
+      <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
+      <div id="exploreStats" class="hint"></div>
+      <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
+      </details>
+      <div id="cacheSummary"></div>
+      <ul id="caches"></ul>
+      <details id="ocBox" class="fold">
+      <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
+      <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
+        <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
+      </label>
+      <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
+      <fieldset id="cacheTypes">
+        <legend>Cache-Typen</legend>
+      </fieldset>
+      <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
+      <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
+      <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
+      </details>
+      <details id="sondeBox" class="fold">
+      <summary>🎈 Wettersonden <span id="sondeSummary" class="hint"></span></summary>
+      <label><input id="sondeOn" type="checkbox"> Live laden (SondeHub, jede Minute)</label>
+      <label for="sondeRadius">Umkreis um die Kartenmitte</label>
+      <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
+      <ul id="sondes" class="sonde-list"></ul>
+      <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
+      </details>
+      </details>
     </section>
   </div>
   <div id="map"></div>
