@@ -103,9 +103,24 @@ function faehreDetails(t, nameFallback = '', s = 0) {
     (t?.['@osm'] ? ` · <a href="https://www.openstreetmap.org/${t['@osm']}" target="_blank" rel="noopener">OSM</a>` : '');
 }
 
+// Fährstücke auf der Route kenntlich machen: blau gestrichelt über dem Routenstrich, ⛴ in der Mitte
+const faehrStrich = L.layerGroup().addTo(map);
+function faehrStrichZeichnen(fs) {
+  faehrStrich.clearLayers();
+  for (const f of fs) {
+    const pts = routeCoords.filter((_, i) => routeKm[i] >= f.km - 1e-6 && routeKm[i] <= f.bisKm + 1e-6);
+    if (pts.length < 2) continue;
+    L.polyline(pts, { color: '#fff', weight: 6, interactive: false }).addTo(faehrStrich);
+    L.polyline(pts, { color: '#1f6fd1', weight: 4, dashArray: '8 7', interactive: false }).addTo(faehrStrich);
+    L.marker(pointAtKm((f.km + f.bisKm) / 2), { keyboard: false, zIndexOffset: 300,
+      icon: L.divIcon({ className: 'poi-icon', html: '⛴', iconSize: [24, 24] }) })
+      .bindTooltip(`⛴ ${escapeHtml(f.name || 'Fähre')} · ${Math.round(f.bisKm - f.km)} km · ca. ${durText(f.s)}`).addTo(faehrStrich);
+  }
+}
 async function faehrenZeigen(trip) {
   const req = ++faehreReq, box = $('faehreInfo');
   const fs = trip ? faehrenDerRoute(trip) : [];
+  faehrStrichZeichnen(fs);
   box.innerHTML = fs.map(f => `<div>${faehreText(f, null)}</div>`).join('');
   if (!fs.length) return;
   const tags = await Promise.all(fs.map(f => faehreLinie(f).catch(() => null)));
