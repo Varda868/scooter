@@ -13,7 +13,9 @@ function faehrenDerRoute(trip) {
       const i = off + m.begin_shape_index, p = routeCoords[i];
       // travel_type bleibt bei Valhalla das Fahrzeug, die Fähre steckt nur in den Manövern dazwischen
       const t = Number.isFinite(+m.time) ? +m.time : 0;
-      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
+      // Zwei 28 hintereinander (Calais→Dover: „Douvres – Calais“, dann „Dover – Calais“) sind eine Überfahrt
+      if (m.type === FAEHRE_EIN && cur) cur.s += t;
+      else if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
       else if (m.type === FAEHRE_AUS && cur && p) {
         const bisKm = routeKm[i] ?? cur.km;
         // Ohne Zeit von Valhalla mit 25 km/h schätzen (wie faehrTrip)

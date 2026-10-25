@@ -186,6 +186,8 @@ async function grobePunkte(locs) {
       const faehren = [];
       leg.maneuvers.forEach((m, k) => { if (m.type === 28) {
         const aus = leg.maneuvers.slice(k + 1).find(n => n.type === 29);
+        // weiteres 28 vor dem 29 gehört zur selben Überfahrt (Calais→Dover meldet zwei)
+        if (faehren.length && faehren.at(-1)[1] === (aus ? aus.begin_shape_index : m.end_shape_index)) return;
         faehren.push([m.begin_shape_index, aus ? aus.begin_shape_index : m.end_shape_index]);
       } });
       // ab dem Anlegerpunkt selbst: OSM-Fährlinien sind oft gerade, dann hat das Fährstück nur zwei Punkte
