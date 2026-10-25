@@ -75,3 +75,8 @@ $('profilImport').onchange = async e => {
   } catch { alert('Touren konnten nicht übernommen werden, der Rest schon.'); }
   location.reload();
 };
+
+// --- Kurzanleitung und Hinweis beim ersten Start (und jederzeit unter ⚙ Einstellung)
+$('introOk').onclick = () => { store.set('intro', 1); $('intro').close(); };
+$('introAuf').onclick = () => $('intro').showModal();
+if (!store.get('intro', 0)) $('intro').showModal();

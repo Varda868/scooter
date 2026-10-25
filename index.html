@@ -231,10 +231,25 @@
         <label class="file-btn">📂 Profil laden<input id="profilImport" type="file" accept=".json,application/json"></label></div>
       <div id="profilStatus" class="hint"></div>
       </details>
+      <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
     </section>
   </div>
   <div id="map"></div>
+  <dialog id="intro" class="intro">
+    <h2>🛵 Scooterways</h2>
+    <p>Routenplaner und Navi für 50er-Roller (45 km/h): keine Autobahn, keine Kraftfahrstraße, Hauptstraßen nach Wunsch meiden.</p>
+    <ol>
+      <li><b>Route:</b> Auf die Karte tippen setzt Start, Ziel und Zwischenziele. Marker lassen sich ziehen, die Route auch (◆ Formpunkt oder Straße meiden).</li>
+      <li><b>Strecke:</b> Unter 🧭 Tour von „direkt“ bis „kleinste Straßen“ wählen. Feinheiten stehen unter ⚙ Einstellung → Fahrprofil.</li>
+      <li><b>Unterwegs:</b> POIs, Tankstopps, Wetter und Fähren entlang der Route stehen unter 📍 Unterwegs.</li>
+      <li><b>Navi:</b> 🧭 Navigation starten (mit Ansage). Tippen auf den Abbiegepfeil zeigt die nächsten Abbiegungen. ▶ Vorschaufahrt fährt die Strecke vorab im Zeitraffer ab.</li>
+      <li><b>Daten:</b> Alles bleibt in diesem Browser. Unter ⚙ Einstellung → 💾 Profil lässt es sich sichern und auf ein anderes Gerät übertragen.</li>
+    </ol>
+    <h3>Hinweis</h3>
+    <p class="hint">Privates Hobbyprojekt ohne Gewähr. Routen, Öffnungszeiten, Fähren und Sperrungen stammen aus OpenStreetMap und anderen offenen Quellen und können falsch oder veraltet sein. Es gelten immer die Verkehrsschilder und die StVO. Das Handy während der Fahrt nicht bedienen: Ziel vor der Abfahrt eingeben, unterwegs nur die Ansage nutzen. Bei Talk und Standort-Teilen laufen Daten verschlüsselt über öffentliche Nostr-Relays. Nutzung auf eigene Gefahr.</p>
+    <button id="introOk">Verstanden, los geht’s</button>
+  </dialog>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
     <div id="navLanes" class="nav-lanes"></div>

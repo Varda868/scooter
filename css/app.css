@@ -277,3 +277,10 @@
 .profil-knoepfe { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
 .profil-knoepfe .file-btn { margin-top:0; flex:1; }
 .hint.warn { color:#b23a1e; }
+/* Kurzanleitung beim ersten Start */
+.intro { max-width:min(520px, calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; border:1px solid var(--line); border-radius:10px;
+  background:var(--bg); color:var(--fg); padding:16px 18px; font-size:14px; line-height:1.4; }
+.intro::backdrop { background:rgba(0,0,0,.45); }
+.intro h2 { margin:0 0 6px; font-size:20px; } .intro h3 { margin:12px 0 4px; font-size:15px; }
+.intro ol { padding-left:20px; margin:8px 0; } .intro li { margin:4px 0; }
+.intro button { width:100%; margin-top:10px; }
