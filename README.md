@@ -10,6 +10,15 @@
 - Talk (`js/22-talk.js`, `talk/`): Gruppenfunk über Nostr-Relays mit Taste oder VOX. Codec2, Wiedergabe, VOX und Netz sind unveränderte Kopien aus der b:con-App (Herkunft und Lizenzen in `talk/QUELLE.md`); geladen wird erst, wenn Talk eingeschaltet ist.
 - `sw.js` – Service Worker. Neue Dateien in `APP_FILES` eintragen und `VERSION` erhöhen. Eigene Skripte und CSS kommen „Netz zuerst“, damit Seite und Module immer zusammenpassen.
 
+## Eigene POI-Daten (`poi/`)
+
+POIs entlang der Route kommen zuerst aus eigenen Kacheln unter `poi/` (neben der App, nicht im Repo), sonst wie bisher von Overpass.
+
+- `tools/poi-kacheln.py` baut aus `osmium export -f geojsonseq` Kacheln von 1°×1° (`poi/t/{lat}_{lon}.json`) und `poi/index.json` (Stand, Kachelliste). Die Filter liest es aus `POI_TYPES` in `js/01-grundlagen.js`. Ein neuer POI-Typ landet also beim nächsten Lauf automatisch in den Kacheln.
+- `.github/workflows/poi-kacheln.yml` läuft am 3. jedes Monats, auf Wunsch auch von Hand (Actions → POI-Kacheln → Run workflow, optional nur einzelne Regionen wie `europe/germany/bayern`). Es geht Land für Land durch die Geofabrik-Extrakte Europas und lädt das Ergebnis per FTPS hoch. Dafür vier Repository-Secrets anlegen: `POI_FTP_HOST`, `POI_FTP_USER`, `POI_FTP_PASS`, `POI_FTP_DIR` (Zielordner, also das `poi`-Verzeichnis im Webroot von scooter.thai-klasse.de). Ohne Secrets wird nur gebaut.
+- Die App nimmt die eigenen Daten, wenn mindestens 90 % der Kacheln um die Route vorhanden sind. Fehlende Kacheln gelten als leer (Meer). Der Service Worker hält die Kacheln offline vor.
+- Daten © OpenStreetMap-Mitwirkende, ODbL 1.0.
+
 ## Lizenz
 
 AGPL-3.0 (`LICENSE`), weil Talk Teile der b:con-App (AGPL-3.0) übernimmt. In `talk/` gelten zusätzlich LGPL-2.1 für Codec2 und MIT für secp256k1, siehe `talk/QUELLE.md`.

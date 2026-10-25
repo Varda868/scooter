@@ -3,6 +3,7 @@
 const VERSION = 'v13';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
+const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
@@ -24,11 +25,11 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 
-let puts = 0;
-async function trimTiles(cache) {
+let puts = 0, poiPuts = 0;
+async function trimTiles(cache, max = MAX_TILES) {
   const keys = await cache.keys();
   // Reihenfolge der Schlüssel = Einfügereihenfolge: die ältesten zuerst raus
-  await Promise.all(keys.slice(0, Math.max(0, keys.length - MAX_TILES)).map(k => cache.delete(k)));
+  await Promise.all(keys.slice(0, Math.max(0, keys.length - max)).map(k => cache.delete(k)));
 }
 
 self.addEventListener('fetch', e => {
@@ -51,6 +52,20 @@ self.addEventListener('fetch', e => {
       if (res.ok) caches.open(SHELL).then(c => c.put(req, res.clone()));
       return res;
     }).catch(() => caches.match(req)));
+    return;
+  }
+
+  // Eigene POI-Kacheln: index.json Netz zuerst, Kacheln (URL trägt den Datenstand) Speicher zuerst; offline aus dem Speicher
+  if (url.origin === location.origin && url.pathname.includes('/poi/')) {
+    e.respondWith(caches.open(POIS).then(async cache => {
+      const index = url.pathname.endsWith('/index.json'), hit = !index && await cache.match(req);
+      if (hit) return hit;
+      try {
+        const res = await fetch(req);
+        if (res.ok) { cache.put(index ? url.pathname : req, res.clone()); if (!index && ++poiPuts % 50 === 0) trimTiles(cache, MAX_POI_TILES); }
+        return res;
+      } catch (err) { return (await cache.match(index ? url.pathname : req)) || Promise.reject(err); }
+    }));
     return;
   }
 
