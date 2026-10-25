@@ -53,7 +53,9 @@ jobs:
           done < urls.txt
 
       - name: Kacheln
-        run: python3 tools/poi-kacheln.py out < pois.geojsonseq && du -sh out
+        run: |
+          python3 tools/poi-kacheln.py out < pois.geojsonseq 2> stats.txt; cat stats.txt
+          echo "::notice::$(cat stats.txt), $(du -sh out | cut -f1)"
 
       - name: Hochladen
         env:
@@ -62,7 +64,15 @@ jobs:
           LFTP_PASSWORD: ${{ secrets.POI_FTP_PASS }}
           FTP_DIR: ${{ secrets.POI_FTP_DIR }}
         run: |
-          [ -n "$FTP_HOST" ] || { echo "Keine FTP-Secrets gesetzt – Upload übersprungen"; exit 0; }
-          # Erst die Kacheln, zuletzt index.json: die App sieht den neuen Stand erst, wenn alles oben ist
-          lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set ftp:ssl-force true; set net:max-retries 3;
-            mkdir -pf $FTP_DIR/t; mirror -R --delete --parallel=4 out/t $FTP_DIR/t; put out/index.json -o $FTP_DIR/index.json; bye"
+          [ -n "$FTP_HOST" ] || { echo "::warning::Keine FTP-Secrets gesetzt – Upload übersprungen"; exit 0; }
+          dir="${FTP_DIR%/}"
+          # Erst die Kacheln, zuletzt index.json: die App sieht den neuen Stand erst, wenn alles oben ist.
+          # FTPS bevorzugt; passt das Zertifikat nicht zum Hostnamen (Shared Hosting: oft das Zertifikat des Servers),
+          # wird verschlüsselt ohne Zertifikatsprüfung hochgeladen. Unverschlüsselt nie (Passwort im Klartext).
+          up() { lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set net:max-retries 2; set net:timeout 30; $1
+            mkdir -pf $dir/t; mirror -R --delete --parallel=4 out/t $dir/t; put out/index.json -o $dir/index.json; bye" > lftp.log 2>&1; }
+          for mode in "set ftp:ssl-force true;" "set ftp:ssl-force true; set ssl:verify-certificate no;"; do
+            if up "$mode"; then echo "::notice::Hochgeladen ($mode)"; exit 0; fi
+            echo "::warning::Upload mit '$mode' fehlgeschlagen: $(tail -3 lftp.log | tr '\n' ' ')"
+          done
+          exit 1
