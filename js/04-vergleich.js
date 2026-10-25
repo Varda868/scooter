@@ -33,6 +33,32 @@ async function routeClimb(coords, trip) {
   return climbCache.get(key);
 }
 
+// Kurvigkeit: Richtungswechsel in Grad je km. Linie erst alle 50 m neu abtasten (sonst zählt die Punktdichte mit),
+// Knicke unter 10° sind GPS-/Kartenzittern und fallen weg.
+const KURV_M = 50, KURV_MIN_GRAD = 10;
+function kurvigkeit(coords) {
+  const pts = [L.latLng(coords[0])];
+  let rest = KURV_M, km = 0;
+  for (let i = 1; i < coords.length; i++) {
+    let a = L.latLng(coords[i - 1]);
+    const b = L.latLng(coords[i]);
+    let d = a.distanceTo(b);
+    km += d / 1000;
+    while (d >= rest) {
+      const t = rest / d;
+      a = L.latLng(a.lat + (b.lat - a.lat) * t, a.lng + (b.lng - a.lng) * t);
+      pts.push(a); d -= rest; rest = KURV_M;
+    }
+    rest -= d;
+  }
+  let grad = 0;
+  for (let i = 2; i < pts.length; i++) {
+    const w = Math.abs(((bearing(pts[i - 1], pts[i]) - bearing(pts[i - 2], pts[i - 1]) + 540) % 360) - 180);
+    if (w >= KURV_MIN_GRAD) grad += w;
+  }
+  return km > 0.5 ? Math.round(grad / km) : 0;
+}
+
 // Etikett dort, wo die Route am weitesten von den anderen abweicht, damit sie sich nicht überdecken
 function labelPoint(own, others) {
   const pts = simplify(own, 60), far = others.flatMap(c => simplify(c, 120));
@@ -48,7 +74,7 @@ function labelPoint(own, others) {
 async function compareRoutes(trips, pick) {
   const req = ++compareRequest;
   const coords = trips.map(tripCoords);
-  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, fresh: exp.tiles.size ? newTilesOf(coords[i]).size : null }));
+  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, kurv: kurvigkeit(coords[i]), fresh: exp.tiles.size ? newTilesOf(coords[i]).size : null }));
   // Etikett zur Seite weg von den anderen Routen; Hauptroute darüber
   const tips = coords.map((c, i) => {
     const others = coords.filter((_, j) => j !== i), at = labelPoint(c, others);
@@ -60,9 +86,10 @@ async function compareRoutes(trips, pick) {
   tips.forEach((tip, i) => i && tip.getElement()?.addEventListener('click', e => { L.DomEvent.stop(e); pick(i - 1); }));
   const render = () => {
     const min = f => Math.min(...rows.map(f).filter(v => v != null));
-    const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up), fresh: -min(r => r.fresh == null ? null : -r.fresh) };
-    const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && (f === 'fresh' ? r[f] >= best[f] && r[f] > 0 : r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0)) ? `<b>${text}</b>` : text);
-    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`),
+    const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up), fresh: -min(r => r.fresh == null ? null : -r.fresh), kurv: -min(r => -r.kurv) };
+    // Mehr ist besser bei neuen Kacheln und Kurven, sonst weniger
+    const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && (f === 'fresh' || f === 'kurv' ? r[f] >= best[f] && r[f] > 0 : r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0)) ? `<b>${text}</b>` : text);
+    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`), val(r, 'kurv', `〰${r.kurv}°/km`),
       r.fresh == null ? '' : val(r, 'fresh', `+${r.fresh} 🆕`)].filter(Boolean).join(' · ')));
   };
   render();
