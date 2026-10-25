@@ -85,6 +85,7 @@ const wmo = code => WMO.find(([codes]) => codes.includes(code)) || [[], '❔', '
 let weatherRequest = 0;
 
 async function loadWeather(trip) {
+  if (globalThis.navPause?.('wetter', () => loadWeather(trip))) return;
   const req = ++weatherRequest;
   // Halte = Wegpunkte, die Valhalla als "break" bekommt; Ankunft = Summe der Abschnittszeiten
   const located = waypoints.filter(w => w.latlng);

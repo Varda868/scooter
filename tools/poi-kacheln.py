@@ -7,8 +7,11 @@ Die Filter kommen aus POI_TYPES in js/01-grundlagen.js, damit App und Kacheln ni
 Kachel = Liste [ "n123", lat, lon, {tags} ]; nur die Tags, die die App anzeigt oder zum Zuordnen braucht.
 Fährlinien (Wege mit route=ferry) zusätzlich als AUSGABE/f/{lat}_{lon}.json = [ "w123", [[lat, lon], …], {tags} ],
 vereinfacht auf etwa 50 m; eine Linie steht in jeder Kachel, die ihr Rahmen berührt.
+Orte (place=city|town|village|hamlet, für Vorschläge beim Tippen, auch offline) als AUSGABE/o/{lat}_{lon}.json
+= [ [name, lat, lon, art, name:de oder "", bei], … ] mit art c/t/v/h; bei = nächste größere Stadt (Dorf/Weiler: Stadt
+im Umkreis von 30 km, Kleinstadt: Großstadt im Umkreis von 60 km), damit gleichnamige Orte unterscheidbar sind.
 """
-import json, os, re, sys, datetime
+import json, math, os, re, sys, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEEP = {'name', 'brand', 'brands', 'operator', 'opening_hours', 'website', 'contact:website', 'url', 'phone', 'contact:phone',
@@ -19,6 +22,8 @@ KEEP = {'name', 'brand', 'brands', 'operator', 'opening_hours', 'website', 'cont
 FERRY_KEEP = {'name', 'operator', 'duration', 'website', 'contact:website', 'url', 'fee', 'opening_hours', 'interval',
               'motor_vehicle', 'motorcar', 'motorcycle', 'moped', 'mofa', 'vehicle', 'bicycle', 'foot'}
 FERRY_EXPR = 'w/route=ferry'
+PLACE_ART = {'city': 'c', 'town': 't', 'village': 'v', 'hamlet': 'h'}
+PLACE_EXPR = 'n/place=' + ','.join(PLACE_ART)
 
 
 def filters():
@@ -77,11 +82,35 @@ def ferry_lines(geom):
     return [c] if t == 'LineString' else c if t == 'MultiLineString' else []
 
 
+def nearby_bigger(places):
+    """Hängt an jeden Ort den Namen der nächsten größeren Stadt (Gitter 0,5°, flach gerechnet)."""
+    grid = {}
+    for items in places.values():
+        for p in items:
+            if p[3] in 'ct':
+                grid.setdefault((int(p[1] // 0.5), int(p[2] // 0.5)), []).append(p)
+    for items in places.values():
+        for p in items:
+            arten, km = ('ct', 30) if p[3] in 'vh' else ('c', 60) if p[3] == 't' else ('', 0)
+            best, bd = '', km
+            if arten:
+                ga, go, kx = int(p[1] // 0.5), int(p[2] // 0.5), math.cos(math.radians(p[1]))
+                for a in range(ga - 1, ga + 2):
+                    for o in range(go - 1, go + 2):
+                        for q in grid.get((a, o), []):
+                            if q is p or q[3] not in arten:
+                                continue
+                            d = math.hypot((q[1] - p[1]) * 111, (q[2] - p[2]) * 111 * kx)
+                            if d < bd:
+                                best, bd = q[4] or q[0], d
+            p.append(best)
+
+
 def main(out):
     fs, keys = filters(), set()
     for conds in fs:
         keys.update(k for k, _, _ in conds)
-    tiles, seen, ferries, fseen = {}, set(), {}, set()
+    tiles, seen, ferries, fseen, places, pseen = {}, set(), {}, set(), {}, set()
     for line in sys.stdin:
         line = line.strip().lstrip('\x1e')
         if not line:
@@ -90,6 +119,15 @@ def main(out):
         p = f.get('properties') or {}
         oid = f"{str(p.get('@type', 'n'))[0]}{p.get('@id')}"
         tags = {k: v for k, v in p.items() if not k.startswith('@')}
+        art = PLACE_ART.get(tags.get('place'))
+        if art and tags.get('name') and (f.get('geometry') or {}).get('type') == 'Point' and oid not in pseen:
+            pseen.add(oid)
+            lon, lat = f['geometry']['coordinates']
+            de = tags.get('name:de', '')
+            places.setdefault(f'{int(lat // 1)}_{int(lon // 1)}', []).append(
+                [tags['name'], round(lat, 4), round(lon, 4), art, de if de != tags['name'] else ''])
+            if not any(matches(tags, c) for c in fs):
+                continue
         if tags.get('route') == 'ferry' and f.get('geometry') and oid not in fseen:
             fseen.add(oid)
             keep = {k: v for k, v in tags.items() if k in FERRY_KEEP}
@@ -116,17 +154,25 @@ def main(out):
     for k, items in ferries.items():
         with open(os.path.join(out, 'f', k + '.json'), 'w', encoding='utf-8') as fh:
             json.dump(items, fh, ensure_ascii=False, separators=(',', ':'))
+    nearby_bigger(places)
+    os.makedirs(os.path.join(out, 'o'), exist_ok=True)
+    for k, items in places.items():
+        items.sort(key=lambda x: 'ctvh'.index(x[3]))
+        with open(os.path.join(out, 'o', k + '.json'), 'w', encoding='utf-8') as fh:
+            json.dump(items, fh, ensure_ascii=False, separators=(',', ':'))
     index = {'date': datetime.date.today().isoformat(), 'count': len(seen), 'tiles': sorted(tiles),
+             'places': len(pseen), 'placeTiles': sorted(places),
              'ferries': len(fseen), 'ferryTiles': sorted(ferries),
              'license': 'Daten © OpenStreetMap-Mitwirkende, ODbL 1.0 (openstreetmap.org/copyright)'}
     with open(os.path.join(out, 'index.json'), 'w', encoding='utf-8') as fh:
         json.dump(index, fh, separators=(',', ':'))
-    print(f"{len(seen)} POIs in {len(tiles)} Kacheln, {len(fseen)} Fährlinien in {len(ferries)} Kacheln", file=sys.stderr)
+    print(f"{len(seen)} POIs in {len(tiles)} Kacheln, {len(fseen)} Fährlinien in {len(ferries)} Kacheln, "
+          f"{len(pseen)} Orte in {len(places)} Kacheln", file=sys.stderr)
 
 
 if __name__ == '__main__':
     if sys.argv[1:] == ['--osmium']:
-        print(osmium_expr(filters()), FERRY_EXPR)
+        print(osmium_expr(filters()), FERRY_EXPR, PLACE_EXPR)
     elif len(sys.argv) == 2:
         main(sys.argv[1])
     else:
