@@ -269,3 +269,5 @@
 /* Fähren auf der Route */
 .faehre-info div { margin-top: 2px; }
 .faehre-info a { white-space: nowrap; }
+/* POI bei Ankunft geschlossen */
+.poi-icon.poi-zu { opacity: 0.45; filter: grayscale(1); }

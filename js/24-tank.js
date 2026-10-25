@@ -29,11 +29,12 @@ function offenUm(tags, d) {
   if (!oh) return null;
   if (oh === '24/7') return true;
   const wd = d.getDay(), min = d.getHours() * 60 + d.getMinutes();
-  let offen = null;
+  let offen = null, tagRegeln = 0;
   for (const regel of oh.split(';').map(s => s.trim()).filter(Boolean)) {
     if (/^(PH|SH)\b/.test(regel)) continue; // Feiertage/Ferien kennen wir nicht
     const m = regel.match(/^((?:(?:Mo|Tu|We|Th|Fr|Sa|Su)(?:-(?:Mo|Tu|We|Th|Fr|Sa|Su))?,?)+)?\s*(.*)$/);
     let gilt = !m[1];
+    if (m[1]) tagRegeln++;
     for (const teil of (m[1] || '').split(',').filter(Boolean)) {
       const [a, b] = teil.split('-'), ia = OH_TAGE.indexOf(a), ib = b ? OH_TAGE.indexOf(b) : ia;
       for (let i = ia; ; i = (i + 1) % 7) { if (i === wd) gilt = true; if (i === ib) break; }
@@ -49,7 +50,8 @@ function offenUm(tags, d) {
       return b > a ? min >= a && min < b : min >= a || min < b;
     });
   }
-  return offen;
+  // Nur Regeln für andere Tage: an diesem Tag zu (OSM: nicht genannt = geschlossen)
+  return offen ?? (tagRegeln ? false : null);
 }
 
 // ---- Bezahlen: kleine Zeichen am Tankstellensymbol (💳 Karte oder Automat, 💶 bar)

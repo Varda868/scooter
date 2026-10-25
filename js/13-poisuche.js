@@ -217,10 +217,14 @@ function showPois(elements, active, note, laeuft) {
 
   for (const p of pois) {
     const title = p.tags.name || p.tags.brand || p.type.name;
+    // Offen bei Ankunft? Nur wenn opening_hours lesbar ist; zu = Symbol blass
+    const ank = new Date(etaAtKm(p.km)), offen = offenUm(p.tags, ank);
+    const uhr = ank.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     p.marker = L.marker([p.lat, p.lon], {
-      icon: L.divIcon({ className: 'poi-icon', html: p.type.id === 'fuel' ? `⛽<span class="poi-badge">${fuelBadges(p.tags)}</span>` : p.type.icon, iconSize: [24, 24] }), title
+      icon: L.divIcon({ className: 'poi-icon' + (offen === false ? ' poi-zu' : ''), html: p.type.id === 'fuel' ? `⛽<span class="poi-badge">${fuelBadges(p.tags)}</span>` : p.type.icon, iconSize: [24, 24] }), title
     }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
-      (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + workshopInfo(p) + contactInfo(p.tags) +
+      (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') +
+      (offen == null || p.tags.automated === 'yes' ? '' : offen ? `<br>🟢 bei Ankunft (${uhr}) offen` : `<br>🔴 bei Ankunft (${uhr}) zu`) + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + workshopInfo(p) + contactInfo(p.tags) +
       (p.type.id === 'fuel' && +roller.tank > 0 ? '<br><button data-tank-voll>⛽ Hier vollgetankt</button>' : '')).addTo(poiLayer);
   }
   $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`
