@@ -1,6 +1,6 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v18';
+const VERSION = 'v19';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
