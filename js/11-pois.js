@@ -126,7 +126,7 @@ $('gpxTour').onclick = () => {
   const ortTeil = w => (w?.text || '').split(',')[0].replace(/^[^\p{L}\d]+/u, '').trim()
     .replace(/[äöüÄÖÜß]/g, c => ({ ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss' })[c]).replace(/[^\p{L}\d]+/gu, '-').replace(/^-|-$/g, '').slice(0, 30) || 'Punkt';
   const tage = tourDays(), heute = new Date().toLocaleDateString('sv-SE'); // Ortszeit, nicht UTC
-  const datei = ['scw', heute, `${ortTeil(located[0])}-${ortTeil(located.at(-1))}`,
+  const datei = ['scw', heute, located.length > 2 && located[0].latlng.distanceTo(located.at(-1).latlng) < 1000 ? `${ortTeil(located[0])}-Rund` : `${ortTeil(located[0])}-${ortTeil(located.at(-1))}`,
     `${Math.round(routeKm.at(-1))}km`, tage > 1 && `${tage}Tage`, routeFaehren.length && 'Faehre'].filter(Boolean).join('_');
   downloadGpx(`${datei}.gpx`, `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Scooterways" xmlns="http://www.topografix.com/GPX/1/1">
