@@ -83,6 +83,7 @@ function stopNav(keepRec = false) {
 function navFix(pos) {
   if (!nav.on || !routeCoords) return;
   nav.lastPos = pos;
+  standortFix(pos);
   const { latitude: lat, longitude: lon, accuracy, speed, heading } = pos.coords;
   const ll = L.latLng(lat, lon), total = routeKm.at(-1);
   const kmh = speed != null && speed >= 0 ? speed * 3.6 : null;
