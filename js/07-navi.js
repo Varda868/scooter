@@ -129,7 +129,7 @@ function navFix(pos) {
     $('navLanes').innerHTML = '';
   } else {
     const m = (next.km - nav.km) * 1000;
-    $('navArrow').textContent = TURN_ARROWS[next.type] || '↑';
+    $('navArrow').innerHTML = turnIcon(next);
     $('navDist').textContent = distText(m);
     $('navText').textContent = next.text;
     $('navLanes').innerHTML = m < LANE_M ? laneHtml(next.lanes) : '';
@@ -161,7 +161,7 @@ function navPeek() {
   const m = ahead[i];
   nav.peek = i; nav.peekKm = m.km;
   $('nav').classList.add('peek');
-  $('navArrow').textContent = TURN_ARROWS[m.type] || (i === ahead.length - 1 ? '🏁' : '↑');
+  $('navArrow').innerHTML = turnIcon(m, i === ahead.length - 1 ? '🏁' : '↑');
   $('navDist').textContent = `${i + 1}/${ahead.length} · ${distText((m.km - nav.km) * 1000)}`;
   $('navText').textContent = m.text;
   $('navLanes').innerHTML = laneHtml(m.lanes);

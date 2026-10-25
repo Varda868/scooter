@@ -271,3 +271,5 @@
 .faehre-info a { white-space: nowrap; }
 /* POI bei Ankunft geschlossen */
 .poi-icon.poi-zu { opacity: 0.45; filter: grayscale(1); }
+/* Abbiegeskizzen: so groß wie die Zeichen vorher */
+.turn-svg { width: 1em; height: 1em; vertical-align: middle; }
