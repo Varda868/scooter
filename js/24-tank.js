@@ -115,7 +115,8 @@ async function tankPlan() {
     let kandidaten = nutzbar.filter(s => s.km > pos + 0.3 && s.km <= bisReserve), inReserve = false;
     if (!kandidaten.length) { kandidaten = nutzbar.filter(s => s.km > pos + 0.3 && s.km <= bisLeer); inReserve = true; }
     if (!kandidaten.length) { if (bisLeer < total) luecke = { von: pos, leer: bisLeer }; break; }
-    const s = kandidaten.at(-1);
+    // Die letzte vor der Reserve, aber lieber eine direkt an der Strecke (≤150 m), wenn sie höchstens 15 km früher liegt
+    const s = kandidaten.filter(x => x.dist <= 150 && x.km >= kandidaten.at(-1).km - 15).at(-1) || kandidaten.at(-1);
     tank.stops.push({ ...s, inReserve, ankunftL: level - (fahrKm(s.km) - fahrKm(pos)) * rate });
     level = +roller.tank; pos = s.km;
   }

@@ -9,7 +9,11 @@ $('navVoice').classList.toggle('off', !nav.voice);
 async function keepScreenOn() {
   if (!nav.on) return;
   try { nav.lock = await navigator.wakeLock.request('screen'); $('navNote').textContent = ''; }
-  catch { $('navNote').textContent = 'Bildschirm-an wird von diesem Browser nicht unterstützt (braucht HTTPS). Displayzeit in den Handy-Einstellungen hochsetzen.'; }
+  catch {
+    // Gibt es die Sperre, scheitert sie meist am Energiesparmodus oder weil die App gerade nicht sichtbar ist
+    $('navNote').textContent = 'wakeLock' in navigator ? 'Bildschirm-an gerade nicht möglich (Energiesparmodus?). Displayzeit in den Handy-Einstellungen hochsetzen.'
+      : 'Bildschirm-an wird von diesem Browser nicht unterstützt. Displayzeit in den Handy-Einstellungen hochsetzen.';
+  }
 }
 // Die Sperre fällt beim Wechsel in eine andere App weg; beim Zurückkommen neu anfordern
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && nav.on) keepScreenOn(); });

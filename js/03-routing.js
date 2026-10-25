@@ -234,11 +234,12 @@ function backShare(outCoords, backCoords) {
 // Rückweg mit Meidepunkten auf dem Hinweg (outCoords); findet Valhalla mit allen keinen Weg (z. B. einzige Brücke),
 // mit jedem zweiten erneut versuchen, zuletzt ohne
 async function planBack(locs, outCoords, extra) {
-  const avoid = backAvoidPoints(outCoords, BACK_EXCLUDE_MAX - excluded.length - extra.length);
+  // Viele Sperrungen (extra) dürfen die Meidepunkte nicht ganz verdrängen; Valhalla schneidet bei 50 ab
+  const avoid = backAvoidPoints(outCoords, Math.max(15, BACK_EXCLUDE_MAX - excluded.length - extra.length));
   for (const pts of [avoid, avoid.filter((_, i) => i % 2)]) {
     if (!pts.length) break;
     try {
-      const back = await planRoute(locs, [...extra, ...pts]);
+      const back = await planRoute(locs, [...pts, ...extra]); // Meidepunkte zuerst, die 50er-Grenze kürzt dann Sperrungen
       summaryNote += ` · ↩ Rückweg zu ${Math.round(backShare(outCoords, tripCoords(back.trip)) * 100)} % anders`;
       return back;
     } catch (err) { if (err.offline) throw err; }
@@ -262,6 +263,7 @@ async function planTrip(locs, extra = []) {
 
 let summaryNote = '';
 async function route() {
+  summaryNote = ''; // Reste eines abgebrochenen Laufs (z. B. offline) nicht doppelt zeigen
   $('summary').textContent = 'Berechne …';
   $('steps').innerHTML = '';
   try {
@@ -292,10 +294,13 @@ async function route() {
         const closed = tt.avoid ? incidents.filter(i => i.properties.iconCategory === 8 &&
           incidentPoints(i).some(([lat, lon]) => locateOnRoute(lat, lon, coords).dist < 30)) : [];
         if (closed.length) {
+          // Die Rückweg-Notiz des ersten Laufs gilt dann nicht mehr, sonst stehen „97 % anders“ und „kein anderer“ nebeneinander
+          const vorher = summaryNote;
+          summaryNote = summaryNote.replace(/ · ↩[^·]*/g, '');
           try {
             data = await planTrip(locs, closed.flatMap(closurePoints));
             summaryNote += ` · ${closed.length} Sperrung${closed.length > 1 ? 'en' : ''} umfahren`;
-          } catch { summaryNote += ' · ⚠️ Sperrung auf der Route, keine Umfahrung gefunden'; }
+          } catch { summaryNote = vorher + ' · ⚠️ Sperrung auf der Route, keine Umfahrung gefunden'; }
         }
       } catch (err) { summaryNote += ` · ⚠️ Verkehr: ${err.message}`; }
     }
