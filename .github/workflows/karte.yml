@@ -1,6 +1,10 @@
 # Schneidet die Vektorkarte (PMTiles) für das Gebiet in tools/karte-gebiet.geojson aus dem aktuellen Protomaps-Build
 # und lädt sie per FTPS als poi/karte.pmtiles hoch (gleiches FTP-Konto und gleiche Secrets wie die POI-Kacheln).
 # Größe bei Zoom 14: ca. 20 GB (gemessen 10/2026). Läuft im März, Juli und Oktober, auf Wunsch auch von Hand.
+# Der Upload zu hosttech schafft unter 1 MB/s, also mehr als ein Job darf (6 h). Deshalb fortsetzbar: die halbe
+# Datei bleibt als karte.pmtiles.part liegen, daneben karte.build mit Build und Zoom. Der nächste Lauf schneidet
+# denselben Build aus, prüft Stichproben der halben Datei gegen die neue und lädt nur den Rest. Reicht die Zeit
+# nicht, startet der Lauf sich selbst neu (höchstens RUNDEN_MAX mal).
 name: Karte
 
 on:
@@ -11,14 +15,29 @@ on:
       maxzoom:
         description: 'Höchste Zoomstufe (14 ≈ 20 GB, 15 ≈ 40 GB)'
         default: '14'
+      build:
+        description: 'Protomaps-Build, z. B. 20261025.pmtiles (leer = angefangener oder neuester)'
+        default: ''
+      runde:
+        description: 'Fortsetzungsrunde (setzt der Lauf selbst)'
+        default: '1'
 
 permissions:
   contents: read
+  actions: write
+
+concurrency:
+  group: karte
+  cancel-in-progress: false
+
+env:
+  RUNDEN_MAX: 5
+  UPLOAD_MIN: 315
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 340
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
 
@@ -39,29 +58,101 @@ jobs:
           if [ "$(free /mnt)" -ge "$(free "$HOME")" ]; then echo "WORK=/mnt/karte" >> "$GITHUB_ENV"; else echo "WORK=$HOME" >> "$GITHUB_ENV"; fi
           df -h / /mnt
 
+      - name: FTP-Zugang
+        env:
+          FTP_HOST: ${{ secrets.POI_FTP_HOST }}
+          FTP_USER: ${{ secrets.POI_FTP_USER }}
+          FTP_PASS: ${{ secrets.POI_FTP_PASS }}
+          FTP_DIR: ${{ secrets.POI_FTP_DIR }}
+        run: |
+          [ -n "$FTP_HOST" ] || { echo "::warning::Keine FTP-Secrets gesetzt – Upload wird übersprungen"; exit 0; }
+          # curl liest Stichproben und karte.build; Zugang per netrc, damit das Passwort nicht in der Prozessliste steht
+          umask 077
+          q() { local v=${1//\\/\\\\}; printf '"%s"' "${v//\"/\\\"}"; }
+          printf 'machine %s login %s password %s\n' "$FTP_HOST" "$(q "$FTP_USER")" "$(q "$FTP_PASS")" > "$RUNNER_TEMP/netrc"
+          dir="${FTP_DIR%/}"; base="ftp://$FTP_HOST/${dir#/}"
+          echo "FTP_BASE=${base%/}" >> "$GITHUB_ENV"
+
       - name: Ausschneiden
         env:
           Z: ${{ github.event.inputs.maxzoom || '14' }}
+          WUNSCH: ${{ github.event.inputs.build || '' }}
         run: |
-          build=$(curl -fsSL https://build-metadata.protomaps.dev/builds.json | jq -r '.[-1].key')
+          # Das Zertifikat des Hosters lautet auf *.hosttech.eu, daher FTPS ohne Namensprüfung (-k), nie unverschlüsselt
+          ftp() { curl -fsS -k --ssl-reqd --netrc-file "$RUNNER_TEMP/netrc" "$@"; }
+          builds=$(curl -fsSL https://build-metadata.protomaps.dev/builds.json)
+          build=$(jq -r '.[-1].key' <<<"$builds")
+          if [ -n "${FTP_BASE:-}" ] && stand=$(ftp "$FTP_BASE/karte.build" 2>/dev/null); then
+            read -r alt_build alt_z <<<"$stand"
+            # Angefangene Datei fortsetzen, solange es ihren Build noch gibt und der Zoom gleich ist
+            if [ "$alt_z" = "$Z" ] && jq -e --arg k "$alt_build" 'any(.[]; .key == $k)' <<<"$builds" >/dev/null; then
+              build=$alt_build; echo "::notice::Setze angefangene Karte fort (Build $build)"
+            fi
+          fi
+          if [ -n "$WUNSCH" ]; then
+            jq -e --arg k "$WUNSCH" 'any(.[]; .key == $k)' <<<"$builds" >/dev/null || { echo "::error::Build $WUNSCH gibt es nicht (mehr)"; exit 1; }
+            build=$WUNSCH
+          fi
+          echo "BUILD=$build Z=$Z"
+          echo "STAND=$build $Z" >> "$GITHUB_ENV"
           ./pmtiles extract "https://build.protomaps.com/$build" "$WORK/karte.pmtiles" --region=tools/karte-gebiet.geojson --maxzoom="$Z" --download-threads=4
           echo "::notice::Build $build, Zoom bis $Z, $(du -h "$WORK/karte.pmtiles" | cut -f1)"
 
       - name: Hochladen
+        if: env.FTP_BASE != ''
         env:
           FTP_HOST: ${{ secrets.POI_FTP_HOST }}
           FTP_USER: ${{ secrets.POI_FTP_USER }}
           LFTP_PASSWORD: ${{ secrets.POI_FTP_PASS }}
           FTP_DIR: ${{ secrets.POI_FTP_DIR }}
+          GH_TOKEN: ${{ github.token }}
+          Z: ${{ github.event.inputs.maxzoom || '14' }}
+          RUNDE: ${{ github.event.inputs.runde || '1' }}
         run: |
-          [ -n "$FTP_HOST" ] || { echo "::warning::Keine FTP-Secrets gesetzt – Upload übersprungen"; exit 0; }
-          dir="${FTP_DIR%/}"
-          # Alte Karte zuerst löschen (sonst bräuchte der Server kurz den doppelten Platz), neue unter .part hochladen
-          # und erst fertig umbenennen: die App sieht nie eine halbe Datei. In der Zwischenzeit zeigt sie die Online-Karte.
-          # Das Zertifikat des Hosters lautet auf *.hosttech.eu, daher FTPS ohne Namensprüfung, nie unverschlüsselt.
-          lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set ftp:ssl-force true; set ssl:verify-certificate no;
+          dir="${FTP_DIR%/}"; f="$WORK/karte.pmtiles"; MB=1048576
+          ftp() { curl -fsS -k --ssl-reqd --netrc-file "$RUNNER_TEMP/netrc" "$@"; }
+          lf() { lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set ftp:ssl-force true; set ssl:verify-certificate no;
+            set net:max-retries 8; set net:timeout 60; set net:reconnect-interval-base 15; $1 bye" >> lftp.log 2>&1; }
+
+          # Gehört die halbe Datei zu diesem Build? Stand gleich (oder unbekannt, aus Läufen vor dem Fortsetzen)
+          # und drei Stichproben à 1 MB (Anfang, Mitte, Ende) gleich
+          weiter=0
+          stand=$(ftp "$FTP_BASE/karte.build" 2>/dev/null || true)
+          teil=$(ftp -I "$FTP_BASE/karte.pmtiles.part" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')
+          if { [ "$stand" = "$STAND" ] || [ -z "$stand" ]; } && [ "${teil:-0}" -ge $((2 * MB)) ] && [ "$teil" -le "$(stat -c %s "$f")" ]; then
+            weiter=1
+            for o in 0 $(( teil / 2 / MB * MB )) $(( (teil / MB - 1) * MB )); do
+              cmp -s <(ftp -r "$o-$((o + MB - 1))" "$FTP_BASE/karte.pmtiles.part" 2>/dev/null) <(tail -c +$((o + 1)) "$f" | head -c $MB) \
+                || { weiter=0; echo "::warning::Stichprobe bei $((o / MB)) MB weicht ab, fange neu an"; break; }
+            done
+          fi
+          if [ $weiter = 1 ]; then
+            echo "::notice::Fortsetzen bei $((teil / MB)) von $(( $(stat -c %s "$f") / MB )) MB"
+            if [ -z "$stand" ]; then echo "$STAND" > karte.build; lf "put karte.build -o $dir/karte.build;" || true; fi
+          else
+            # Neu anfangen: alte Karte zuerst löschen (sonst bräuchte der Server kurz den doppelten Platz).
+            # In der Zwischenzeit zeigt die App die Online-Karte.
+            echo "$STAND" > karte.build
+            lf "rm -f $dir/karte.pmtiles.part; rm -f $dir/karte.pmtiles; put karte.build -o $dir/karte.build;" \
+              || { echo "::error::FTP fehlgeschlagen: $(tail -3 lftp.log | tr '\n' ' ')"; exit 1; }
+          fi
+
+          # Hochladen mit Zeitgrenze, damit der Job sauber endet und sich fortsetzen kann
+          set +e
+          timeout "${UPLOAD_MIN}m" lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set ftp:ssl-force true; set ssl:verify-certificate no;
             set net:max-retries 8; set net:timeout 60; set net:reconnect-interval-base 15;
-            rm -f $dir/karte.pmtiles.part; rm -f $dir/karte.pmtiles; put -c $WORK/karte.pmtiles -o $dir/karte.pmtiles.part;
-            mv $dir/karte.pmtiles.part $dir/karte.pmtiles; bye" > lftp.log 2>&1 \
-            || { echo "::error::Upload fehlgeschlagen: $(tail -3 lftp.log | tr '\n' ' ')"; exit 1; }
-          echo "::notice::Karte hochgeladen"
+            put -c $f -o $dir/karte.pmtiles.part; bye" >> lftp.log 2>&1
+          rc=$?
+          set -e
+          teil=$(ftp -I "$FTP_BASE/karte.pmtiles.part" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')
+          if [ "${teil:-0}" = "$(stat -c %s "$f")" ]; then
+            # Erst fertig umbenennen: die App sieht nie eine halbe Datei
+            lf "mv $dir/karte.pmtiles.part $dir/karte.pmtiles; rm -f $dir/karte.build;" \
+              || { echo "::error::Umbenennen fehlgeschlagen: $(tail -3 lftp.log | tr '\n' ' ')"; exit 1; }
+            echo "::notice::Karte hochgeladen (Runde $RUNDE)"
+            exit 0
+          fi
+          echo "Stand: $(( ${teil:-0} / MB )) von $(( $(stat -c %s "$f") / MB )) MB, lftp $rc: $(tail -3 lftp.log | tr '\n' ' ')"
+          if [ "$RUNDE" -ge "$RUNDEN_MAX" ]; then echo "::error::Nach $RUNDE Runden nicht fertig"; exit 1; fi
+          gh workflow run karte.yml --ref "$GITHUB_REF_NAME" -f maxzoom="$Z" -f runde=$((RUNDE + 1))
+          echo "::notice::Noch nicht fertig ($(( ${teil:-0} / MB )) MB), Runde $((RUNDE + 1)) gestartet"
