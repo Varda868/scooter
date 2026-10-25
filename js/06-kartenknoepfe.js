@@ -45,6 +45,7 @@ $('centerBtn').onclick = e => {
   if (me.watch != null) { if (me.dot._map) map.setView(me.dot.getLatLng(), Math.max(map.getZoom(), 15)); return; }
   let first = true;
   me.watch = navigator.geolocation.watchPosition(pos => {
+    standortFix(pos);
     const ll = L.latLng(pos.coords.latitude, pos.coords.longitude);
     me.dot.setLatLng(ll).addTo(map);
     me.ring.setLatLng(ll).setRadius(pos.coords.accuracy).addTo(map);
