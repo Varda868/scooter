@@ -38,20 +38,21 @@ async function overpassFetch(query, onTry, stale) {
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 
 // Overpass-Filter je POI-Typ; neue Typen einfach hier ergänzen.
+// Standardmäßig nur Tankstellen an (off: true = aus, bis man es einschaltet)
 const POI_TYPES = [
-  { id: 'shelter', icon: '🛖', name: 'Schutzhütte', filters: [
+  { id: 'shelter', icon: '🛖', name: 'Schutzhütte', off: true, filters: [
     '[amenity=shelter][shelter_type!=public_transport]', '[tourism=wilderness_hut]', '[tourism=alpine_hut]' ] },
-  { id: 'water', icon: '🚰', name: 'Trinkwasser', filters: [
+  { id: 'water', icon: '🚰', name: 'Trinkwasser', off: true, filters: [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
-  { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
-  { id: 'food', icon: '🛒', name: 'Lebensmittel', filters: [
+  { id: 'toilets', icon: '🚻', name: 'Toiletten', off: true, filters: [ '[amenity=toilets]' ] },
+  { id: 'food', icon: '🛒', name: 'Lebensmittel', off: true, filters: [
     '[shop=supermarket]', '[shop=convenience]', '[shop=bakery]', '[shop=butcher]', '[shop=greengrocer]', '[shop=farm]' ] },
   // Anleger liegen am Wasser, oft abseits der Durchgangsstraße
-  { id: 'ferry', icon: '⛴', name: 'Fähranleger', minRadius: 1000, filters: [ '[amenity=ferry_terminal]' ] },
-  // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis; standardmäßig aus
+  { id: 'ferry', icon: '⛴', name: 'Fähranleger', off: true, minRadius: 1000, filters: [ '[amenity=ferry_terminal]' ] },
+  // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis
   { id: 'camp', icon: '⛺', name: 'Zeltplatz', off: true, minRadius: 2000, filters: [ '[tourism=camp_site]' ] },
-  // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis; standardmäßig aus
+  // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis
   { id: 'workshop', icon: '🔧', name: 'Zweiradwerkstatt', off: true, minRadius: 2000, filters: [
     '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]' ] }
 ];
@@ -151,6 +152,8 @@ $('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hil
 $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
 $('radius').onchange = () => { loadPois(); loadOpencaching(); };
 $('cachesNearRoute').onchange = () => renderCaches();
+// Vorgabe seit v35: alles aus außer Tankstellen. Einmalig auch eine früher gespeicherte Auswahl zurücksetzen
+{ const s = store.get('settings', {}); if (s.poiStd !== 2) { delete s.poiTypes; s.poiStd = 2; store.set('settings', s); } }
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
   `<label><input type="checkbox" value="${t.id}"${(store.get('settings', {}).poiTypes?.[t.id] ?? !t.off) ? ' checked' : ''}> ${t.icon} ${t.name}</label>`).join(''));
 // Auswahl merken (neue Typen starten mit ihrem Standard)
