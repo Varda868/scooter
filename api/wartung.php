@@ -68,7 +68,7 @@ function wartung_gesund(array &$p, array &$i): void {
   foreach ($tests as $name => [$url]) {
     $c = curl_init($url);
     curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-      CURLOPT_USERAGENT => 'Scooterways-Wartung/1 (+https://scooter.thai-klasse.de)', CURLOPT_FOLLOWLOCATION => false]);
+      CURLOPT_USERAGENT => 'Scooterways-Wartung/1 (+https://scooterways.dns.navy)', CURLOPT_FOLLOWLOCATION => false]);
     curl_multi_add_handle($mh, $c); $h[$name] = $c;
   }
   do { $s = curl_multi_exec($mh, $laeuft); if ($laeuft) curl_multi_select($mh, 1); } while ($laeuft && $s === CURLM_OK);
