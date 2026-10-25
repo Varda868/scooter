@@ -15,16 +15,22 @@ function faehrenDerRoute(trip) {
       const t = Number.isFinite(+m.time) ? +m.time : 0;
       // Zwei 28 hintereinander (Calais→Dover: „Douvres – Calais“, dann „Dover – Calais“) sind eine Überfahrt
       if (m.type === FAEHRE_EIN && cur) cur.s += t;
-      else if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
+      else if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: faehrName(m) };
       else if (m.type === FAEHRE_AUS && cur && p) {
         const bisKm = routeKm[i] ?? cur.km;
         // Ohne Zeit von Valhalla mit 25 km/h schätzen (wie faehrTrip)
         Object.assign(cur, { bisKm, zLat: p[0], zLon: p[1], s: cur.s || (bisKm - cur.km) / 25 * 3600 }); out.push(cur); cur = null;
-      } else if (cur) { cur.s += t; cur.name ||= m.street_names?.[0] || ''; }
+      } else if (cur) { cur.s += t; cur.name ||= faehrName(m); }
     }
     off += decode(l.shape).length - 1;
   }
   return out;
+}
+
+// street_names enthält an Fähren oft die anschließende Straße („E 20“) oder „?“, das ist kein Fährname
+function faehrName(m) {
+  const n = (m.street_names?.[0] || '').trim();
+  return /^[\p{L}]{0,3}[ -]?\d+[a-z]?$|^\W*$/u.test(n) ? '' : n;
 }
 
 // Linie am Anleger suchen: zuerst in den eigenen Kacheln (poi/f/), sonst Overpass.
@@ -146,6 +152,10 @@ async function faehrenZeigen(trip) {
   if (!fs.length) return;
   const tags = await Promise.all(fs.map(f => faehreLinie(f).catch(() => null)));
   if (req !== faehreReq) return;
+  // Den OSM-Namen auch an Strich, Anlegern und Schiffchen zeigen
+  let neu = false;
+  fs.forEach((f, i) => { const n = tags[i]?.name; if (n && n !== f.name) { f.name = n; neu = true; } });
+  if (neu) faehrStrichZeichnen(fs);
   box.innerHTML = fs.map((f, i) => `<div>${faehreText(f, tags[i])}</div>`).join('');
 }
 
