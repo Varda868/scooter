@@ -210,7 +210,7 @@ async function orteSuchen(q, um) {
     const vorn = s.startsWith(n) || s2.startsWith(n);
     if (!vorn && !s.includes(n) && !s2.includes(n)) continue;
     const km = um.distanceTo([lat, lon]) / 1000;
-    out.push({ icon: art === 'c' || art === 't' ? '🏙' : '🏡', name: anzeige, lat, lon, km,
+    out.push({ icon: art === 'c' || art === 't' ? '🏙' : '🏡', name: anzeige, lat, lon, km, gr: art === 'c' ? 0 : art === 't' ? 1 : 2,
       info: [ORT_ART[art], bei && `bei ${bei}`, `${Math.round(km)} km`].filter(Boolean).join(' · '),
       rang: (vorn ? 0 : 10) + ORT_RANG[art] * 0.5 + km / 50 });
   }
@@ -231,15 +231,17 @@ async function photonSuchen(q, um) {
     const strasse = p.street ? `${p.street}${p.housenumber ? ' ' + p.housenumber : ''}` : '';
     const name = p.type === 'house' || (!p.name && strasse) ? strasse || p.name : p.name || strasse;
     const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
-    return name && { icon: PHOTON_ART[p.type] || '📍', name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
+    // Größe aus place=*: Photon nennt Städte und Dörfer gleichermaßen type „city“
+    const gr = p.osm_key === 'place' ? ({ city: 0, town: 1, village: 2 }[p.osm_value] ?? 3) : 3;
+    return name && { icon: p.osm_key === 'place' && gr >= 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
       info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
   }).filter(Boolean);
 }
-// Ortsindex und Photon gemeinsam ordnen: genau der gesuchte Name zuerst, Städte vor Dörfern, sonst wie geliefert
-// („Prag“ → Prag vor Pragsdorf, „Palma“ → Palma vor la Palma de Cervelló)
+// Ortsindex und Photon gemeinsam ordnen: genau der gesuchte Name zuerst, Städte vor Dörfern, bei Gleichstand die
+// größere (city vor town vor village), sonst wie geliefert („Prag“ → Prag vor Pragsdorf, „Bastia“ → Korsika vor Venetien)
 function ortRang(q, items) {
   const n = ortNorm(q), stufe = it => (ortNorm(it.name.split(',')[0].trim()) === n ? 0 : 2) + (it.icon === '🏙' ? 0 : 1);
-  return items.map((it, k) => [stufe(it), k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
+  return items.map((it, k) => [stufe(it), it.gr ?? 3, k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map(x => x[3]);
 }
 let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
