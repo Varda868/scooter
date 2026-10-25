@@ -4,16 +4,21 @@ const INCIDENT_ICONS = { 0: '❔', 1: '💥', 2: '🌫️', 3: '⚠️', 4: '�
 const DELAY_WORDS = ['', 'leicht', 'mittel', 'stark', ''];
 const tt = { key: '', avoid: true, flow: false, ...store.get('tomtom', {}) };
 const incidentLayer = L.layerGroup().addTo(map);
-const flowLayer = L.tileLayer(`${TOMTOM_URL}/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key={key}`,
-  { key: tt.key, maxZoom: 19, opacity: 0.8, attribution: 'Verkehr © TomTom' });
+const TT_FLOW_DIREKT = `${TOMTOM_URL}/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key={key}`;
+const TT_FLOW_SERVER = 'api/proxy.php?d=tomtom-flow&z={z}&x={x}&y={y}';
+const flowLayer = L.tileLayer(TT_FLOW_DIREKT, { key: tt.key, maxZoom: 19, opacity: 0.8, attribution: 'Verkehr © TomTom' });
+// Liegt ein Schlüssel auf dem eigenen Server (js/27-server.js setzt das), geht TomTom über dessen Proxy
+let ttServer = false;
+const ttKeyDa = () => !!tt.key || ttServer;
 $('ttKey').value = tt.key; $('ttAvoid').checked = tt.avoid; $('ttFlow').checked = tt.flow;
 
 function applyTraffic() {
   tt.key = $('ttKey').value.trim(); tt.avoid = $('ttAvoid').checked; tt.flow = $('ttFlow').checked;
   store.set('tomtom', tt);
   flowLayer.options.key = tt.key;
-  if (tt.key && tt.flow) flowLayer.addTo(map).redraw(); else flowLayer.remove();
-  $('trafficSummary').textContent = !tt.key ? 'kein Schlüssel' : [tt.avoid ? 'Sperrungen umfahren' : 'nur anzeigen', tt.flow ? 'Fluss an' : ''].filter(Boolean).join(' · ');
+  flowLayer.setUrl(ttServer ? TT_FLOW_SERVER : TT_FLOW_DIREKT, true);
+  if (ttKeyDa() && tt.flow) flowLayer.addTo(map).redraw(); else flowLayer.remove();
+  $('trafficSummary').textContent = !ttKeyDa() ? 'kein Schlüssel' : [ttServer ? 'Schlüssel vom Server' : '', tt.avoid ? 'Sperrungen umfahren' : 'nur anzeigen', tt.flow ? 'Fluss an' : ''].filter(Boolean).join(' · ');
 }
 applyTraffic();
 ['ttKey', 'ttAvoid', 'ttFlow'].forEach(id => $(id).addEventListener('change', () => { applyTraffic(); if (ready()) route(); }));

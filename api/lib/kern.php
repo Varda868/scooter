@@ -50,6 +50,7 @@ const SW_STANDARD = [
   'overpass_urls' => ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'],
   'open_meteo_url' => 'https://api.open-meteo.com/v1/forecast',
   'tomtom_key' => '',
+  'proxy_an' => true,
   'origins' => ['https://scooter.thai-klasse.de'],
 ];
 function sw_config(): array {
@@ -115,15 +116,16 @@ function sw_ip(): string {
   $salz = sw_config()['salz'] ?? 'ohne-setup';
   return substr(hash_hmac('sha256', $_SERVER['REMOTE_ADDR'] ?? '', $salz), 0, 24);
 }
+function sw_fenster(int $s): int { return intdiv(time() + (int)date('Z'), $s); }
 // Zähler pro Schlüssel und Zeitfenster; false, wenn das Limit erreicht ist
 function sw_drossel(string $k, int $max, int $fenster_s): bool {
   $db = sw_db();
-  $f = intdiv(time(), $fenster_s);
+  $f = sw_fenster($fenster_s); // Tagesfenster beginnen um Mitternacht deutscher Zeit
   $u = $db->prepare('UPDATE sw_drossel SET n = n + 1 WHERE k = ? AND fenster = ?');
   $u->execute([$k, $f]);
   if ($u->rowCount() === 0) {
     $db->prepare('DELETE FROM sw_drossel WHERE k = ?')->execute([$k]);
-    $db->prepare('INSERT INTO sw_drossel (k, fenster, ende, n) VALUES (?, ?, ?, 1)')->execute([$k, $f, ($f + 1) * $fenster_s]);
+    $db->prepare('INSERT INTO sw_drossel (k, fenster, ende, n) VALUES (?, ?, ?, 1)')->execute([$k, $f, ($f + 1) * $fenster_s - (int)date('Z')]);
     if (random_int(0, 50) === 0) $db->prepare('DELETE FROM sw_drossel WHERE ende < ?')->execute([time()]);
     return true;
   }

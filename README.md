@@ -32,6 +32,8 @@ Kleine PHP-Endpunkte für Dinge, die der Browser allein nicht kann. Kein SSH, ke
 - `api/admin.php` (für den PC): Schlüssel und Endpunkte, Fehlerberichte, Passwort. Sitzung mit `__Host-`-Cookie (Secure, HttpOnly, SameSite=Strict), CSRF-Token in jedem Formular, Login-Sperre nach 5 Fehlversuchen je IP bzw. 30 insgesamt in 15 min. Weitere Bereiche kommen als `api/lib/admin-*.php` dazu.
 - `api/fehler.php`: Fehlerberichte der Dev-Version, nur von erlaubter Herkunft, höchstens 64 kB, 10 pro Stunde je Gerät, 30 Tage aufbewahrt.
 - `api/konfig.php`: öffentliche Endpunkte für die App, nie Schlüssel.
+- `api/proxy.php`: Zwischenspeicher-Proxy für Open-Meteo, Photon, Overpass und TomTom (Meldungen und Fluss-Kacheln). Kein offener Proxy: feste Ziele aus der Konfiguration, nur bekannte Parameter, nur Aufrufe der eigenen Seite (Sec-Fetch-Site/Origin/Referer), Drosselung je Gerät pro Minute und Tageskontingent je Dienst, keine Weiterleitungen, nur JSON/PNG zurück, höchstens 300 MB Speicher. Der TomTom-Schlüssel bleibt auf dem Server.
+- App-Seite: `js/27-server.js` liest `konfig.php`, leitet die passenden `fetch`-Aufrufe auf den Proxy um und fällt bei Ausfall, 429 oder 5xx auf den direkten Weg zurück. Schalter unter Einstellung → 🖥 Eigener Server.
 - Der Service Worker lässt `api/` komplett in Ruhe.
 
 ## Lizenz
