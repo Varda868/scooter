@@ -53,7 +53,7 @@ $('gpx').onchange = async e => {
         setRouteCoords(thin(track));
         routeKmh = null;
         routeLayer = L.polyline(routeCoords, { color: '#2e86e4', weight: 4 }).addTo(map);
-        map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+        fitFein(routeLayer.getBounds());
         $('steps').innerHTML = '';
         $('summary').textContent = `GPX-Track „${file.name}“ · ${routeKm[routeKm.length - 1].toFixed(1)} km`;
         loadElevation();

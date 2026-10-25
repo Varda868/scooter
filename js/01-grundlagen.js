@@ -57,6 +57,13 @@ const map = L.map('map').setView([51.16, 10.45], 6);
 const rasterBase = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, crossOrigin: true, attribution: '© OpenStreetMap-Mitwirkende'
 }).addTo(map);
+// Übersichten (ganze Route, GPX) in Zehntel-Zoomstufen einpassen, sonst bleibt bei langen Touren links und rechts
+// bis zur Hälfte der Breite leer; danach wieder ganze Stufen für Tippen und Ziehen. Links Platz für die Kartenknöpfe.
+function fitFein(bounds, opts = {}) {
+  map.options.zoomSnap = 0.1;
+  try { map.fitBounds(bounds, { paddingTopLeft: [52, 24], paddingBottomRight: [16, 24], ...opts }); }
+  finally { map.options.zoomSnap = 1; }
+}
 
 // Wegpunkte: erster = Start, letzter = Ziel, dazwischen Zwischenziele. latlng null = noch nicht aufgelöst.
 let waypoints = [{ latlng: null, text: '' }, { latlng: null, text: '' }];

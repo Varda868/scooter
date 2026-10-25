@@ -288,7 +288,7 @@ function showTrip(trip, alternates = []) {
   }
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
   enableRouteEditing(routeLayer);
-  if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+  if (!map.getBounds().contains(routeLayer.getBounds())) fitFein(routeLayer.getBounds());
 
   const rough = trip.legs.some(l => l.maneuvers.some(m => m.rough)) ? ' · ⚠ unbefestigte Stücke' : '';
   $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + rough + summaryNote;
