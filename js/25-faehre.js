@@ -107,6 +107,9 @@ function faehreDetails(t, nameFallback = '', s = 0) {
 const faehrStrich = L.layerGroup().addTo(map);
 function faehrStrichZeichnen(fs) {
   faehrStrich.clearLayers();
+  // Neue Route: Ebene wieder nach der Regel (mit Fähre ausgeblendet); routeFaehren ist schon gesetzt
+  faehrAlle = false;
+  if (typeof faehrlinienZeigen === 'function') queueMicrotask(faehrlinienZeigen);
   for (const f of fs) {
     const pts = routeCoords.filter((_, i) => routeKm[i] >= f.km - 1e-6 && routeKm[i] <= f.bisKm + 1e-6);
     // Kurze Fähren (Fluss) nur mit ⛴, der Strich lohnt erst bei längeren Überfahrten
@@ -114,6 +117,9 @@ function faehrStrichZeichnen(fs) {
       L.polyline(pts, { color: '#fff', weight: 6, interactive: false }).addTo(faehrStrich);
       L.polyline(pts, { color: '#1f6fd1', weight: 4, dashArray: '8 7', interactive: false }).addTo(faehrStrich);
     }
+    // Anleger der gewählten Fähre deutlich, die Linien-Ebene ist dann ausgeblendet
+    for (const [la, lo] of [[f.lat, f.lon], [f.zLat, f.zLon]]) if (la != null)
+      L.circleMarker([la, lo], { radius: 6, color: '#fff', weight: 2, fillColor: '#1f6fd1', fillOpacity: 1, interactive: false }).addTo(faehrStrich);
     L.marker(pointAtKm((f.km + f.bisKm) / 2), { keyboard: false, zIndexOffset: 300,
       icon: L.divIcon({ className: 'poi-icon', html: '⛴', iconSize: [24, 24] }) })
       .bindTooltip(`⛴ ${escapeHtml(f.name || 'Fähre')} · ${Math.round(f.bisKm - f.km)} km · ca. ${durText(f.s)}`).addTo(faehrStrich);
@@ -174,11 +180,15 @@ function faehreInRoute(pts, name) {
 const FAEHR_ZOOM = 6, FAEHR_ANLEGER_ZOOM = 10, FAEHR_MAX_KACHELN = 80;
 const faehrLayer = L.layerGroup(), faehrGezeigt = new Map(); // id → Layer
 let faehrReq = 0;
+// Hat die Route schon eine Fähre, treten die übrigen Linien zurück: dann sieht man eindeutig die gewählte Überfahrt
+// und ihre Anleger. „trotzdem zeigen“ holt alle zurück, etwa um eine andere Fähre zu wählen.
+let faehrAlle = false;
 async function faehrlinienZeigen() {
-  const req = ++faehrReq, an = $('ferryLines').checked;
-  if (!an || map.getZoom() < FAEHR_ZOOM) {
+  const req = ++faehrReq, an = $('ferryLines').checked, routeHat = routeFaehren.length > 0 && !faehrAlle;
+  if (!an || map.getZoom() < FAEHR_ZOOM || routeHat) {
     faehrLayer.clearLayers(); faehrGezeigt.clear(); map.removeLayer(faehrLayer);
-    $('ferryLinesHint').textContent = an ? 'erst ab näherem Zoom' : '';
+    $('ferryLinesHint').innerHTML = !an ? '' : routeHat ? 'ausgeblendet, die Route hat eine Fähre · <a href="#" id="faehrAlle">trotzdem zeigen</a>'
+      : 'erst ab näherem Zoom';
     return;
   }
   faehrLayer.addTo(map);
@@ -221,6 +231,7 @@ async function faehrlinienZeigen() {
   $('ferryLinesHint').textContent = `${[...faehrGezeigt].filter(([id, l]) => id[0] === 'w' && l.getLayers().length).length} Linien · Stand ${ix.date.split('-').reverse().join('.')}` +
     (keys.length > FAEHR_MAX_KACHELN ? ' · näher heran für alle' : '');
 }
+$('ferryLinesHint').addEventListener('click', e => { if (e.target.id !== 'faehrAlle') return; e.preventDefault(); faehrAlle = true; faehrlinienZeigen(); });
 $('ferryLines').checked = !!settings.ferryLines;
 $('ferryLines').onchange = () => { settings.ferryLines = $('ferryLines').checked; store.set('settings', settings); faehrlinienZeigen(); };
 map.on('moveend', () => { if ($('ferryLines').checked) faehrlinienZeigen(); });
