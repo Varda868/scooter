@@ -241,6 +241,16 @@
 .talk-row input { width:100%; }
 #talkBox select { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
 .pos-chip { pointer-events:auto; margin:0; width:auto; padding:2px 8px; border:0; border-radius:10px; background:#2a9d8fd9; color:#fff; font-size:12px; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.gruppe-info { pointer-events:auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; max-width:70vw; }
+.gruppe-info:empty { display:none; }
+.gruppe-info span { background:#1d3557e6; color:#fff; font-size:12px; padding:3px 8px; border-radius:10px; cursor:pointer; }
+.gruppe-info span.halt-panne { background:#d7263de6; }
+.gruppe-info button { margin:0 0 0 6px; width:auto; padding:0 4px; border:0; background:transparent; color:#fff; font-size:12px; }
+.halt-bar { pointer-events:auto; display:flex; gap:4px; align-items:center; }
+.halt-bar[hidden] { display:none; }
+.halt-bar span { background:#e9a400e6; color:#1d3557; font-size:12px; padding:3px 8px; border-radius:10px; }
+.halt-bar button { margin:0; width:auto; padding:2px 6px; border:0; border-radius:10px; background:#ffffffd9; font-size:14px; box-shadow:0 1px 3px #0004; }
+.pos-pfeil.halt { background:#e9a400; font-size:14px; }
 .pos-chip.aus { background:#6c757dd9; }
 .pos-chip[hidden] { display:none; }
 .pos-pfeil { width:26px; height:26px; border-radius:50%; background:#2a9d8f; color:#fff; border:2px solid #fff; box-sizing:border-box; display:flex; align-items:center; justify-content:center; font-size:13px; box-shadow:0 1px 4px #0006; }
