@@ -1,7 +1,7 @@
 // --- Profil sichern und übertragen: alles aus localStorage (scooterways.*) plus gefahrene Touren (IndexedDB) als eine JSON-Datei.
 // Zwischenspeicher (POI-Cache, Offline-Karte) bleiben draußen. Schlüssel nur auf Wunsch, dann deutlich gekennzeichnet.
 const PROFIL_APP = 'scooterways-profil', PROFIL_PREFIX = 'scooterways.';
-const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand'];
+const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand', 'devlog', 'dev'];
 // Geheimnisse: [Speicher-Schlüssel, Feld im Objekt oder null für den ganzen Eintrag]
 const PROFIL_GEHEIM = [['tomtom', 'key'], ['opencaching', 'key'], ['talk', 'pw'], ['talkSk', null]];
 
