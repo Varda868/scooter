@@ -109,9 +109,11 @@ function faehrStrichZeichnen(fs) {
   faehrStrich.clearLayers();
   for (const f of fs) {
     const pts = routeCoords.filter((_, i) => routeKm[i] >= f.km - 1e-6 && routeKm[i] <= f.bisKm + 1e-6);
-    if (pts.length < 2) continue;
-    L.polyline(pts, { color: '#fff', weight: 6, interactive: false }).addTo(faehrStrich);
-    L.polyline(pts, { color: '#1f6fd1', weight: 4, dashArray: '8 7', interactive: false }).addTo(faehrStrich);
+    // Kurze Fähren (Fluss) nur mit ⛴, der Strich lohnt erst bei längeren Überfahrten
+    if (pts.length >= 2 && f.bisKm - f.km >= FAEHR_KLEIN_KM) {
+      L.polyline(pts, { color: '#fff', weight: 6, interactive: false }).addTo(faehrStrich);
+      L.polyline(pts, { color: '#1f6fd1', weight: 4, dashArray: '8 7', interactive: false }).addTo(faehrStrich);
+    }
     L.marker(pointAtKm((f.km + f.bisKm) / 2), { keyboard: false, zIndexOffset: 300,
       icon: L.divIcon({ className: 'poi-icon', html: '⛴', iconSize: [24, 24] }) })
       .bindTooltip(`⛴ ${escapeHtml(f.name || 'Fähre')} · ${Math.round(f.bisKm - f.km)} km · ca. ${durText(f.s)}`).addTo(faehrStrich);
@@ -126,6 +128,27 @@ async function faehrenZeigen(trip) {
   const tags = await Promise.all(fs.map(f => faehreLinie(f).catch(() => null)));
   if (req !== faehreReq) return;
   box.innerHTML = fs.map((f, i) => `<div>${faehreText(f, tags[i])}</div>`).join('');
+}
+
+// Eine Linie der Kartenebene: zart mit ⛴ in der Mitte; Hover oder Antippen hebt sie hervor, zeigt die Anleger
+// und das Infokästchen. Kurze Fluss- und Seefähren (unter FAEHR_KLEIN_KM) bleiben weg, die stehen nur an der Route.
+const FAEHR_KLEIN_KM = 5;
+const faehrLaenge = pts => pts.reduce((s, p, i) => i ? s + L.latLng(pts[i - 1]).distanceTo(p) : 0, 0) / 1000;
+function faehrLinie(id, pts, t) {
+  const g = L.layerGroup().addTo(faehrLayer);
+  if (pts.length < 2 || faehrLaenge(pts) < FAEHR_KLEIN_KM) return g;
+  const mit = faehreMitnahme(t), ok = mit.startsWith('🛵'), nein = mit.startsWith('⚠');
+  const farbe = nein ? '#8a8a8a' : '#1f6fd1', zart = { weight: 1.5, opacity: 0.55 }, stark = { weight: 4, opacity: 1 };
+  const linie = L.polyline(pts, { color: farbe, ...zart, dashArray: ok ? null : '6 6' }).addTo(g);
+  const anleger = L.layerGroup([pts[0], pts.at(-1)].map(p => L.circleMarker(p, { radius: 5, color: '#fff', weight: 2, fillColor: farbe, fillOpacity: 1, interactive: false })));
+  const mitte = L.marker(linie.getCenter(), { keyboard: false,
+    icon: L.divIcon({ className: 'poi-icon faehr-mitte', html: '⛴', iconSize: [20, 20] }), title: t.name || 'Fähre' }).addTo(g);
+  let offen = false;
+  const hell = an => { linie.setStyle(an ? stark : zart); if (an) { linie.bringToFront(); anleger.addTo(g); } else if (!offen) g.removeLayer(anleger); };
+  const popup = () => `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`;
+  for (const l of [linie, mitte]) l.bindPopup(popup).on('mouseover', () => hell(true)).on('mouseout', () => offen || hell(false))
+    .on('popupopen', () => { offen = true; hell(true); }).on('popupclose', () => { offen = false; hell(false); });
+  return g;
 }
 
 // --- Kartenebene: alle Fährlinien (und ab Zoom 10 die Anleger) im Ausschnitt, aus den eigenen Kacheln ---
@@ -155,9 +178,7 @@ async function faehrlinienZeigen() {
   for (const [id, pts, t] of tiles.flat()) {
     sichtbar.add(id);
     if (faehrGezeigt.has(id)) continue;
-    const mit = faehreMitnahme(t), ok = mit.startsWith('🛵'), nein = mit.startsWith('⚠');
-    faehrGezeigt.set(id, L.polyline(pts, { color: nein ? '#8a8a8a' : '#1f6fd1', weight: 3, opacity: 0.85, dashArray: ok ? null : '6 6' })
-      .bindPopup(() => `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`).addTo(faehrLayer));
+    faehrGezeigt.set(id, faehrLinie(id, pts, t));
   }
   // Anleger aus den POI-Kacheln, nur nah genug, sonst wird es voll
   if (map.getZoom() >= FAEHR_ANLEGER_ZOOM) {
@@ -178,7 +199,7 @@ async function faehrlinienZeigen() {
   }
   // Was weit aus dem Bild ist, wieder weg
   for (const [id, l] of faehrGezeigt) if (!sichtbar.has(id)) { faehrLayer.removeLayer(l); faehrGezeigt.delete(id); }
-  $('ferryLinesHint').textContent = `${[...faehrGezeigt.keys()].filter(id => id[0] === 'w').length} Linien · Stand ${ix.date.split('-').reverse().join('.')}` +
+  $('ferryLinesHint').textContent = `${[...faehrGezeigt].filter(([id, l]) => id[0] === 'w' && l.getLayers().length).length} Linien · Stand ${ix.date.split('-').reverse().join('.')}` +
     (keys.length > FAEHR_MAX_KACHELN ? ' · näher heran für alle' : '');
 }
 $('ferryLines').checked = !!settings.ferryLines;
