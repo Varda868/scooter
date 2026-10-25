@@ -39,6 +39,59 @@ function routeChunks() {
   }
   return out.length ? out : [routeCoords];
 }
+// --- Eigene POI-Kacheln (1°×1°, monatlich aus Geofabrik gebaut: tools/poi-kacheln.py, .github/workflows/poi-kacheln.yml) ---
+// Liegen neben der App unter poi/ (Plesk, später ggf. Raspi). Fehlen sie oder deckt der Stand die Route nicht ab: Overpass.
+const POI_TILE_URL = 'poi/';
+let poiIndex = null;
+function poiTileIndex() {
+  poiIndex ??= fetch(POI_TILE_URL + 'index.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null)
+    .then(ix => ix && { ...ix, set: new Set(ix.tiles) }, () => null)
+    .then(ix => { if (!ix) setTimeout(() => { poiIndex = null; }, 60000); return ix; }); // später erneut fragen
+  return poiIndex;
+}
+// Punkte entlang der Route alle stepKm (für die Abstandsprüfung reicht das statt der Lotfußpunkte)
+function routeSamples(stepKm) {
+  const out = [routeCoords[0]];
+  for (let i = 1, next = stepKm; i < routeCoords.length; i++) {
+    const [a, b] = [routeCoords[i - 1], routeCoords[i]], k0 = routeKm[i - 1], k1 = routeKm[i];
+    for (; next <= k1; next += stepKm) { const t = (next - k0) / ((k1 - k0) || 1); out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]); }
+  }
+  out.push(routeCoords.at(-1));
+  return out;
+}
+// Elemente aus den Kacheln im Umkreis der Punkte; radiusFor(tags) = Umkreis in m oder 0 (nicht gesucht).
+// null = keine eigenen Daten für dieses Gebiet (weniger als 90 % der Kacheln vorhanden; fehlende = Meer o. ä.)
+async function tileElements(points, maxR, radiusFor) {
+  const ix = await poiTileIndex();
+  if (!ix) return null;
+  const keys = new Set();
+  for (const [la, lo] of points) {
+    const dLat = maxR / 110540, dLon = maxR / (111320 * Math.cos(la * Math.PI / 180));
+    for (let a = Math.floor(la - dLat); a <= Math.floor(la + dLat); a++)
+      for (let o = Math.floor(lo - dLon); o <= Math.floor(lo + dLon); o++) keys.add(`${a}_${o}`);
+  }
+  const have = [...keys].filter(k => ix.set.has(k));
+  if (have.length < keys.size * 0.9) return null;
+  const tiles = await Promise.all(have.map(k => fetch(`${POI_TILE_URL}t/${k}.json?v=${ix.date}`, { signal: AbortSignal.timeout(20000) })
+    .then(r => { if (!r.ok) throw new Error(`POI-Kachel ${k}: ${r.status}`); return r.json(); })));
+  // Gitter (0,02°) über die Punkte, damit nicht jedes Element gegen jeden Punkt geprüft wird
+  const CELL = 0.02, grid = new Map(), cellOf = (la, lo) => `${Math.floor(la / CELL)},${Math.floor(lo / CELL)}`;
+  for (const p of points) { const g = cellOf(p[0], p[1]); if (!grid.has(g)) grid.set(g, []); grid.get(g).push(p); }
+  const TYPES = { n: 'node', w: 'way', r: 'relation' }, out = [];
+  for (const [id, lat, lon, tags] of tiles.flat()) {
+    const r = radiusFor(tags);
+    if (!r) continue;
+    const ky = 110540, kx = 111320 * Math.cos(lat * Math.PI / 180), nLat = Math.ceil(r / (CELL * ky)), nLon = Math.ceil(r / (CELL * kx));
+    const ca = Math.floor(lat / CELL), co = Math.floor(lon / CELL);
+    let near = false;
+    for (let a = ca - nLat; a <= ca + nLat && !near; a++)
+      for (let o = co - nLon; o <= co + nLon && !near; o++)
+        near = (grid.get(`${a},${o}`) || []).some(([pl, po]) => Math.hypot((pl - lat) * ky, (po - lon) * kx) <= r);
+    if (near) out.push({ type: TYPES[id[0]], id: +id.slice(1), lat, lon, tags });
+  }
+  return { elements: out, date: ix.date };
+}
+
 async function loadPois() {
   poiLayer.clearLayers().addTo(map);
   $('pois').innerHTML = '';
@@ -50,13 +103,27 @@ async function loadPois() {
   if (!active.length) return;
 
   const req = ++poiRequest;
+  const busy = (text, ms) => { if (req === poiRequest) mapBusy('poi', text, ms); };
+  const radiusOf = t => Math.max(+$('radius').value, t.minRadius || 0);
+  try {
+    busy('📍 POIs laden …');
+    const local = await tileElements(routeSamples(0.25), Math.max(...active.map(radiusOf)), tags => {
+      const t = active.find(t => t.filters.some(f => matches(tags, f)));
+      return t ? radiusOf(t) : 0;
+    });
+    if (req !== poiRequest) return;
+    if (local) {
+      const count = showPois(local.elements, active, ` · 📦 eigene Daten, Stand ${local.date.split('-').reverse().join('.')}`, false);
+      return busy(count ? `📍 ${count} POIs` : '📍 keine POIs im Umkreis', 3000);
+    }
+  } catch {} // Kachel fehlt oder offline ohne Speicher: weiter mit Overpass
+  if (req !== poiRequest) return;
   const queries = routeChunks().map(chunk => {
     const line = simplify(chunk, 100).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
-    const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
+    const around = t => `(around:${radiusOf(t)},${line})`;
     return `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
   });
   const key = queries.join('|'), n = queries.length;
-  const busy = (text, ms) => { if (req === poiRequest) mapBusy('poi', text, ms); };
   const seen = new Set(), elements = [];
   let note = '', failed = 0, lastErr = null;
   const add = els => { for (const el of els) { const id = el.type + el.id; if (!el.id || !seen.has(id)) { seen.add(id); elements.push(el); } } };

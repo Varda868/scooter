@@ -92,6 +92,10 @@ function planStages() {
 const PHOTON_URL = 'https://photon.komoot.io/api/';
 async function findCamps(points, radiusM = 8000) {
   try {
+    const local = await tileElements(points, radiusM, tags => tags.tourism === 'camp_site' ? radiusM : 0);
+    if (local) return { source: 'eigene Daten', camps: local.elements.map(el => ({ lat: el.lat, lon: el.lon, name: el.tags.name })) };
+  } catch {}
+  try {
     const around = points.map(([la, lo]) => `nwr[tourism=camp_site](around:${radiusM},${la.toFixed(5)},${lo.toFixed(5)});`).join('');
     const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
     return { source: 'Overpass', camps: data.elements.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags?.name })).filter(c => c.lat != null) };
@@ -135,7 +139,7 @@ async function loadStageCamps(kms) {
           return box;
         }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
     }
-    const n = camps.length, via = source === 'Overpass' ? '' : ` (über ${source})`;
+    const n = camps.length, via = ['Overpass', 'eigene Daten'].includes(source) ? '' : ` (über ${source})`;
     $('stageSummary').textContent += (n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km') + via;
   } catch (err) {
     if (req === stageRequest) $('stageSummary').textContent += ` · ⚠️ Zeltplätze: ${err.message}`;
