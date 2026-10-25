@@ -184,7 +184,7 @@ function showPois(elements, active, note, laeuft) {
     p.marker = L.marker([p.lat, p.lon], {
       icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
     }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
-      (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
+      (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p) + contactInfo(p.tags)).addTo(poiLayer);
   }
   $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`
     : pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +

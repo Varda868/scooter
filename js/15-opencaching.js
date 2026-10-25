@@ -135,11 +135,24 @@ function workshopInfo(p) {
   const t = p.tags;
   const brands = t.brand || t.brands || t['motorcycle:brands'] ||
     Object.keys(t).filter(k => /^(motorcycle|scooter):(?!repair|sales|parts|rental|clothes|tyres|type)/.test(k) && t[k] === 'yes').map(k => k.split(':')[1]).join(', ');
-  const web = t.website || t['contact:website'], phone = t.phone || t['contact:phone'];
   return (brands ? `<br>Marken: ${escapeHtml(brands)}` : '') +
-    (t['motorcycle:repair'] === 'yes' || t.shop === 'motorcycle_repair' || t.craft ? '<br>🔧 Reparatur' : '') +
+    (t['motorcycle:repair'] === 'yes' || t.shop === 'motorcycle_repair' || t.craft ? '<br>🔧 Reparatur' : '');
+}
+// Ausstattung (Zeltplatz) und Kontakt aus den OSM-Tags; nur was eingetragen ist
+function contactInfo(t) {
+  const first = (...keys) => keys.map(k => t[k]).find(Boolean);
+  const phone = first('phone', 'contact:phone', 'contact:mobile')?.split(';')[0].trim(), mail = first('email', 'contact:email');
+  const web = first('website', 'contact:website', 'url'), yes = k => t[k] === 'yes';
+  const adr = [[t['addr:street'], t['addr:housenumber']].filter(Boolean).join(' '), [t['addr:postcode'], t['addr:city']].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const camp = t.tourism === 'camp_site' ? [yes('tents') && '⛺ Zelte', yes('caravans') && '🚐 Wohnmobile', yes('cabins') && '🛖 Hütten',
+    yes('shower') || t.shower === 'hot' ? '🚿 Dusche' : '', yes('power_supply') && '🔌 Strom', t.dog === 'no' && '🐕 keine Hunde',
+    t.reservation === 'required' ? '📅 Reservierung nötig' : t.reservation === 'recommended' ? '📅 Reservierung empfohlen' : '',
+    t.stars && '★'.repeat(Math.min(5, +t.stars || 0))].filter(Boolean).join(' · ') : '';
+  return (camp ? `<br>${escapeHtml(camp)}` : '') + (t.fee === 'no' ? '<br>kostenlos' : '') +
+    (t.operator ? `<br>${escapeHtml(t.operator)}` : '') + (adr ? `<br>${escapeHtml(adr)}` : '') +
     (phone ? `<br>📞 <a href="tel:${escapeHtml(phone.replace(/[^\d+]/g, ''))}">${escapeHtml(phone)}</a>` : '') +
-    (web && /^https?:\/\//.test(web) ? `<br><a href="${escapeHtml(web)}" target="_blank" rel="noopener">Website</a>` : '');
+    (mail && /^[^\s@]+@[^\s@]+$/.test(mail) ? `<br>✉️ <a href="mailto:${escapeHtml(mail)}">${escapeHtml(mail)}</a>` : '') +
+    (web && /^https?:\/\//.test(web) ? `<br>🔗 <a href="${escapeHtml(web)}" target="_blank" rel="noopener">Website</a>` : '');
 }
 
 // Ordnet ein Overpass-Ergebnis seinem Filter zu, z. B. "[amenity=shelter][shelter_type!=public_transport]"

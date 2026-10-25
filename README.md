@@ -18,6 +18,7 @@ POIs entlang der Route kommen zuerst aus eigenen Kacheln unter `poi/` (neben der
 - `.github/workflows/poi-kacheln.yml` läuft am 3. jedes Monats, auf Wunsch auch von Hand (Actions → POI-Kacheln → Run workflow, optional nur einzelne Regionen wie `europe/germany/bayern`). Es geht Land für Land durch die Geofabrik-Extrakte Europas und lädt das Ergebnis per FTPS hoch. Dafür vier Repository-Secrets anlegen: `POI_FTP_HOST`, `POI_FTP_USER`, `POI_FTP_PASS`, `POI_FTP_DIR` (Zielordner, also das `poi`-Verzeichnis im Webroot von scooter.thai-klasse.de). Ohne Secrets wird nur gebaut.
 - Die App nimmt die eigenen Daten, wenn mindestens 90 % der Kacheln um die Route vorhanden sind. Fehlende Kacheln gelten als leer (Meer). Der Service Worker hält die Kacheln offline vor.
 - Daten © OpenStreetMap-Mitwirkende, ODbL 1.0.
+- Vektorkarte `poi/karte.pmtiles`: `.github/workflows/karte.yml` schneidet sie im März, Juli und Oktober aus dem aktuellen Protomaps-Build. Gebiet: `tools/karte-gebiet.geojson` (Europa ohne Ukraine, Belarus und Russland, mit Istanbul und der Nordafrika-Küste), Zoom bis 14, ca. 20 GB. Gleiches FTP-Konto wie die POI-Kacheln. Die alte Datei wird vor dem Upload gelöscht, in der Zwischenzeit zeigt die App die Online-Karte. Neue Datei (ETag geändert) → die App verwirft die gespeicherten Vektorkacheln.
 
 ## Lizenz
 

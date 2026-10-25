@@ -9,7 +9,9 @@ Kachel = Liste [ "n123", lat, lon, {tags} ]; nur die Tags, die die App anzeigt o
 import json, os, re, sys, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-KEEP = {'name', 'brand', 'brands', 'opening_hours', 'website', 'contact:website', 'phone', 'contact:phone', 'fee', 'motorcycle:brands'}
+KEEP = {'name', 'brand', 'brands', 'operator', 'opening_hours', 'website', 'contact:website', 'url', 'phone', 'contact:phone',
+        'contact:mobile', 'email', 'contact:email', 'fee', 'motorcycle:brands', 'addr:street', 'addr:housenumber', 'addr:postcode',
+        'addr:city', 'tents', 'caravans', 'cabins', 'reservation', 'stars', 'capacity', 'power_supply', 'shower', 'dog'}
 
 
 def filters():
