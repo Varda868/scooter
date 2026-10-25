@@ -74,7 +74,7 @@ function labelPoint(own, others) {
 async function compareRoutes(trips, pick) {
   const req = ++compareRequest;
   const coords = trips.map(tripCoords);
-  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, kurv: kurvigkeit(coords[i]), fresh: exp.tiles.size ? newTilesOf(coords[i]).size : null }));
+  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, kurv: kurvigkeit(coords[i]) }));
   // Etikett zur Seite weg von den anderen Routen; Hauptroute darüber
   const tips = coords.map((c, i) => {
     const others = coords.filter((_, j) => j !== i), at = labelPoint(c, others);
@@ -86,11 +86,10 @@ async function compareRoutes(trips, pick) {
   tips.forEach((tip, i) => i && tip.getElement()?.addEventListener('click', e => { L.DomEvent.stop(e); pick(i - 1); }));
   const render = () => {
     const min = f => Math.min(...rows.map(f).filter(v => v != null));
-    const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up), fresh: -min(r => r.fresh == null ? null : -r.fresh), kurv: -min(r => -r.kurv) };
-    // Mehr ist besser bei neuen Kacheln und Kurven, sonst weniger
-    const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && (f === 'fresh' || f === 'kurv' ? r[f] >= best[f] && r[f] > 0 : r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0)) ? `<b>${text}</b>` : text);
-    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`), val(r, 'kurv', `〰${r.kurv}°/km`),
-      r.fresh == null ? '' : val(r, 'fresh', `+${r.fresh} 🆕`)].filter(Boolean).join(' · ')));
+    const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up), kurv: -min(r => -r.kurv) };
+    // Mehr ist besser bei Kurven, sonst weniger
+    const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && (f === 'kurv' ? r[f] >= best[f] && r[f] > 0 : r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0)) ? `<b>${text}</b>` : text);
+    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`), val(r, 'kurv', `〰${r.kurv}°/km`)].filter(Boolean).join(' · ')));
   };
   render();
   await Promise.all(coords.map((c, i) => routeClimb(c, trips[i]).then(up => { rows[i].up = up; }).catch(() => {})));

@@ -445,7 +445,6 @@ function showTrip(trip, alternates = []) {
   $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
   loadElevation(trip);
   loadPois();
-  renderCaches();
   renderMyPois();
   tankPlan();
   faehrenZeigen(trip);

@@ -85,6 +85,7 @@
       <label class="file-btn">📂 GPX-Track laden
         <input id="gpx" type="file" accept=".gpx,application/gpx+xml" multiple>
       </label>
+      <div id="gpxInfo" class="hint"></div>
     </section>
     <section id="tab-roller" class="tab" role="tabpanel" hidden>
       <details id="rollerBox" class="fold">
@@ -204,7 +205,7 @@
       <details id="profilBox" class="fold">
       <summary>💾 Profil sichern und übertragen <span class="hint">z. B. Handy ↔ PC</span></summary>
       <p class="hint">Alles aus diesem Browser in einer Datei: Einstellungen, Roller und Wartungsbuch, eigene POIs, Planung, Kontakte und gefahrene Touren. Die Offline-Karte und zwischengespeicherte POIs bleiben draußen.</p>
-      <label><input id="profilSchluessel" type="checkbox"> 🔑 Schlüssel mitnehmen (TomTom, Opencaching, Gruppen-Passwort, Talk-Identität)</label>
+      <label><input id="profilSchluessel" type="checkbox"> 🔑 Schlüssel mitnehmen (TomTom, Gruppen-Passwort, Talk-Identität)</label>
       <div id="profilWarnung" class="hint warn" hidden>⚠️ Die Datei enthält dann Zugangsdaten und deine Talk-Identität: nur auf eigene Geräte übertragen, nicht in Chats oder Clouds teilen, danach löschen.</div>
       <div class="profil-knoepfe"><button id="profilExport">⬇ Profil speichern</button><button id="profilTeilen" hidden>📤 Teilen</button>
         <label class="file-btn">📂 Profil laden<input id="profilImport" type="file" accept=".json,application/json"></label></div>
@@ -219,44 +220,6 @@
       </details>
       <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
-      <details id="experimentBox" class="fold">
-      <summary>🧪 Experimentell <span class="hint">Entdecker, Geocaches, Wettersonden</span></summary>
-      <p class="hint">Spielereien, die nicht zum Fahren nötig sind. Sie laden nur, wenn sie eingeschaltet sind.</p>
-      <details id="exploreBox" class="fold">
-      <summary>🗺 Entdecker <span id="exploreSummary" class="hint"></span></summary>
-      <label class="file-btn">📂 Gefahrene Touren importieren (GPX, mehrere Dateien)
-        <input id="gpxRides" type="file" accept=".gpx,application/gpx+xml" multiple>
-      </label>
-      <label><input id="expTiles" type="checkbox"> Kacheln zeigen (Zoom 14, ca. 1,6 km)</label>
-      <label><input id="expHeat" type="checkbox"> Heatmap zeigen</label>
-      <label><input id="expRec" type="checkbox"> Navi-Fahrten automatisch übernehmen</label>
-      <div id="exploreStats" class="hint"></div>
-      <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
-      </details>
-      <div id="cacheSummary"></div>
-      <ul id="caches"></ul>
-      <details id="ocBox" class="fold">
-      <summary>🧭 Geocaches <span id="ocSummary" class="hint"></span></summary>
-      <label class="file-btn">📂 Geocaches importieren (GPX, z. B. Pocket Query oder c:geo)
-        <input id="gpxCaches" type="file" accept=".gpx,application/gpx+xml" multiple>
-      </label>
-      <label><input id="cachesNearRoute" type="checkbox" checked> nur entlang der Route</label>
-      <fieldset id="cacheTypes">
-        <legend>Cache-Typen</legend>
-      </fieldset>
-      <label for="ocKey">Opencaching.de: OKAPI Consumer Key (bleibt nur in diesem Browser)</label>
-      <input id="ocKey" type="password" autocomplete="off" spellcheck="false" placeholder="Schlüssel einfügen">
-      <label><input id="ocOn" type="checkbox" checked> Opencaching-Caches entlang der Route live laden</label>
-      </details>
-      <details id="sondeBox" class="fold">
-      <summary>🎈 Wettersonden <span id="sondeSummary" class="hint"></span></summary>
-      <label><input id="sondeOn" type="checkbox"> Live laden (SondeHub, jede Minute)</label>
-      <label for="sondeRadius">Umkreis um die Kartenmitte</label>
-      <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
-      <ul id="sondes" class="sonde-list"></ul>
-      <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
-      </details>
-      </details>
     </section>
   </div>
   <div id="map"></div>
@@ -288,7 +251,7 @@
     <div class="arrive-btns">
       <button id="arriveBack" title="Route von hier zurück zum Start">↩ Zurück, gleicher Weg</button>
       <button id="arriveBackDiff" title="Rückweg meidet die gefahrene Strecke">↩ Zurück, anderer Weg</button>
-      <button id="arriveSave" title="Fahrt für den Entdecker speichern">💾 Fahrt speichern</button>
+      <button id="arriveSave" title="Fahrt speichern, zählt für km-Stand und Tank">💾 Fahrt speichern</button>
       <button id="arriveDrop" title="Mitgeschriebene Fahrt verwerfen">🗑 Verwerfen</button>
     </div>
   </div>
@@ -332,9 +295,8 @@
 <script src="js/11-pois.js"></script>
 <script src="js/13-poisuche.js"></script>
 <script src="js/14-gpx.js"></script>
-<script src="js/15-opencaching.js"></script>
-<script src="js/16-sonden.js"></script>
-<script src="js/17-entdecker.js"></script>
+<script src="js/15-poidetails.js"></script>
+<script src="js/17-fahrten.js"></script>
 <script src="js/18-roller.js"></script>
 <script src="js/19-vektorkarte.js"></script>
 <script src="js/20-start.js"></script>
