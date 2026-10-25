@@ -184,6 +184,7 @@ function faehrLinie(id, pts, t) {
 
 // Beide Anleger als Zwischenziele, in Fahrtrichtung: der vom vorigen Punkt aus nähere zuerst. Die Linie selbst und
 // die OSM-Dauer reisen am Ankunftspunkt mit, planRoute macht daraus einen Fährabschnitt (faehrWegpunkte)
+const FAEHR_ZIEL_M = 30000;
 function faehreInRoute(pts, t) {
   const a = L.latLng(pts[0]), b = L.latLng(pts.at(-1)), text = was => `⛴ ${t.name || 'Fähre'} · ${was}`;
   changeWaypoints(() => {
@@ -196,6 +197,10 @@ function faehreInRoute(pts, t) {
     waypoints[i].text = text(zuerstB ? 'an' : 'ab');
     if (zuerstB) waypoints[i].faehre = faehre;
     waypoints.splice(zuerstB ? i : i + 1, 0, { latlng: b, text: text(zuerstB ? 'ab' : 'an'), shaping: false, ...(zuerstB ? {} : { faehre }) });
+    // Liegt das Ziel am Abfahrtshafen (Route Augsburg→Genua, dann Genua–Olbia gewählt), wird der Ankunftshafen das
+    // neue Ziel; sonst führe die Route über die Fähre und wieder zurück zum alten Ziel
+    const j = waypoints.findIndex(w => /· an$/.test(w.text || '') && w.latlng === (zuerstB ? a : b)), ab = waypoints[j - 1]?.latlng;
+    if (j === waypoints.length - 2 && ab && waypoints.at(-1).latlng?.distanceTo(ab) < FAEHR_ZIEL_M) waypoints.pop();
   });
 }
 
