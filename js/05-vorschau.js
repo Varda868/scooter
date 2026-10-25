@@ -1,6 +1,31 @@
 // --- Vorschaufahrt: Strecke im Zeitraffer abfahren, Karte folgt, Zoom je nach Tempo und nächster Abbiegung ---
 const TURN_ARROWS = { 1: '▶', 2: '▶', 3: '▶', 4: '🏁', 5: '🏁', 6: '🏁', 9: '↗', 10: '→', 11: '↘', 12: '↶', 13: '↶', 14: '↙', 15: '←', 16: '↖',
-  20: '↗', 21: '↖', 24: '↖', 25: '↗', 26: '⟳', 27: '⟳' };
+  20: '↗', 21: '↖', 24: '↖', 25: '↗', 26: '⟳', 27: '⟳', 28: '⛴', 29: '⛴' };
+// Abbiegepfeile als Skizze "um die Ecke": Stamm von unten, dann Knick im Winkel des Manövers (Grad, + = rechts).
+// Kreisverkehr: Ring mit Nummer der Ausfahrt. Start, Ziel und Fähre bleiben Zeichen.
+const TURN_WINKEL = { 7: 0, 8: 0, 9: 45, 10: 90, 11: 135, 14: -135, 15: -90, 16: -45, 17: 0, 18: 35, 19: -35,
+  20: 35, 21: -35, 22: 0, 23: 20, 24: -20, 25: 0 };
+function turnIcon(m, ersatz = '↑') {
+  if (!m) return ersatz;
+  const kopf = (x, y, dx, dy) => `<path d="M${x + dx * 8} ${y + dy * 8}L${x - dy * 8} ${y + dx * 8}L${x + dy * 8} ${y - dx * 8}Z" fill="currentColor"/>`;
+  const svg = inner => `<svg class="turn-svg" viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${inner}</g></svg>`;
+  if (m.type === 12 || m.type === 13) { // Wende: 13 links herum, 12 rechts herum
+    const s = m.type === 13 ? -1 : 1, a = 24 - s * 7, b = 24 + s * 7;
+    return svg(`<path d="M${a} 44V22A7 7 0 0 ${s > 0 ? 1 : 0} ${b} 22V30"/>`).replace('</g>', `</g>${kopf(b, 31, 0, 1)}`);
+  }
+  if (m.type === 26 || m.type === 27) {
+    const n = m.exits;
+    return svg(`<path d="M24 44V33"/><circle cx="24" cy="20" r="11" stroke-width="5"/>` + (m.type === 27 ? '<path d="M35 20H39"/>' : ''))
+      .replace('</g>', '</g>' + (m.type === 27 ? kopf(41, 20, 1, 0)
+        : n ? `<text x="24" y="25.5" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">${n}</text>` : ''));
+  }
+  const w = TURN_WINKEL[m.type];
+  if (w == null) return TURN_ARROWS[m.type] || ersatz;
+  const r = w * Math.PI / 180, dx = Math.sin(r), dy = -Math.cos(r);
+  if (!w) return svg('<path d="M24 44V14"/>').replace('</g>', `</g>${kopf(24, 9, 0, -1)}`);
+  const ex = 24 + dx * 15, ey = 24 + dy * 15;
+  return svg(`<path d="M24 44V24L${ex.toFixed(1)} ${ey.toFixed(1)}"/>`).replace('</g>', `</g>${kopf(ex + dx * 3, ey + dy * 3, dx, dy)}`);
+}
 map.getContainer().appendChild($('sim'));
 L.DomEvent.disableClickPropagation($('sim'));
 L.DomEvent.disableScrollPropagation($('sim'));
@@ -151,7 +176,7 @@ function renderSim(now) {
 
   const next = routeManeuvers.find(m => m.km > sim.km + 0.005);
   const dist = next ? next.km - sim.km : total - sim.km;
-  $('simArrow').textContent = next ? TURN_ARROWS[next.type] || '↑' : '🏁';
+  $('simArrow').innerHTML = next ? turnIcon(next) : '🏁';
   $('simDist').textContent = dist < 1 ? `${Math.round(dist * 100) * 10} m` : `${dist.toFixed(1)} km`;
   $('simText').textContent = next ? next.text : (routeManeuvers.length ? 'Ziel' : 'Ende des Tracks');
 
