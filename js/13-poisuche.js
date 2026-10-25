@@ -36,7 +36,24 @@ function savePoiCache() {
     try { localStorage.setItem('scooterways.poiCache', JSON.stringify(list)); return; } catch {}
   }
 }
-const poiRadius = t => Math.max(+$('radius').value, t.minRadius || 0);
+// Tankstellen ausgedünnt: nur direkt an der Strecke, und davon etwa eine je 100 km
+const FUEL_NAH_M = 150, FUEL_ABSTAND_KM = 100;
+const fuelDuenn = () => settings.fuelThin !== false;
+$('fuelThin').checked = fuelDuenn();
+$('fuelThin').onchange = () => { settings.fuelThin = $('fuelThin').checked; store.set('settings', settings); loadPois(); };
+const poiRadius = t => t.id === 'fuel' && fuelDuenn() ? FUEL_NAH_M : Math.max(+$('radius').value, t.minRadius || 0);
+// Je 100-km-Marke die letzte Tankstelle davor; fehlt dort eine, die nächste danach. Kürzere Touren: die zur Mitte nächste
+function fuelAuswahl(fuels, total) {
+  const out = [];
+  for (let pos = 0; pos + FUEL_ABSTAND_KM < total;) {
+    const mark = pos + FUEL_ABSTAND_KM;
+    const s = fuels.filter(f => f.km > pos && f.km <= mark).at(-1) || fuels.find(f => f.km > mark);
+    if (!s) break;
+    out.push(s); pos = s.km;
+  }
+  if (!out.length && fuels.length) out.push(fuels.reduce((a, b) => Math.abs(b.km - total / 2) < Math.abs(a.km - total / 2) ? b : a));
+  return out;
+}
 // Lange Touren abschnittsweise abfragen (je höchstens 50 km): kleinere Overpass-Abfragen laufen seltener in die
 // Zeitgrenze, und die ersten POIs stehen schon auf der Karte, während der Rest noch lädt.
 const POI_CHUNK_KM = 50;
@@ -215,6 +232,10 @@ function showPois(elements, active, note, laeuft) {
     // Zwischenspeicher kann einen größeren Umkreis enthalten als gerade eingestellt
     return at.dist <= poiRadius(type) + 50 ? { lat, lon, type, tags: el.tags || {}, km: at.km } : null;
   }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
+  if (fuelDuenn()) {
+    const wahl = new Set(fuelAuswahl(pois.filter(p => p.type.id === 'fuel'), routeKm.at(-1)));
+    for (let i = pois.length - 1; i >= 0; i--) if (pois[i].type.id === 'fuel' && !wahl.has(pois[i])) pois.splice(i, 1);
+  }
 
   for (const p of pois) {
     const title = p.tags.name || p.tags.brand || p.type.name;
