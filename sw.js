@@ -1,6 +1,6 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v31';
+const VERSION = 'v32';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
@@ -97,17 +97,19 @@ self.addEventListener('fetch', e => {
 
 // --- Push an die Talk-Gruppe (js/29-push.js): Inhalt ist mit dem Gruppenschlüssel aus IndexedDB verschlüsselt
 const PUSH_HALT = { panne: '🔧 hat eine Panne', tanken: '⛽ hält zum Tanken', pause: '☕ macht Pause' };
-function pushSchluessel(g) {
+// Gleiche Datenbank wie js/29-push.js: k = Gruppenschlüssel, post = Sprachpost, namen = Talk-Kontakte
+function pushDbSw(store, modus, fn) {
   return new Promise(ok => {
-    const r = indexedDB.open('scooterways-push', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('k', { keyPath: 'g' });
+    const r = indexedDB.open('scooterways-push', 2);
+    r.onupgradeneeded = () => { for (const [s, key] of [['k', 'g'], ['post', 'id'], ['namen', 'pk']]) if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s, { keyPath: key }); };
     r.onerror = () => ok(null);
     r.onsuccess = () => {
-      const q = r.result.transaction('k').objectStore('k').get(g);
-      q.onsuccess = () => { ok(q.result?.key || null); r.result.close(); }; q.onerror = () => ok(null);
+      const tx = r.result.transaction(store, modus), q = fn(tx.objectStore(store));
+      tx.oncomplete = () => { ok(q?.result ?? null); r.result.close(); }; tx.onerror = () => { ok(null); r.result.close(); };
     };
   });
 }
+const pushSchluessel = async g => (await pushDbSw('k', 'readonly', os => os.get(g)))?.key || null;
 const pushBytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 async function pushLesen(e) {
   const p = e.data?.json();
@@ -115,7 +117,23 @@ async function pushLesen(e) {
   if (!key) return null;
   return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: pushBytes(p.iv) }, key, pushBytes(p.ct))));
 }
+// Sprachpost: nur ablegen und melden, öffnen kann sie erst die App (NIP-44 mit dem Talk-Schlüssel)
+async function pushSprachpost(p) {
+  if (!/^[0-9a-f]{64}$/.test(p.von || '') || typeof p.ct !== 'string') return;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  await pushDbSw('post', 'readwrite', os => os.put({ id, von: p.von, ct: p.ct, t: Date.now() }));
+  const name = (await pushDbSw('namen', 'readonly', os => os.get(p.von)))?.name || p.von.slice(0, 8);
+  const fenster = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  fenster.forEach(f => f.postMessage({ post: id }));
+  // App im Vordergrund: dort erscheint sie in der Liste, keine Benachrichtigung nötig
+  if (fenster.some(f => f.focused && f.visibilityState === 'visible')) return;
+  await self.registration.showNotification(`🎙 Sprachpost von ${name}`, { body: 'Tippen zum Abhören', icon: 'icon-192.png', badge: 'icon-192.png',
+    tag: 'post-' + p.von, renotify: true, data: { post: id } });
+}
 self.addEventListener('push', e => e.waitUntil((async () => {
+  let p = null;
+  try { p = e.data?.json(); } catch {}
+  if (p?.dm) return pushSprachpost(p);
   let n = null;
   try { n = await pushLesen(e); } catch {}
   const name = String(n?.n || '').slice(0, 9);
@@ -129,10 +147,10 @@ self.addEventListener('push', e => e.waitUntil((async () => {
 })()));
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const ort = e.notification.data?.ort;
+  const ort = e.notification.data?.ort, post = e.notification.data?.post;
   e.waitUntil((async () => {
     const fenster = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (fenster[0]) { await fenster[0].focus(); if (ort) fenster[0].postMessage({ ort }); return; }
-    await clients.openWindow(ort ? `./?ort=${ort.join(',')}` : './');
+    if (fenster[0]) { await fenster[0].focus(); if (ort) fenster[0].postMessage({ ort }); if (post) fenster[0].postMessage({ post, spielen: true }); return; }
+    await clients.openWindow(post ? `./?post=${post}` : ort ? `./?ort=${ort.join(',')}` : './');
   })());
 });

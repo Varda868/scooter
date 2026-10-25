@@ -134,6 +134,7 @@ function talkLoslassen() {
   clearTimeout(t.bis); clearInterval(t.uhr);
   if (t.codec) { t.codec.frei(); if (t.ms >= 300) talkSenden(t.a, t.ms, t.an); }
   if (t.enc) talkOpusEnde(t);
+  if (t.post?.length * t.post[0].length >= 0.3 * 8000) pushSprache(t.an, t.post);
   talk.vox?.zuruecksetzen();
   talk.sperreBis = Date.now() + 500;
   talkZeigen();
@@ -244,6 +245,7 @@ async function talkOpusEnde(t) {
 // Ein Empfänger für alle Mikrofon-Blöcke: laufende Sendung kodieren, sonst VOX hören lassen
 function talkRahmen(pcm) {
   const t = talk.tx;
+  if (t?.an && postAn()) (t.post ||= []).push(pcm.slice()); // Kopie für die Sprachpost (29-push)
   if (t?.codec) { t.a.rahmen(t.codec.kodieren(pcm)); t.ms += t.codec.ms; }
   else if (t?.vox && !t.enc) { (t.vorlauf ||= []).push(pcm.slice()); }
   if (talkPrefs.mode !== 'vox') return;
@@ -296,6 +298,7 @@ async function talkHoeren(d) {
   // Rufname nur, wenn der Kopf geprüft ist; sonst die ersten Stellen des Schlüssels
   const wer = (d.signatur || d.absender === k.schluessel) && k.name || k.schluessel.slice(0, 8);
   if (d.absender) talkKontaktMerken(d.absender, wer);
+  if (d.privat && d.absender) pushLiveGehoert(d.absender);
   talk.hoert = (d.privat ? '🔒 ' : '') + wer; talkZeigen();
   if (opus) {
     const ms = await talkOpusHoeren(d.pakete).catch(() => 0);

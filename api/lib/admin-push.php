@@ -13,13 +13,13 @@ function bereich_push(): void {
     else $db->prepare('DELETE FROM sw_push WHERE id = ?')->execute([(int)($_POST['id'] ?? 0)]);
     admin_zurueck('push', 'Gelöscht.');
   }
-  $rows = $db->query('SELECT id, gruppe, endpoint, name, t, zuletzt, fehler FROM sw_push ORDER BY gruppe, t')->fetchAll();
+  $rows = $db->query('SELECT id, gruppe, art, endpoint, name, t, zuletzt, fehler FROM sw_push ORDER BY art, gruppe, t')->fetchAll();
   $html = admin_hinweis($OK);
   if (!$rows) $html .= '<p>Keine Push-Abos.</p>';
   $gruppen = [];
   foreach ($rows as $r) $gruppen[$r['gruppe']][] = $r;
   foreach ($gruppen as $g => $liste) {
-    $html .= '<h2>Gruppe <code>' . h(substr($g, 0, 12)) . '…</code> · ' . count($liste) . ' Geräte</h2><table><tr><th>Name</th><th>Dienst</th><th>Angemeldet</th><th>Zuletzt</th><th>Fehler</th><th></th></tr>';
+    $html .= '<h2>' . ($liste[0]['art'] === 'post' ? 'Postfach' : 'Gruppe') . ' <code>' . h(substr($g, 0, 12)) . '…</code> · ' . count($liste) . ' Geräte</h2><table><tr><th>Name</th><th>Dienst</th><th>Angemeldet</th><th>Zuletzt</th><th>Fehler</th><th></th></tr>';
     foreach ($liste as $r) $html .= '<tr><td>' . h($r['name'] ?: '–') . '</td><td>' . h(parse_url($r['endpoint'], PHP_URL_HOST)) . '</td><td>' . admin_zeit((int)$r['t']) .
       '</td><td>' . ($r['zuletzt'] ? admin_zeit((int)$r['zuletzt']) : '–') . '</td><td>' . (int)$r['fehler'] . '</td><td><form method="post">' . admin_csrf_feld() .
       '<input type="hidden" name="id" value="' . (int)$r['id'] . '"><button class="klein">✕</button></form></td></tr>';
