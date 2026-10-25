@@ -10,7 +10,7 @@ require __DIR__ . '/lib/kern.php';
 require __DIR__ . '/lib/relays.php';
 require __DIR__ . '/lib/wartung.php';
 
-const WARTUNG_POI_TAGE = 40, WARTUNG_SICHERUNGEN = 7, WARTUNG_FREI_MB = 300, WARTUNG_CACHE_MAX = 300 * 1048576;
+const WARTUNG_POI_TAGE = 40, WARTUNG_KARTE_TAGE = 140, WARTUNG_SICHERUNGEN = 7, WARTUNG_FREI_MB = 300, WARTUNG_CACHE_MAX = 300 * 1048576;
 
 header('Content-Type: text/plain; charset=utf-8');
 header('Cache-Control: no-store');
@@ -88,6 +88,15 @@ function wartung_gesund(array &$p, array &$i): void {
     $alter = (int)floor((time() - strtotime($ix['date'])) / 86400);
     $i[] = "POI-Daten vom {$ix['date']} ($alter Tage)";
     if ($alter > WARTUNG_POI_TAGE) $p[] = "POI-Daten sind $alter Tage alt, der monatliche Lauf ist wohl ausgefallen";
+  }
+  // Vektorkarte: tools/karte-bauen.sh im März, Juli und Oktober, also höchstens gut vier Monate alt
+  $karte = sw_docroot() . '/poi/karte.pmtiles';
+  if (!is_file($karte)) $p[] = 'Vektorkarte fehlt (poi/karte.pmtiles), die App zeigt nur die Online-Karte';
+  else {
+    $alter = (int)floor((time() - filemtime($karte)) / 86400);
+    $stand = trim((string)@file_get_contents(sw_docroot() . '/poi/karte.stand'));
+    $i[] = 'Vektorkarte ' . round(filesize($karte) / 1073741824, 1) . " GB, $alter Tage alt" . ($stand !== '' ? " ($stand)" : '');
+    if ($alter > WARTUNG_KARTE_TAGE) $p[] = "Vektorkarte ist $alter Tage alt, tools/karte-bauen.sh ist wohl nicht gelaufen";
   }
   $frei = @disk_free_space(sw_daten());
   $cache = wartung_groesse(sw_daten() . '/cache');

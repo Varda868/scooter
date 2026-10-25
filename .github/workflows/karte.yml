@@ -5,11 +5,11 @@
 # Datei bleibt als karte.pmtiles.part liegen, daneben karte.build mit Build und Zoom. Der nächste Lauf schneidet
 # denselben Build aus, prüft Stichproben der halben Datei gegen die neue und lädt nur den Rest. Reicht die Zeit
 # nicht, startet der Lauf sich selbst neu (höchstens RUNDEN_MAX mal).
+# Seit 10/2026 baut der Server die Karte selbst (tools/karte-bauen.sh als geplante Aufgabe in Plesk, ~20 min).
+# Dieser Weg bleibt als Ersatz, läuft aber nur noch von Hand (Actions → Karte → Run workflow).
 name: Karte
 
 on:
-  schedule:
-    - cron: '41 1 1 3,7,10 *'
   workflow_dispatch:
     inputs:
       maxzoom:
