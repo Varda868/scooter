@@ -294,6 +294,7 @@ function clearRoute() {
   wxShelter = false;
   routeStages = []; routeStageNights = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   tankPlan();
+  faehrenZeigen(null);
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);

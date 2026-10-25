@@ -29,7 +29,9 @@ function routeBody(locs) {
       use_primary: +$('primary').value,
       use_hills: +$('hills').value,
       // Schotter, Feld- und Waldwege: ausschließen (außer direkt an Start und Ziel)
-      ...($('unpaved').checked ? { exclude_unpaved: true, use_tracks: 0 } : {})
+      ...($('unpaved').checked ? { exclude_unpaved: true, use_tracks: 0 } : {}),
+      // Valhalla-Standard 0,5 meidet Fähren leicht; 1 = nimmt sie gern
+      ...($('ferry').checked ? { use_ferry: 1 } : {})
     } },
     directions_options: { language: 'de-DE', units: 'kilometers' },
     // Höhen alle 30 m je Abschnitt gleich mit der Route (spart /height), Spuren je Manöver fürs Navi
@@ -203,7 +205,7 @@ async function route() {
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
-    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value), $('unpaved').checked]);
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value), $('unpaved').checked, $('ferry').checked]);
     let data;
     try {
       data = await planTrip(locs);
@@ -309,4 +311,5 @@ function showTrip(trip, alternates = []) {
   renderCaches();
   renderMyPois();
   tankPlan();
+  faehrenZeigen(trip);
 }
