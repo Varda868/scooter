@@ -20,8 +20,9 @@ function routeBody(locs) {
     // search_filter: Formpunkte nur an richtige Straßen binden, nicht an Feld-/Waldwege oder Zufahrten
     locations: locs.map((w, i) => {
       const shaping = w.shaping && i && i < locs.length - 1;
+      // Formpunkte aus der Grobroute (w.grob): nicht auf Autobahn oder Kraftfahrstraße einrasten
       return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
-        ...(shaping ? { search_filter: { min_road_class: 'residential' } } : {}) };
+        ...(shaping ? { search_filter: { min_road_class: 'residential', ...(w.grob ? { max_road_class: 'primary' } : {}) } } : {}) };
     }),
     costing: 'motor_scooter',
     costing_options: { motor_scooter: {
@@ -75,7 +76,8 @@ const MAX_REQUEST_KM = 180;
 function chunkLocations(locs) {
   const pts = [];
   locs.forEach((w, i) => {
-    if (i) {
+    // Zwischen zwei Fährhäfen keine Punkte aufs Wasser setzen
+    if (i && !(locs[i - 1].hafen === 'ab' && w.hafen === 'an')) {
       const a = locs[i - 1].latlng, b = w.latlng, n = Math.ceil(a.distanceTo(b) / 1000 / (MAX_REQUEST_KM * 0.9));
       for (let k = 1; k < n; k++) pts.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), shaping: true });
     }
@@ -118,10 +120,70 @@ function joinLegs(a, b) {
   };
 }
 
+// Lange Strecken: Formpunkte nicht auf die Luftlinie (landet im Meer, rastet auf falsche Fähren ein, erzwingt Umwege),
+// sondern auf eine Grobroute fürs Auto ohne Autobahn, die das öffentliche Valhalla am Stück rechnet. Alle GROB_KM ein Punkt;
+// auf Fährabschnitten keiner, stattdessen an Abfahrts- und Ankunftshafen. Klappt die Grobroute nicht: Luftlinie wie bisher.
+const GROB_KM = 150, grobCache = new Map();
+async function grobePunkte(locs) {
+  const lang = locs.some((w, i) => i && locs[i - 1].latlng.distanceTo(w.latlng) / 1000 > MAX_REQUEST_KM * 0.9);
+  if (!lang) return locs;
+  const key = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
+  if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
+    locations: locs.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < locs.length - 1 ? 'through' : 'break' })),
+    costing: 'auto', costing_options: { auto: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
+    directions_options: { units: 'kilometers' }
+  }).catch(err => { grobCache.delete(key); throw err; }));
+  let trip;
+  try { trip = (await grobCache.get(key)).trip; } catch { return locs; }
+  if (trip?.legs?.length !== locs.length - 1) return locs;
+  const out = [locs[0]];
+  trip.legs.forEach((leg, j) => {
+    const a = locs[j], b = locs[j + 1];
+    if (a.latlng.distanceTo(b.latlng) / 1000 > MAX_REQUEST_KM * 0.9) {
+      const pts = decode(leg.shape), km = [0];
+      for (let i = 1; i < pts.length; i++) km.push(km[i - 1] + L.latLng(pts[i - 1]).distanceTo(L.latLng(pts[i])) / 1000);
+      // Fährstücke als Index-Bereiche [von, bis] der Shape
+      const faehren = leg.maneuvers.filter(m => m.travel_type === 'ferry').map(m => [m.begin_shape_index, m.end_shape_index]);
+      const aufFaehre = i => faehren.find(([v, z]) => i > v && i < z);
+      const add = (i, hafen) => out.push({ latlng: L.latLng(pts[i]), shaping: true, grob: true, hafen });
+      let last = 0;
+      for (let i = 1; i < pts.length - 1; i++) {
+        const f = aufFaehre(i);
+        if (f) {
+          // Hafen davor (falls nicht gerade erst gesetzt) und danach; weiter zählen ab Ankunft
+          if (km[f[0]] - km[last] > 5 || !out.at(-1).grob) add(f[0], 'ab'); else out.at(-1).hafen = 'ab';
+          add(f[1], 'an'); last = f[1]; i = f[1];
+          // Fährstrecke selbst merken: zu lang für eine Roller-Anfrage, aber Fähre ist Fähre, egal mit welchem Fahrzeug
+          const fm = leg.maneuvers.filter(m => m.travel_type === 'ferry' && m.begin_shape_index >= f[0] && m.begin_shape_index < f[1]);
+          out.at(-1).faehre = { coords: pts.slice(f[0], f[1] + 1), m: fm[0] || {},
+            km: km[f[1]] - km[f[0]], s: fm.reduce((t, m) => t + (m.time || 0), 0) };
+          continue;
+        }
+        if (km[i] - km[last] >= GROB_KM && km.at(-1) - km[i] > 20) { add(i); last = i; }
+      }
+    }
+    out.push(b);
+  });
+  return out;
+}
+
+// Lange Fähre als eigener Abschnitt aus der Grobroute; Start und Ankunft sind Platzhalter, die joinLegs wegschneidet
+function faehrTrip(fa) {
+  const n = fa.coords.length - 1, name = fa.m.street_names, len = fa.km, time = fa.s || len / 25 * 3600;
+  const leg = { shape: encode(fa.coords), summary: { length: len, time }, maneuvers: [
+    { type: 1, instruction: 'Start', begin_shape_index: 0 },
+    { type: 28, instruction: fa.m.instruction || 'Nehmen Sie die Fähre.', street_names: name, travel_type: 'ferry', time, length: len, begin_shape_index: 0 },
+    { type: 29, instruction: 'Verlassen Sie die Fähre.', begin_shape_index: n },
+    { type: 4, instruction: 'Ziel', begin_shape_index: n }] };
+  return { legs: [leg], summary: leg.summary };
+}
+
 async function planRoute(locs, exclude = []) {
-  const chunks = chunkLocations(locs);
+  const chunks = chunkLocations(await grobePunkte(locs));
   const trips = [];
   for (const chunk of chunks) {
+    const fa = chunk.length === 2 && chunk[0].hafen === 'ab' && chunk[1].faehre;
+    if (fa && chunk[0].latlng.distanceTo(chunk[1].latlng) / 1000 > MAX_REQUEST_KM * 0.9) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
@@ -294,7 +356,7 @@ function showTrip(trip, alternates = []) {
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
-    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type,
+    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type, exits: m.roundabout_exit_count,
       verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }

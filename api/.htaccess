@@ -1,0 +1,5 @@
+# Keine Verzeichnislisten, keine Caches für die API
+Options -Indexes
+<IfModule mod_headers.c>
+  Header set Cache-Control "no-store"
+</IfModule>
