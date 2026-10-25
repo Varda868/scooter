@@ -4,6 +4,7 @@
 // Aufruf: proxy.php?d=wetter|photon|overpass|tomtom|tomtom-flow&… (Overpass als POST data=…, Server-Nr. in s)
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 
 // d => [Ziel, erlaubte Parameter, Sekunden im Speicher, je Gerät/min, insgesamt/Tag]
 const PROXY_DIENSTE = [

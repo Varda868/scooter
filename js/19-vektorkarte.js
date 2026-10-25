@@ -2,7 +2,7 @@
 // als Ebene in Leaflet. Jede geladene Kachel landet in IndexedDB; "Karte für diese Tour offline speichern" lädt
 // den Korridor um die Route vorab. Fehlt die Datei, bleibt die OSM-Rasterkarte.
 // Die Datei schneidet .github/workflows/karte.yml aus dem Protomaps-Build und lädt sie neben die POI-Kacheln.
-const VECTOR_MAP_URL = 'poi/karte.pmtiles';
+const VECTOR_MAP_URL = BASIS_URL + 'poi/karte.pmtiles';
 const VM_LIBS = ['https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js', 'https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js',
   'https://cdn.jsdelivr.net/npm/@protomaps/basemaps@5.5.0/dist/basemaps.js', 'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js'];
 const VM_CSS = 'https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css';

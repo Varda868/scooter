@@ -168,6 +168,18 @@ function sw_origin_ok(): bool {
   $o = $_SERVER['HTTP_ORIGIN'] ?? '';
   return $o !== '' && in_array($o, (array)sw_wert('origins'), true);
 }
+// Zweitadressen der App (Admin → Erlaubte Herkunft) rufen die API von fremder Herkunft auf: CORS nur für diese, ohne Cookies
+function sw_cors(): void {
+  $o = $_SERVER['HTTP_ORIGIN'] ?? '';
+  header('Vary: Origin', false);
+  if ($o !== '' && sw_eingerichtet() && in_array($o, (array)sw_wert('origins'), true)) {
+    header('Access-Control-Allow-Origin: ' . $o);
+    header('Access-Control-Allow-Methods: GET, POST');
+    header('Access-Control-Allow-Headers: Content-Type');
+    header('Access-Control-Max-Age: 86400');
+  }
+  if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') { http_response_code(204); exit; }
+}
 function sw_json($daten, int $status = 200) {
   http_response_code($status);
   header('Content-Type: application/json; charset=utf-8');

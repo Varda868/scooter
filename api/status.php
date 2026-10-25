@@ -2,6 +2,7 @@
 // Öffentlicher Kurzcheck: läuft PHP, sind die nötigen Erweiterungen da, ist eingerichtet? Keine Pfade, keine Werte.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 require __DIR__ . '/lib/relays.php';
 $ip = sw_eingerichtet() ? sw_ip_test() : null;
 sw_json([

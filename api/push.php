@@ -10,6 +10,7 @@
 // POST {aktion: 'senden', art: 'dm', gruppe: postfach, von: pubkey, daten: {ct}, ich: endpoint}
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 require __DIR__ . '/lib/webpush.php';
 
 const PUSH_MAX_BYTES = 6000, PUSH_MAX_JE_GRUPPE = 50, PUSH_MAX_JE_POSTFACH = 5;

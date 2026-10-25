@@ -2,6 +2,8 @@
 
 50er-Routenplaner (PWA) für https://scooter.thai-klasse.de/ – Auslieferung per Plesk-Git-Deployment aus `main`.
 
+Zweitadresse: https://scooterways.dns.navy/ (dynv6, eigenes Plesk-Abo, ebenfalls Git-Deployment aus `main`). Sie zeigt die volle App, holt `api/` und `poi/` aber von der Stammadresse (`STAMMADRESSE`/`ZWEITADRESSEN` in `js/01-grundlagen.js`, `STAMM_ORIGIN` in `sw.js`): Datenordner, Admin und FTP-Uploads gibt es nur einmal, und fällt die Zweitadresse weg, läuft die Stammadresse unverändert weiter. Dafür CORS: `sw_cors()` in den öffentlichen Endpunkten für die Origins aus Admin → Einstellungen → Erlaubte Herkunft, `poi/` mit `Access-Control-Allow-Origin: *` (`.htaccess`). Einstellungen im Browser gelten je Adresse; übertragen per Profil-Sync.
+
 ## Aufbau
 
 - `index.html` – nur HTML-Gerüst, lädt `css/app.css` und die Skripte aus `js/` in fester Reihenfolge.

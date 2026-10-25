@@ -11,4 +11,10 @@
   <FilesMatch "\.(js|css|html|webmanifest)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
+  # POI-Kacheln und Karte sind öffentlich; Zweitadressen (scooterways.dns.navy) laden sie von hier.
+  # ETag und Content-Range freigeben, die Vektorkarte liest sie bei Range-Anfragen
+  <If "%{REQUEST_URI} =~ m#^/poi/#">
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Expose-Headers "ETag, Content-Range, Content-Length, Accept-Ranges"
+  </If>
 </IfModule>

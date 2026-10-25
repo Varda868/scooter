@@ -1,6 +1,6 @@
 // --- Eigener Server (api/): Endpunkte aus dem Admin-Bereich, Proxy mit Zwischenspeicher, TomTom-Schlüssel auf dem Server.
 // Ohne Server, wenn er ausfällt oder abgeschaltet ist, geht alles wie bisher direkt an die Dienste.
-const API_URL = new URL('api/', location.href).href;
+const API_URL = BASIS_URL + 'api/';
 const VALHALLA_STANDARD = new URL(VALHALLA_URL).origin;
 let serverKonfig = store.get('serverKonfig', null);
 const direktFetch = window.fetch.bind(window);

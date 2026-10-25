@@ -5,6 +5,7 @@
 // POST {loeschen: id, code}   → {ok}
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 
 const KURZ_MAX_BYTES = 32768, KURZ_TAGE = [7, 30, 90, 365], KURZ_PRO_STUNDE = 20, KURZ_PRO_TAG_ALLE = 500;
 const KURZ_ZEICHEN = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne l, I, O, 0, 1

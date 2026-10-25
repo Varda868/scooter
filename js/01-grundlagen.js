@@ -1,3 +1,8 @@
+// Zweitadressen zeigen die volle App, holen Server-Teil (api/), POI-Daten und Karte (poi/) aber von der Stammadresse:
+// dort liegen Datenordner und FTP-Uploads, und fällt eine Zweitadresse weg, geht auf der Stammadresse alles weiter.
+const STAMMADRESSE = 'https://scooter.thai-klasse.de/';
+const ZWEITADRESSEN = ['scooterways.dns.navy', 'www.scooterways.dns.navy'];
+const BASIS_URL = ZWEITADRESSEN.includes(location.hostname) ? STAMMADRESSE : new URL('./', location.href).href;
 // In Phase 2 nur diese URL auf den eigenen Server umstellen.
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 const VALHALLA_HEIGHT_URL = VALHALLA_URL.replace(/\/route$/, '/height');

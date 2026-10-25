@@ -2,6 +2,7 @@
 // Öffentliche Einstellungen für die App (Endpunkte aus dem Admin-Bereich). Schlüssel stehen hier nie drin.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 require __DIR__ . '/lib/webpush.php';
 require __DIR__ . '/lib/relays.php';
 if (!sw_eingerichtet()) sw_json(['eingerichtet' => false]);
