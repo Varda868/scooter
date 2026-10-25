@@ -66,6 +66,9 @@ jobs:
         run: |
           [ -n "$FTP_HOST" ] || { echo "::warning::Keine FTP-Secrets gesetzt – Upload übersprungen"; exit 0; }
           dir="${FTP_DIR%/}"
+          # Auf welchen Namen lautet das FTPS-Zertifikat? Diesen Namen als POI_FTP_HOST eintragen, dann klappt die volle Prüfung
+          cert=$(timeout 20 openssl s_client -starttls ftp -connect "$FTP_HOST:21" < /dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>/dev/null | tr '\n' ' ')
+          echo "::notice::FTPS-Zertifikat: ${cert:-nicht lesbar}"
           # Erst die Kacheln, zuletzt index.json: die App sieht den neuen Stand erst, wenn alles oben ist.
           # FTPS bevorzugt; passt das Zertifikat nicht zum Hostnamen (Shared Hosting: oft das Zertifikat des Servers),
           # wird verschlüsselt ohne Zertifikatsprüfung hochgeladen. Unverschlüsselt nie (Passwort im Klartext).
