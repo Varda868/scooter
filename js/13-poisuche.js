@@ -26,11 +26,17 @@ let poiRequest = 0;
 // Lange Touren abschnittsweise abfragen (je höchstens 50 km): kleinere Overpass-Abfragen laufen seltener in die
 // Zeitgrenze, und die ersten POIs stehen schon auf der Karte, während der Rest noch lädt.
 const POI_CHUNK_KM = 50;
+// Abschnitte, die komplett auf schon abgefragter Strecke liegen (Hin und zurück auf derselben Straße), entfallen
 function routeChunks() {
   const out = [];
   let from = 0;
-  for (let i = 1; i < routeCoords.length; i++)
-    if (routeKm[i] - routeKm[from] >= POI_CHUNK_KM || i === routeCoords.length - 1) { out.push(routeCoords.slice(from, i + 1)); from = i; }
+  for (let i = 1; i < routeCoords.length; i++) {
+    if (routeKm[i] - routeKm[from] < POI_CHUNK_KM && i < routeCoords.length - 1) continue;
+    const chunk = routeCoords.slice(from, i + 1), before = routeCoords.slice(0, from + 1);
+    const known = from > 0 && simplify(chunk, 25).every(([la, lo]) => locateOnRoute(la, lo, before).dist < 300);
+    if (!known) out.push(chunk);
+    from = i;
+  }
   return out.length ? out : [routeCoords];
 }
 async function loadPois() {
@@ -54,23 +60,22 @@ async function loadPois() {
   const seen = new Set(), elements = [];
   let note = '', failed = 0, lastErr = null;
   const add = els => { for (const el of els) { const id = el.type + el.id; if (!el.id || !seen.has(id)) { seen.add(id); elements.push(el); } } };
-  for (let i = 0; i < n; i++) {
-    const teil = n > 1 ? ` ${i + 1}/${n}` : '';
-    busy(`📍 POIs laden${teil} …`);
-    $('poiSummary').textContent = 'Suche POIs …';
-    try {
-      add((await overpassFetch(queries[i], (host, k) => {
-        if (req !== poiRequest) return;
-        $('poiSummary').textContent = k ? `Suche POIs … ${host} (Ausweichserver ${k})` : `Suche POIs … ${host}`;
-        busy(`📍 POIs laden${teil} … ${host}`);
-      })).elements);
-      if (req !== poiRequest) return;
-      showPois(elements, active, '', true);
-    } catch (err) {
-      if (req !== poiRequest) return;
-      failed++; lastErr = err;
-    }
-  }
+  // Alle Abschnitte gleichzeitig anstoßen; overpassFetch verteilt sie auf die Server (je Server eine zur Zeit)
+  let done = 0;
+  const progress = host => busy(`📍 POIs laden${n > 1 ? ` ${done}/${n}` : ''} …${host ? ' ' + host : ''}`);
+  progress();
+  $('poiSummary').textContent = 'Suche POIs …';
+  await Promise.all(queries.map(q => overpassFetch(q, host => {
+    if (req !== poiRequest) return;
+    $('poiSummary').textContent = `Suche POIs … ${host}`;
+    progress(host);
+  }, () => req !== poiRequest).then(data => {
+    if (req !== poiRequest) return;
+    add(data?.elements || []); done++;
+    progress();
+    showPois(elements, active, '', done < n);
+  }, err => { failed++; lastErr = err; })));
+  if (req !== poiRequest) return;
   try {
     if (failed < n) {
       store.set('lastPois', { query: key, elements });

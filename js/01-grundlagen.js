@@ -4,28 +4,36 @@ const VALHALLA_HEIGHT_URL = VALHALLA_URL.replace(/\/route$/, '/height');
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 // Hauptserver plus Spiegel; bei Überlast (429/504, oft ohne CORS-Kopf → "NetworkError") wird der nächste versucht
 const OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-// Overpass erlaubt je Nutzer nur wenige gleichzeitige Abfragen: alle nacheinander über eine Warteschlange,
-// bei Fehler der Reihe nach die Spiegelserver. Der zuletzt erfolgreiche Server wird zuerst gefragt.
-let overpassQueue = Promise.resolve(), overpassBest = 0;
-// onTry(host, n) meldet, welcher Server gerade gefragt wird (für die Statuszeile)
-function overpassFetch(query, onTry) {
-  const run = async () => {
-    for (let n = 0; n < OVERPASS_URLS.length; n++) {
-      const k = (overpassBest + n) % OVERPASS_URLS.length;
-      onTry?.(new URL(OVERPASS_URLS[k]).hostname, n);
-      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
+// Overpass erlaubt je Nutzer nur wenige gleichzeitige Abfragen: je Server höchstens eine zur Zeit, aber die Server
+// parallel. Neue Abfragen gehen an den Server mit der kürzesten Schlange; wer gerade versagt hat (Überlast 429/504,
+// oft ohne CORS-Kopf → "NetworkError", oder Zeitüberschreitung), wird 2 Minuten lang nur noch als Letzter gefragt.
+const overpassServers = OVERPASS_URLS.map(url => ({ url, host: new URL(url).hostname, queue: Promise.resolve(), waiting: 0, badUntil: 0 }));
+// onTry(host, n) meldet, welcher Server gerade gefragt wird (für die Statuszeile); stale() bricht vor dem Start ab,
+// wenn die Abfrage inzwischen überholt ist (Route geändert), damit sie keinen Platz in der Schlange blockiert
+async function overpassFetch(query, onTry, stale) {
+  const now = Date.now();
+  const order = [...overpassServers].sort((a, b) => (a.badUntil > now) - (b.badUntil > now) || a.waiting - b.waiting);
+  for (let n = 0; n < order.length; n++) {
+    const srv = order[n];
+    srv.waiting++;
+    const turn = srv.queue.then(async () => {
+      if (stale?.()) throw Object.assign(new Error('überholt'), { fatal: true });
+      // Während des Wartens ausgefallen: gleich zum nächsten Server statt nochmal 40 s zu hängen
+      if (srv.badUntil > Date.now() && n < order.length - 1) throw new Error('übersprungen');
+      onTry?.(srv.host, n);
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 40000);
       try {
-        const res = await fetch(OVERPASS_URLS[k], { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctl.signal });
-        if (res.ok) { overpassBest = k; return await res.json(); }
+        const res = await fetch(srv.url, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctl.signal });
+        if (res.ok) return await res.json();
         if (res.status === 400) throw Object.assign(new Error('Abfrage ungültig'), { fatal: true });
-      } catch (err) { if (err.fatal) throw err; }
-      finally { clearTimeout(timer); }
-    }
-    throw new Error('OSM-Datenserver (Overpass) nicht erreichbar oder überlastet. 💡 In einer Minute Route neu berechnen.');
-  };
-  const p = overpassQueue.then(run, run);
-  overpassQueue = p.catch(() => {});
-  return p;
+        throw new Error(res.status);
+      } finally { clearTimeout(timer); }
+    });
+    srv.queue = turn.catch(() => {}).finally(() => srv.waiting--);
+    try { const data = await turn; srv.badUntil = 0; return data; }
+    catch (err) { if (err.fatal) throw err; if (err.message !== 'übersprungen') srv.badUntil = Date.now() + 120000; }
+  }
+  throw new Error('OSM-Datenserver (Overpass) nicht erreichbar oder überlastet. 💡 In einer Minute Route neu berechnen.');
 }
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast';
 
