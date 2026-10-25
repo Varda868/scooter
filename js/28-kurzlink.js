@@ -34,10 +34,12 @@ $('linkListe').onclick = async e => {
 };
 
 let kurzLetzter = null;
+// „Mein Standort“ hieße beim Empfänger seine eigene Position, gemeint ist aber der Punkt des Absenders
+const kurzText = w => w.text === OWN_LOCATION && w.latlng ? coordText(w.latlng) : w.text || '';
 $('tourLink').onclick = () => {
   kurzLetzter = null;
   $('linkErgebnis').textContent = ''; $('linkTeilen').hidden = $('linkKopieren').hidden = true; $('linkMachen').hidden = false;
-  const s = waypoints[0]?.text, z = waypoints.at(-1)?.text;
+  const s = waypoints[0]?.text === OWN_LOCATION ? 'Start' : waypoints[0]?.text, z = waypoints.at(-1)?.text;
   $('linkName').value = s && z ? `${s.split(',')[0]} → ${z.split(',')[0]}` : '';
   kurzListe();
   $('linkDlg').showModal();
@@ -48,7 +50,7 @@ $('linkMachen').onclick = async () => {
   if (wps.length < 2) return;
   $('linkMachen').disabled = true; $('linkErgebnis').textContent = 'erzeuge Link …';
   try {
-    const tour = { name: $('linkName').value.trim(), waypoints: wps.map(w => ({ lat: w.latlng.lat, lon: w.latlng.lng, text: w.text || '' })),
+    const tour = { name: $('linkName').value.trim(), waypoints: wps.map(w => ({ lat: w.latlng.lat, lon: w.latlng.lng, text: kurzText(w) })),
       excluded: excluded.map(ll => [ll.lat, ll.lng]) };
     const res = await fetch(API_URL + 'kurz.php', { method: 'POST', body: JSON.stringify({ tour, tage: +$('linkTage').value }) });
     const d = await res.json().catch(() => ({}));
@@ -75,7 +77,8 @@ async function kurzOeffnen(id) {
     if (!res.ok) throw new Error(d.fehler || `HTTP ${res.status}`);
     const t = d.tour, wps = t.waypoints.map(w => ({ latlng: L.latLng(w.lat, w.lon), text: w.text }));
     const was = t.name || `${wps[0].text || 'Start'} → ${wps.at(-1).text || 'Ziel'}`;
-    const leer = !waypoints.some(w => w.latlng);
+    // Nur der GPS-Start beim Öffnen der App zählt nicht als Planung
+    const leer = !waypoints.some(w => w.latlng && w.text !== OWN_LOCATION);
     if (!leer && !confirm(`Tour „${was}“ (${wps.length} Punkte) aus dem Link laden? Die aktuelle Planung lässt sich mit ↶ zurückholen.`)) return;
     changeWaypoints(() => { waypoints = wps; excluded = (t.excluded || []).map(([a, b]) => L.latLng(a, b)); });
     map.fitBounds(L.latLngBounds(wps.map(w => w.latlng)), { padding: [30, 30] });

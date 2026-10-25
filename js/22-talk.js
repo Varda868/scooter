@@ -135,7 +135,7 @@ function talkLoslassen() {
   clearTimeout(t.bis); clearInterval(t.uhr);
   if (t.codec) { t.codec.frei(); if (t.ms >= 300) talkSenden(t.a, t.ms, t.an); }
   if (t.enc) talkOpusEnde(t);
-  if (t.post?.length * t.post[0].length >= 0.3 * 8000) pushSprache(t.an, t.post);
+  if (t.post?.length && t.post.length * t.post[0].length >= 0.3 * 8000) pushSprache(t.an, t.post);
   talk.vox?.zuruecksetzen();
   talk.sperreBis = Date.now() + 500;
   talkZeigen();
@@ -422,6 +422,9 @@ talkAnZeigen();
 
 map.getContainer().appendChild($('talkPtt'));
 L.DomEvent.disableClickPropagation($('talkPtt'));
+// Halt-Leiste und Gruppenzeile bauen sich beim Tippen neu auf: Leaflet findet dann vom abgehängten Knopf aus
+// die Sperre oben nicht mehr und öffnet das Tipp-Menü der Karte. Deshalb den Klick hier ganz anhalten.
+$('talkPtt').addEventListener('click', e => e.stopPropagation());
 // Taste: halten = senden; im Modus „tippen“ schaltet jeder Tipp; während VOX sendet, übernimmt die Taste nicht
 $('talkBtn').addEventListener('pointerdown', e => {
   e.preventDefault();

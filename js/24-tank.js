@@ -5,7 +5,8 @@ const TANK_M = 1000, TANK_ANSAGE_M = 1000;
 const tank = { key: '', stations: [], stops: [], req: 0, layer: L.layerGroup().addTo(map) };
 
 // Verbrauch je km auf der Route, mit Steigungs- und Gepäckzuschlag wie bei den Spritkosten
-const tankRate = () => +roller.fuel > 0 && routeKm?.length ? fuelLiters(routeKm.at(-1)) / routeKm.at(-1) : 0;
+// (je gefahrenem km: Fährstrecken verbrauchen nichts)
+const tankRate = () => +roller.fuel > 0 && routeKm?.length && fahrKm(routeKm.at(-1)) > 0 ? fuelLiters(fahrKm(routeKm.at(-1))) / fahrKm(routeKm.at(-1)) : 0;
 // Seit dem letzten Volltanken gefahren: gespeicherte Fahrten danach plus die laufende Navi-Fahrt
 function tankKmSeit() {
   if (!roller.voll) return null;
@@ -93,11 +94,12 @@ async function tankPlan() {
   $('tankInfo').textContent = '';
   const st = tankStand(), rate = tankRate();
   if (!routeCoords || !st || !rate) return;
+  // Gerechnet in gefahrenen km (fahrKm), angezeigt und verglichen mit Tankstellen in Routen-km
   const total = routeKm.at(-1), reserve = Math.min(+roller.reserve || 0, +roller.tank * 0.9);
-  const reserveKm = (st.l - reserve) / rate, leerKm = st.l / rate;
+  const reserveKm = beiFahrKm((st.l - reserve) / rate), leerKm = beiFahrKm(st.l / rate);
   const start = `${st.geschaetzt ? 'Start mit vollem Tank angenommen' : `noch ≈ ${lText(st.l)} l`}`;
   if (leerKm >= total && reserveKm >= total) {
-    $('tankInfo').textContent = `⛽ ${start} · reicht bis zum Ziel (am Ende ≈ ${lText(st.l - total * rate)} l)`;
+    $('tankInfo').textContent = `⛽ ${start} · reicht bis zum Ziel (am Ende ≈ ${lText(st.l - fahrKm(total) * rate)} l)`;
     return;
   }
   $('tankInfo').textContent = `⛽ ${start} · Tankstellen werden gesucht …`;
@@ -108,13 +110,14 @@ async function tankPlan() {
   const nutzbar = stations.filter(s => offen(s) !== false);
   let pos = 0, level = st.l, luecke = null;
   for (let n = 0; n < 30; n++) {
-    const bisReserve = pos + Math.max(0, level - reserve) / rate, bisLeer = pos + level / rate;
+    const bisReserve = beiFahrKm(fahrKm(pos) + Math.max(0, level - reserve) / rate), bisLeer = beiFahrKm(fahrKm(pos) + level / rate);
     if (bisReserve >= total) break;
     let kandidaten = nutzbar.filter(s => s.km > pos + 0.3 && s.km <= bisReserve), inReserve = false;
     if (!kandidaten.length) { kandidaten = nutzbar.filter(s => s.km > pos + 0.3 && s.km <= bisLeer); inReserve = true; }
     if (!kandidaten.length) { if (bisLeer < total) luecke = { von: pos, leer: bisLeer }; break; }
-    const s = kandidaten.at(-1);
-    tank.stops.push({ ...s, inReserve, ankunftL: level - (s.km - pos) * rate });
+    // Die letzte vor der Reserve, aber lieber eine direkt an der Strecke (≤150 m), wenn sie höchstens 15 km früher liegt
+    const s = kandidaten.filter(x => x.dist <= 150 && x.km >= kandidaten.at(-1).km - 15).at(-1) || kandidaten.at(-1);
+    tank.stops.push({ ...s, inReserve, ankunftL: level - (fahrKm(s.km) - fahrKm(pos)) * rate });
     level = +roller.tank; pos = s.km;
   }
   // Marken: Reserve und leer ohne Tanken, empfohlene Tankstopps

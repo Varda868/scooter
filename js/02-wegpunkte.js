@@ -218,17 +218,28 @@ async function orteSuchen(q, um) {
 }
 const PHOTON_ART = { house: '🏠', street: '🛣', city: '🏙', town: '🏙', village: '🏡', locality: '📍', district: '📍' };
 async function photonSuchen(q, um) {
-  const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=8&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}`,
+  // Ohne zoom gewichtet Photon nur die Nähe („Oslo“ in Kiel → Osloring). Orte weiträumig (zoom 5), mit Hausnummer
+  // eher örtlich (Kartenzoom), damit „Bahnhofstr. 3“ in der Nähe bleibt
+  const zoom = /\d/.test(q) ? Math.min(14, Math.max(8, Math.round(map.getZoom()))) : 5;
+  const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=8&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}&zoom=${zoom}`,
     { signal: AbortSignal.timeout(6000) });
   if (!r.ok) return [];
   return ((await r.json()).features || []).map(f => {
     const p = f.properties, [lon, lat] = f.geometry.coordinates;
+    // Gleichnamiges in Übersee (Athens in Georgia) weglassen, Roller fahren in Europa
+    if (um.distanceTo([lat, lon]) > 4000e3) return null;
     const strasse = p.street ? `${p.street}${p.housenumber ? ' ' + p.housenumber : ''}` : '';
     const name = p.type === 'house' || (!p.name && strasse) ? strasse || p.name : p.name || strasse;
     const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
     return name && { icon: PHOTON_ART[p.type] || '📍', name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
       info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
   }).filter(Boolean);
+}
+// Ortsindex und Photon gemeinsam ordnen: genau der gesuchte Name zuerst, Städte vor Dörfern, sonst wie geliefert
+// („Prag“ → Prag vor Pragsdorf, „Palma“ → Palma vor la Palma de Cervelló)
+function ortRang(q, items) {
+  const n = ortNorm(q), stufe = it => (ortNorm(it.name.split(',')[0].trim()) === n ? 0 : 2) + (it.icon === '🏙' ? 0 : 1);
+  return items.map((it, k) => [stufe(it), k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(x => x[2]);
 }
 let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
@@ -243,7 +254,7 @@ function showSuggestions(input) {
     zeigeVorschlaege(input, [...lokal, ...orte], true);
     const web = (await photonSuchen(q, um).catch(() => [])).filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 1500 && o.name === it.name));
     if (req !== ortReq || document.activeElement !== input) return;
-    zeigeVorschlaege(input, [...lokal, ...orte, ...web], false);
+    zeigeVorschlaege(input, [...lokal, ...ortRang(q, [...orte, ...web])], false);
   }, 300);
   zeigeVorschlaege(input, suggestionsFor(input.value), q.length >= 3);
 }

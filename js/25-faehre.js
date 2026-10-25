@@ -1,4 +1,4 @@
-// Fähren auf der Route: Valhalla meldet Ein- und Ausschiffen als Manöver (28/29, travel_type "ferry"),
+// Fähren auf der Route: Valhalla meldet Ein- und Ausschiffen nur als Manöver (28/29, travel_type bleibt das Fahrzeug),
 // Betreiber, Dauer und Link holen wir aus OSM (route=ferry). Fahrpläne und Preise gibt es dort nicht.
 const FAEHRE_EIN = 28, FAEHRE_AUS = 29, FAEHRE_R = 300;
 const faehreCache = new Map(); // "lat,lon" → Promise mit OSM-Tags der Linie oder null
@@ -11,9 +11,13 @@ function faehrenDerRoute(trip) {
   for (const l of trip.legs) {
     for (const m of l.maneuvers) {
       const i = off + m.begin_shape_index, p = routeCoords[i];
-      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: 0, name: m.street_names?.[0] || '' };
-      else if (cur && m.travel_type === 'ferry') { cur.s += m.time || 0; cur.name ||= m.street_names?.[0] || ''; }
-      if (m.type === FAEHRE_AUS && cur && p) { Object.assign(cur, { bisKm: routeKm[i] ?? cur.km, zLat: p[0], zLon: p[1] }); out.push(cur); cur = null; }
+      // travel_type bleibt bei Valhalla das Fahrzeug, die Fähre steckt nur in den Manövern dazwischen
+      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: m.time || 0, name: m.street_names?.[0] || '' };
+      else if (m.type === FAEHRE_AUS && cur && p) {
+        const bisKm = routeKm[i] ?? cur.km;
+        // Ohne Zeit von Valhalla mit 25 km/h schätzen (wie faehrTrip)
+        Object.assign(cur, { bisKm, zLat: p[0], zLon: p[1], s: cur.s || (bisKm - cur.km) / 25 * 3600 }); out.push(cur); cur = null;
+      } else if (cur) { cur.s += m.time || 0; cur.name ||= m.street_names?.[0] || ''; }
     }
     off += decode(l.shape).length - 1;
   }
