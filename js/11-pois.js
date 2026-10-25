@@ -119,7 +119,7 @@ $('gpxTour').onclick = () => {
     `${w.note ? `<desc>${xmlEscape(w.note)}</desc>` : ''}<sym>${i === located.length - 1 ? 'Flag, Red' : 'Flag, Blue'}</sym></wpt>`).filter(Boolean);
   routeStages.forEach((km, d) => {
     const [lat, lon] = pointAtKm(km);
-    wpts.push(`  <wpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"><name>Etappenende Tag ${d + 1}</name><desc>km ${km.toFixed(0)}</desc><sym>Campground</sym></wpt>`);
+    wpts.push(`  <wpt lat="${lat.toFixed(6)}" lon="${lon.toFixed(6)}"><name>Etappenende Tag ${1 + nightsBefore(d)}${routeStageNights[d] > 1 ? ' + Ruhetag' : ''}</name><desc>km ${km.toFixed(0)}</desc><sym>Campground</sym></wpt>`);
   });
   const title = `${located[0]?.text || 'Start'} – ${located.at(-1)?.text || 'Ziel'}`;
   downloadGpx(`scooterways-${new Date().toISOString().slice(0, 10)}.gpx`, `<?xml version="1.0" encoding="UTF-8"?>

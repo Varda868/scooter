@@ -1,11 +1,15 @@
 // --- Mehrtagestour: Etappen nach Fahrzeit pro Tag, Etappenende auf einen Halt ziehen, Zeltplätze in der Nähe ---
 let stageRequest = 0;
 
+// Nächte bis einschließlich Etappenende n-1; ein Ruhetag (2 Nächte) schiebt alle folgenden Tage um einen weiter
+const nightsBefore = n => routeStageNights.slice(0, n).reduce((a, b) => a + b, 0);
+const tourDays = () => 1 + nightsBefore(routeStages.length);
+
 // Ankunftszeit an Routen-km: Tag 1 ab jetzt, jeder weitere Tag ab der eingestellten Startzeit; Pausen je Tag gezählt
 function etaAtKm(km) {
   const kmh = routeKmh || +$('speed').value * 0.8;
-  const day = routeStages.filter(e => e < km - 1e-6).length;
-  const from = day ? routeStages[day - 1] : 0;
+  const n = routeStages.filter(e => e < km - 1e-6).length, day = nightsBefore(n);
+  const from = n ? routeStages[n - 1] : 0;
   let base = Date.now();
   if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(+$('dayStart').value, 0, 0, 0); base = d.getTime(); }
   return base + withBreaks((km - from) / kmh * 3600) * 1000;
@@ -25,34 +29,62 @@ const fuelText = km => {
 };
 const climbText = () => tripClimb ? ` · ↑ ${tripClimb.up} m ↓ ${tripClimb.down} m` : '';
 const stageTripText = s => (routeStages.length
-  ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${routeStages.length + 1} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
+  ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${tourDays()} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
   : tripText(s)) + fuelText(s.length) + climbText();
 
+// Feste Übernachtungen (🌙 am Zwischenziel) als Routen-km. Über die Abschnittslängen statt locateOnRoute,
+// weil bei Hin und zurück auf derselben Straße ein Punkt sonst auf der falschen Richtung landen kann.
+function fixedNights(total) {
+  const legs = currentTrip?.legs || [], located = waypoints.filter(w => w.latlng);
+  const stops = located.filter((w, i) => !(w.shaping && i && i < located.length - 1));
+  const legSum = legs.reduce((a, l) => a + (l.summary?.length || 0), 0);
+  const scale = legSum ? total / legSum : 0;
+  let km = 0;
+  return stops.flatMap((w, k) => {
+    if (k) km += (legs[k - 1]?.summary?.length || 0) * scale;
+    if (!w.night || !k || k === stops.length - 1) return [];
+    const at = legs.length === stops.length - 1 ? km : locateOnRoute(w.latlng.lat, w.latlng.lng).km;
+    return [{ km: at, nights: w.night, name: w.text }];
+  }).filter(f => f.km > 0.5 && f.km < total - 0.5);
+}
+
 function planStages() {
-  routeStages = [];
+  routeStages = []; routeStageNights = [];
+  const fixedAt = [];
   stageLayer.clearLayers();
   $('stageSummary').textContent = '';
   const hours = +$('dayMax').value, total = routeKm?.at(-1);
-  if (!hours || !total || !routeKmh) return;
-  const perDay = routeKmh * hours;
-  if (total <= perDay * 1.1) return;
+  if (!total) return;
+  const fixed = fixedNights(total);
+  // Ohne Tagesgrenze (aus) zählen nur die festen Übernachtungen
+  const perDay = hours && routeKmh ? routeKmh * hours : Infinity;
+  if (!fixed.length && total <= perDay * 1.1) return;
   // Halte (keine Formpunkte) als bevorzugte Etappenenden
   const located = waypoints.filter(w => w.latlng);
   const stopKms = located.filter((w, i) => i && i < located.length - 1 && !w.shaping).map(w => locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+  // Jeder Abschnitt bis zur nächsten festen Übernachtung (bzw. zum Ziel) wird für sich in Tage geteilt,
+  // die Rückfahrt zählt also ab dem Übernachtungsort neu
   let from = 0;
-  while (total - from > perDay * 1.1) {
-    const target = from + perDay;
-    const near = stopKms.filter(k => k > from + perDay * 0.5 && Math.abs(k - target) <= perDay * 0.15).sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
-    from = near ?? target;
-    routeStages.push(from);
+  for (const seg of [...fixed, { km: total }]) {
+    while (seg.km - from > perDay * 1.1) {
+      const target = from + perDay;
+      const near = stopKms.filter(k => k > from + perDay * 0.5 && k < seg.km - perDay * 0.2 && Math.abs(k - target) <= perDay * 0.15)
+        .sort((a, b) => Math.abs(a - target) - Math.abs(b - target))[0];
+      from = near ?? target;
+      routeStages.push(from); routeStageNights.push(1); fixedAt.push(null);
+    }
+    if (seg.nights) { from = seg.km; routeStages.push(from); routeStageNights.push(seg.nights); fixedAt.push(seg); }
   }
-  const ends = [...routeStages, total];
-  $('stageSummary').textContent = '🌙 ' + ends.map((e, d) => `Tag ${d + 1}: ${(e - (d ? ends[d - 1] : 0)).toFixed(0)} km`).join(' · ');
+  const ends = [...routeStages, total], dayNo = d => 1 + nightsBefore(d);
+  $('stageSummary').textContent = '🌙 ' + ends.map((e, d) => `Tag ${dayNo(d)}: ${(e - (d ? ends[d - 1] : 0)).toFixed(0)} km` +
+    (routeStageNights[d] > 1 ? ` · Tag ${dayNo(d) + 1}: Ruhetag` : '')).join(' · ');
   routeStages.forEach((km, d) => {
-    L.marker(pointAtKm(km), { zIndexOffset: 500, icon: L.divIcon({ className: 'stage-pin', html: `🌙${d + 1}`, iconSize: [30, 18], iconAnchor: [15, 9] }) })
-      .bindTooltip(`Ende Tag ${d + 1} · km ${km.toFixed(0)} · an ca. ${etaText(etaAtKm(km))}`).addTo(stageLayer);
+    const f = fixedAt[d], rest = routeStageNights[d] > 1 ? ' + Ruhetag' : '';
+    L.marker(pointAtKm(km), { zIndexOffset: 500, icon: L.divIcon({ className: 'stage-pin' + (f ? ' fixed' : ''), html: `🌙${dayNo(d)}`, iconSize: [30, 18], iconAnchor: [15, 9] }) })
+      .bindTooltip(`Ende Tag ${dayNo(d)}${rest} · km ${km.toFixed(0)}${f ? ` · fest: ${escapeHtml(f.name || 'Übernachtung')}` : ''} · an ca. ${etaText(etaAtKm(km))}`).addTo(stageLayer);
   });
-  loadStageCamps();
+  // Zeltplätze nur für die automatisch gesetzten Etappenenden, die festen sind ja schon gebucht
+  loadStageCamps(routeStages.filter((km, d) => !fixedAt[d]));
 }
 
 // Zeltplätze um Punkte: zuerst Overpass, fällt es aus, Nominatim (Sonderbegriff „Campingplatz“ = tourism=camp_site),
@@ -86,10 +118,11 @@ async function findCamps(points, radiusM = 8000) {
   return { source: 'Photon', camps: dedupe(camps) };
 }
 
-async function loadStageCamps() {
+async function loadStageCamps(kms) {
   const req = ++stageRequest;
+  if (!kms.length) return;
   try {
-    const { camps, source } = await findCamps(routeStages.map(km => pointAtKm(km)));
+    const { camps, source } = await findCamps(kms.map(km => pointAtKm(km)));
     if (req !== stageRequest) return;
     for (const c of camps) {
       const ll = L.latLng(c.lat, c.lon), name = c.name || 'Zeltplatz';
@@ -98,7 +131,7 @@ async function loadStageCamps() {
           const box = document.createElement('div');
           box.innerHTML = `<b>⛺ ${escapeHtml(name)}</b>`;
           box.append(menuBox([['via', 'Als Übernachtung (Zwischenziel)']], () =>
-            changeWaypoints(() => { insertVia(ll); waypoints.find(w => w.latlng === ll).text = name; })));
+            changeWaypoints(() => { insertVia(ll); Object.assign(waypoints.find(w => w.latlng === ll), { text: name, night: 1 }); })));
           return box;
         }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
     }

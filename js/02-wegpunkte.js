@@ -27,6 +27,7 @@ function renderWaypoints() {
     <button class="icon-btn" data-act="down" title="Nach unten" ${i < last ? '' : 'disabled'}>↓</button>
     ${i && w.dur && !w.shaping ? `<span class="wx" title="Ankunft ca. ${etaText(w.eta)}">⏱ ${durText(w.dur)}</span>` : ''}
     ${w.wx ? `<span class="wx" data-act="wx" title="${escapeHtml(w.wx.title)}">${w.wx.icon} ${w.wx.temp}°</span>` : ''}
+    ${i && i < last && !w.shaping ? `<button class="icon-btn${w.night ? ' has-night' : ' night-off'}" data-act="night" title="Feste Übernachtung hier (nochmal tippen: Ruhetag)">🌙${w.night > 1 ? '²' : ''}</button>` : ''}
     <button class="icon-btn${w.note ? ' has-note' : ''}" data-act="note" title="Notiz">📝</button>
     <button class="icon-btn" data-act="del" title="Entfernen">✕</button></div>
     ${w.noteOpen || w.note ? `<textarea rows="2" placeholder="Notiz, z. B. Pause, Tanken, Treffpunkt …">${escapeHtml(w.note || '')}</textarea>` : ''}</li>`).join('');
@@ -125,6 +126,11 @@ $('wpList').onclick = e => {
   if (act === 'del') return removeWaypoint(i);
   // Am Handy gibt es keinen Tooltip: Wetterdetails als Popup am Wegpunkt
   if (act === 'wx') return L.popup({ className: 'map-menu' }).setLatLng(waypoints[i].latlng).setContent(escapeHtml(waypoints[i].wx.title)).openOn(map);
+  // Feste Übernachtung: aus → 1 Nacht → 2 Nächte (Ruhetag) → aus; Route bleibt gleich, nur Etappen neu
+  if (act === 'night') {
+    changeWaypoints(() => { const w = waypoints[i]; w.night = ((w.night || 0) + 1) % 3 || undefined; }, false);
+    return replanTimes();
+  }
   if (act === 'note') {
     const w = waypoints[i];
     // Leere offene Notiz schließt sich wieder, sonst öffnen
@@ -265,7 +271,7 @@ function clearRoute() {
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
   wxShelter = false;
-  routeStages = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
+  routeStages = []; routeStageNights = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);

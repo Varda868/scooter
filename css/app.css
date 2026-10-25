@@ -128,10 +128,13 @@
   .route-cmp.main { border:1px solid #e4572e; }
   .route-cmp:before { display:none; }
   .route-cmp.leaflet-tooltip-left { margin-left:-4px; } .route-cmp.leaflet-tooltip-right { margin-left:4px; }
+  .stage-pin.fixed { background:#6a3d9a; }
   .stage-pin { background:#1d3557; color:#fff; border-radius:9px; font:bold 11px/18px system-ui,sans-serif; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.4); }
   .route-cmp b { color:#1a7f37; }
   .wx { flex:none; font-size:12px; white-space:nowrap; color:var(--muted); cursor:help; }
   .icon-btn.has-note { background:#fff3c4; }
+  .icon-btn.has-night { background:#dfe6ff; font-size:12px; }
+  .icon-btn.night-off { filter:grayscale(1); opacity:.5; }
   .note { white-space:pre-wrap; margin:4px 0; font-size:13px; }
   #myPois { list-style:none; padding:0; font-size:13px; }
   #myPois li { margin:4px 0; cursor:pointer; }
