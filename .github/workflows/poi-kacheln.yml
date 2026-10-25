@@ -1,4 +1,4 @@
-# Baut monatlich die POI-Kacheln (Europa) aus den Geofabrik-Extrakten und lädt sie per FTP nach scooter.thai-klasse.de/poi/.
+# Baut monatlich die POI-Kacheln und Fährlinien (Europa) aus den Geofabrik-Extrakten und lädt sie per FTP nach scooter.thai-klasse.de/poi/.
 # Land für Land: herunterladen, filtern, löschen – so reicht die Platte des Runners.
 # Zugangsdaten nur als Repository-Secrets (Settings → Secrets and variables → Actions):
 #   POI_FTP_HOST, POI_FTP_USER, POI_FTP_PASS und POI_FTP_DIR (Zielordner, z. B. /scooter.thai-klasse.de/poi)
@@ -74,7 +74,7 @@ jobs:
           # FTPS bevorzugt; passt das Zertifikat nicht zum Hostnamen (Shared Hosting: oft das Zertifikat des Servers),
           # wird verschlüsselt ohne Zertifikatsprüfung hochgeladen. Unverschlüsselt nie (Passwort im Klartext).
           up() { lftp -u "$FTP_USER" --env-password "$FTP_HOST" -e "set net:max-retries 2; set net:timeout 30; $1
-            mkdir -pf $dir/t; mirror -R --delete --parallel=4 out/t $dir/t; put out/index.json -o $dir/index.json; bye" > lftp.log 2>&1; }
+            mkdir -pf $dir/t; mkdir -pf $dir/f; mirror -R --delete --parallel=4 out/t $dir/t; mirror -R --delete --parallel=4 out/f $dir/f; put out/index.json -o $dir/index.json; bye" > lftp.log 2>&1; }
           for mode in "set ftp:ssl-force true;" "set ftp:ssl-force true; set ssl:verify-certificate no;"; do
             if up "$mode"; then echo "::notice::Hochgeladen ($mode)"; exit 0; fi
             echo "::warning::Upload mit '$mode' fehlgeschlagen: $(tail -3 lftp.log | tr '\n' ' ')"
