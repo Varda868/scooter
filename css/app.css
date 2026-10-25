@@ -6,6 +6,7 @@
   #panel { width:min(455px, 45vw); padding:16px; overflow-y:auto; border-right:1px solid var(--line); }
   #map { flex:1; }
   h1 { font-size:20px; margin:0 0 12px; display:flex; align-items:baseline; }
+  h1 .logo, .intro h2 .logo { height:1.3em; width:auto; margin-right:.4em; align-self:center; }
   .clock { margin-left:auto; font-size:13px; font-weight:400; color:var(--muted); font-variant-numeric:tabular-nums; }
   label { display:block; margin:10px 0 4px; font-size:13px; color:var(--muted); }
   input[type=text], input[type=password], input[type=number]#avgSpeed { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
