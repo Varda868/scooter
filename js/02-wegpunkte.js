@@ -187,13 +187,73 @@ function suggestionsFor(text) {
   ];
 }
 
+// --- Orte und Adressen beim Tippen (ab 3 Zeichen, 300 ms Pause): zuerst der eigene Ortsindex (poi/o/, auch Dörfer und
+// Weiler, geht offline), darunter Photon für Straßen und Adressen. Nähe zur Kartenmitte zuerst. Nominatim nur beim Bestätigen.
+const ORT_ART = { c: 'Stadt', t: 'Kleinstadt', v: 'Dorf', h: 'Weiler' }, ORT_RANG = { c: 0, t: 1, v: 2, h: 3 };
+const ortKacheln = new Map();
+const ortNorm = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/ß/g, 'ss');
+async function orteSuchen(q, um) {
+  const ix = await poiTileIndex();
+  if (!ix?.placeTiles) return [];
+  const set = new Set(ix.placeTiles), keys = [];
+  for (let a = Math.floor(um.lat) - 1; a <= Math.floor(um.lat) + 1; a++)
+    for (let o = Math.floor(um.lng) - 1; o <= Math.floor(um.lng) + 1; o++) if (set.has(`${a}_${o}`)) keys.push(`${a}_${o}`);
+  const tiles = await Promise.all(keys.map(k => {
+    const url = `${POI_TILE_URL}o/${k}.json?v=${ix.date}`;
+    if (!ortKacheln.has(url)) ortKacheln.set(url, fetch(url, { signal: AbortSignal.timeout(15000) }).then(r => r.ok ? r.json() : [])
+      .catch(() => { ortKacheln.delete(url); return []; }));
+    return ortKacheln.get(url);
+  }));
+  const n = ortNorm(q), out = [];
+  for (const [name, lat, lon, art, de, bei] of tiles.flat()) {
+    const anzeige = de || name, s = ortNorm(anzeige), s2 = de ? ortNorm(name) : '';
+    const vorn = s.startsWith(n) || s2.startsWith(n);
+    if (!vorn && !s.includes(n) && !s2.includes(n)) continue;
+    const km = um.distanceTo([lat, lon]) / 1000;
+    out.push({ icon: art === 'c' || art === 't' ? '🏙' : '🏡', name: anzeige, lat, lon, km,
+      info: [ORT_ART[art], bei && `bei ${bei}`, `${Math.round(km)} km`].filter(Boolean).join(' · '),
+      rang: (vorn ? 0 : 10) + ORT_RANG[art] * 0.5 + km / 50 });
+  }
+  return out.sort((a, b) => a.rang - b.rang).slice(0, 8);
+}
+const PHOTON_ART = { house: '🏠', street: '🛣', city: '🏙', town: '🏙', village: '🏡', locality: '📍', district: '📍' };
+async function photonSuchen(q, um) {
+  const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=8&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}`,
+    { signal: AbortSignal.timeout(6000) });
+  if (!r.ok) return [];
+  return ((await r.json()).features || []).map(f => {
+    const p = f.properties, [lon, lat] = f.geometry.coordinates;
+    const strasse = p.street ? `${p.street}${p.housenumber ? ' ' + p.housenumber : ''}` : '';
+    const name = p.type === 'house' || (!p.name && strasse) ? strasse || p.name : p.name || strasse;
+    const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
+    return name && { icon: PHOTON_ART[p.type] || '📍', name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
+      info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
+  }).filter(Boolean);
+}
+let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
   input.closest('li').querySelector('.suggest')?.remove();
-  const items = suggestionsFor(input.value);
-  if (!items.length) return;
+  const q = input.value.trim(), req = ++ortReq;
+  clearTimeout(ortTimer);
+  if (q.length >= 3 && !isCoordText(q)) ortTimer = setTimeout(async () => {
+    const um = map.getCenter(), lokal = suggestionsFor(input.value), namen = new Set(lokal.map(x => x.name.toLowerCase()));
+    const dazu = it => { if (namen.has(it.name.toLowerCase())) return false; namen.add(it.name.toLowerCase()); return true; };
+    const orte = (await orteSuchen(q, um).catch(() => [])).filter(dazu);
+    if (req !== ortReq || document.activeElement !== input) return;
+    zeigeVorschlaege(input, [...lokal, ...orte], true);
+    const web = (await photonSuchen(q, um).catch(() => [])).filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 1500 && o.name === it.name));
+    if (req !== ortReq || document.activeElement !== input) return;
+    zeigeVorschlaege(input, [...lokal, ...orte, ...web], false);
+  }, 300);
+  zeigeVorschlaege(input, suggestionsFor(input.value), q.length >= 3);
+}
+function zeigeVorschlaege(input, items, laedt) {
+  input.closest('li').querySelector('.suggest')?.remove();
+  if (!items.length && !laedt) return;
   const box = document.createElement('div');
   box.className = 'suggest';
-  box.innerHTML = items.map((it, k) => `<div data-k="${k}">${it.icon} ${escapeHtml(it.name)}</div>`).join('');
+  box.innerHTML = items.map((it, k) => `<div data-k="${k}">${it.icon} ${escapeHtml(it.name)}${it.info ? ` <span class="hint">${escapeHtml(it.info)}</span>` : ''}</div>`).join('') +
+    (laedt ? '<div class="hint suggest-laedt">… suche Orte und Adressen</div>' : '');
   // mousedown statt click: das Feld behält den Fokus, sonst löst blur vorher eine Suche mit dem Teiltext aus
   box.onmousedown = ev => {
     ev.preventDefault();
