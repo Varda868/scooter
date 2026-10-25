@@ -265,7 +265,7 @@ function clearRoute() {
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
   wxShelter = false;
-  routeStages = []; currentTrip = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
+  routeStages = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);

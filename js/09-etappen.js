@@ -11,9 +11,10 @@ function etaAtKm(km) {
   return base + withBreaks((km - from) / kmh * 3600) * 1000;
 }
 
-const stageTripText = s => routeStages.length
+const climbText = () => tripClimb ? ` · ↑ ${tripClimb.up} m ↓ ${tripClimb.down} m` : '';
+const stageTripText = s => (routeStages.length
   ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${routeStages.length + 1} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
-  : tripText(s);
+  : tripText(s)) + climbText();
 
 function planStages() {
   routeStages = [];

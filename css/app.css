@@ -222,5 +222,5 @@
 .talk-log { list-style:none; padding:0; margin:4px 0; font-size:13px; opacity:.85; }
 
 /* Streckenstufe im Reiter Tour */
-.style-line { display:flex; align-items:center; gap:8px; margin:6px 0 2px; font-size:14px; }
-.style-line select { flex:1; min-width:0; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+.style-line { display:flex; align-items:center; gap:8px; white-space:nowrap; margin:6px 0 2px; font-size:14px; }
+.style-line select { flex:1 1 auto; min-width:0; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
