@@ -45,6 +45,8 @@ const POI_TYPES = [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
   { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
+  // Anleger liegen am Wasser, oft abseits der Durchgangsstraße
+  { id: 'ferry', icon: '⛴', name: 'Fähranleger', minRadius: 1000, filters: [ '[amenity=ferry_terminal]' ] },
   // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis; standardmäßig aus
   { id: 'camp', icon: '⛺', name: 'Zeltplatz', off: true, minRadius: 2000, filters: [ '[tourism=camp_site]' ] },
   // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis; standardmäßig aus
@@ -169,7 +171,7 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '') + ($('unpaved').checked ? ' · nur befestigt' : '');
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '') + ($('unpaved').checked ? ' · nur befestigt' : '') + ($('ferry').checked ? ' · ⛴ Fähren gern' : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -197,6 +199,8 @@ for (const id of ['primary', 'hills']) $(id).addEventListener('change', showRide
 $('unpaved').checked = settings.unpaved !== false;
 updateFoldSummaries();
 $('unpaved').onchange = () => { settings.unpaved = $('unpaved').checked; updateFoldSummaries(); if (ready()) route(); };
+$('ferry').checked = !!settings.ferry;
+$('ferry').onchange = () => { settings.ferry = $('ferry').checked; updateFoldSummaries(); if (ready()) route(); };
 showRideStyle();
 
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;

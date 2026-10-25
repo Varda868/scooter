@@ -48,6 +48,7 @@
       <button id="go">Route berechnen</button>
       <div id="summary"></div>
       <div id="tankInfo" class="hint"></div>
+      <div id="faehreInfo" class="hint faehre-info"></div>
       <div id="stageSummary" class="hint"></div>
       <button id="play" hidden title="Strecke auf der Karte abfahren">▶ Vorschaufahrt</button>
       <button id="navStart" hidden title="Mit GPS navigieren, Bildschirm bleibt an">🧭 Navigation starten</button>
@@ -166,6 +167,7 @@
       <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
       <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
       <label><input id="unpaved" type="checkbox" checked> Schotter, Feld- und Waldwege meiden</label>
+      <label><input id="ferry" type="checkbox"> ⛴ Fähren bevorzugen (spart oft Strecke)</label>
       <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
       <select id="gradeWarn">
         <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
@@ -277,5 +279,6 @@
 <script src="js/22-talk.js"></script>
 <script src="js/23-standort.js"></script>
 <script src="js/24-tank.js"></script>
+<script src="js/25-faehre.js"></script>
 </body>
 </html>
