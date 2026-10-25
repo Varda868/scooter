@@ -57,11 +57,17 @@ function startNav() {
   keepScreenOn();
   nav.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
     icon: L.divIcon({ className: '', html: '<div class="nav-dot">➤</div>', iconSize: [30, 30], iconAnchor: [15, 15] }) });
-  nav.watch = navigator.geolocation.watchPosition(navFix, err => {
-    if (nav.peek != null) return; // Vorschau nicht überschreiben; der nächste Fehler oder Fix zeigt den Stand
-    $('navArrow').textContent = '⚠️'; $('navDist').textContent = 'Kein GPS';
-    $('navText').textContent = err.code === 1 ? 'Standortzugriff erlaubt? 💡 In den Browser-Einstellungen für diese Seite freigeben.' : err.message;
-  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  nav.akkuAuto = false; nav.fixAt = null; nav.karteBis = 0;
+  document.body.classList.toggle('nav-pfeil', nav.pfeil);
+  $('navPfeil').classList.toggle('active', nav.pfeil);
+  if (nav.pfeil) navPfeilSetzen(true);
+  nav.watch = navigator.geolocation.watchPosition(navFix, navGpsFehler, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  navAkku();
+}
+function navGpsFehler(err) {
+  if (nav.peek != null) return; // Vorschau nicht überschreiben; der nächste Fehler oder Fix zeigt den Stand
+  $('navArrow').textContent = '⚠️'; $('navDist').textContent = 'Kein GPS';
+  $('navText').textContent = err.code === 1 ? 'Standortzugriff erlaubt? 💡 In den Browser-Einstellungen für diese Seite freigeben.' : err.message;
 }
 
 // keepRec: die Ankunftskarte entscheidet, ob die mitgeschriebene Fahrt gespeichert wird
@@ -71,6 +77,10 @@ function stopNav(keepRec = false) {
   navPeekEnd(); navOverviewEnd(false);
   clearTimeout(nav.arriveTimer); nav.arriveTimer = null;
   navigator.geolocation?.clearWatch(nav.watch); nav.watch = null;
+  clearTimeout(nav.sparTimer); clearInterval(nav.schaetzTimer); clearTimeout(nav.karteTimer); nav.sparTimer = nav.schaetzTimer = null;
+  document.body.classList.remove('nav-pfeil');
+  if (nav.voxVorher) { nav.voxVorher = false; talkPrefs.mode = 'vox'; talkVoxEinstellen(); talkZeigen(); }
+  { const warten = [...nav.pausiert.values()]; nav.pausiert.clear(); warten.forEach(fn => fn()); }
   nav.lock?.release().catch(() => {}); nav.lock = null;
   window.speechSynthesis?.cancel();
   nav.marker?.remove(); nav.marker = null;
@@ -82,13 +92,14 @@ function stopNav(keepRec = false) {
 
 function navFix(pos) {
   if (!nav.on || !routeCoords) return;
-  nav.lastPos = pos;
-  standortFix(pos);
+  // Geschätzte Fixes (Pfeil-Modus zwischen zwei GPS-Abfragen) zählen nicht für Standort-Teilen, Fahrtenbuch und km-Zähler
+  const echt = !pos.geschaetzt;
+  if (echt) { nav.lastPos = pos; standortFix(pos); }
   const { latitude: lat, longitude: lon, accuracy, speed, heading } = pos.coords;
   const ll = L.latLng(lat, lon), total = routeKm.at(-1);
   const kmh = speed != null && speed >= 0 ? speed * 3.6 : null;
   nav.marker.setLatLng(ll).addTo(map);
-  if ((accuracy || 0) < 50) { expRecord(lat, lon); navOdo(ll, pos.timestamp); }
+  if (echt && (accuracy || 0) < 50) { expRecord(lat, lon); navOdo(ll, pos.timestamp); }
   const loc = navLocate(lat, lon);
 
   // Abweichung: mehrere Fixes nacheinander deutlich neben der Route (bei guter Genauigkeit) → ab hier neu rechnen
@@ -108,6 +119,7 @@ function navFix(pos) {
     return;
   }
   if (loc.dist <= OFF_ROUTE_M) nav.km = Math.max(nav.km - 0.05, loc.km);
+  if (echt) nav.fixAt = { km: nav.km, t: Date.now(), v: speed != null && speed >= 0 ? speed : null };
 
   const dot = nav.marker.getElement()?.firstChild;
   const dir = heading != null && !isNaN(heading) && kmh > 3 ? heading : bearing(L.latLng(pointAtKm(nav.km)), L.latLng(pointAtKm(Math.min(total, nav.km + 0.03))));
@@ -129,8 +141,8 @@ function navFix(pos) {
     $('navLanes').innerHTML = '';
   } else {
     const m = (next.km - nav.km) * 1000;
-    $('navArrow').textContent = TURN_ARROWS[next.type] || '↑';
-    $('navDist').textContent = distText(m);
+    $('navArrow').innerHTML = turnIcon(next);
+    $('navDist').textContent = (echt ? '' : '≈ ') + distText(m);
     $('navText').textContent = next.text;
     $('navLanes').innerHTML = m < LANE_M ? laneHtml(next.lanes) : '';
     // Ansage je Manöver einmal pro Stufe; die weite Stufe hängt vom Tempo ab
@@ -147,7 +159,79 @@ function navFix(pos) {
   if ($('navNote').textContent === 'Neu berechnen …') $('navNote').textContent = '';
   // Zoom nach Tempo mit Hysterese, damit er um 35 km/h nicht hin- und herspringt
   if (kmh > 40) nav.zoom = 16; else if (kmh != null && kmh < 30) nav.zoom = 17;
+  pfeilGps(next ? (next.km - nav.km) * 1000 : restM);
+  if (navOhneKarte()) return; // Pfeil-Modus: Karte bleibt stehen, keine Kacheln
   map.setView(ll, nav.manual ?? nav.zoom, { animate: true });
+}
+
+// --- Pfeil-Modus: schwarzer Bildschirm mit großem Pfeil, ohne Karte. Spart Display, Kacheln und GPS.
+// GPS nach Abstand: weiter als PFEIL_WEIT_M bis zum nächsten Manöver nur alle PFEIL_TAKT_MS ein Fix, dazwischen wird
+// mit dem letzten Tempo entlang der Route weitergerechnet; näher als PFEIL_NAH_M oder neben der Route wieder durchgehend.
+// Wetter, Verkehr, POIs und Geocaches warten, Talk nur per Sprechtaste. Ein Tipp zeigt die Karte für PFEIL_KARTE_MS.
+const PFEIL_WEIT_M = 1000, PFEIL_NAH_M = 500, PFEIL_TAKT_MS = 12000, PFEIL_KARTE_MS = 20000, PFEIL_AKKU = 0.2;
+nav.pfeil = store.get('navPfeil', false);
+nav.pausiert = new Map();
+const navOhneKarte = () => nav.on && nav.pfeil && !(Date.now() < nav.karteBis);
+// Nebendienste fragen hier, ob sie warten sollen; was wartet, läuft beim Verlassen des Pfeil-Modus nach
+function navPause(key, fn) {
+  if (!(nav.on && nav.pfeil)) return false;
+  nav.pausiert.set(key, fn);
+  return true;
+}
+function pfeilWatch() {
+  if (nav.watch != null || !nav.on) return;
+  clearTimeout(nav.sparTimer); clearInterval(nav.schaetzTimer); nav.sparTimer = nav.schaetzTimer = null;
+  nav.watch = navigator.geolocation.watchPosition(navFix, navGpsFehler, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+}
+function pfeilGps(m) {
+  if (!nav.on) return;
+  if (!nav.pfeil || nav.done || nav.off || m < PFEIL_NAH_M) { pfeilWatch(); return; }
+  if (m < PFEIL_WEIT_M || nav.watch == null) return; // Zwischenbereich: bleibt, wie es ist
+  navigator.geolocation.clearWatch(nav.watch); nav.watch = null;
+  const einzeln = () => navigator.geolocation.getCurrentPosition(p => { if (nav.on && nav.watch == null) { navFix(p); if (nav.watch == null) nav.sparTimer = setTimeout(einzeln, PFEIL_TAKT_MS); } },
+    () => { if (nav.on && nav.watch == null) nav.sparTimer = setTimeout(einzeln, PFEIL_TAKT_MS); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
+  nav.sparTimer = setTimeout(einzeln, PFEIL_TAKT_MS);
+  // Zwischen den Fixes: Position entlang der Route weiterrechnen (höchstens 20 s ab dem letzten echten Fix)
+  nav.schaetzTimer = setInterval(() => {
+    const f = nav.fixAt;
+    if (!f || f.v == null || f.v < 1 || nav.peek != null || nav.overview) return;
+    const km = Math.min(routeKm.at(-1), f.km + f.v * Math.min(20, (Date.now() - f.t) / 1000) / 1000);
+    if (km <= nav.km) return;
+    const [la, lo] = pointAtKm(km);
+    navFix({ geschaetzt: true, timestamp: Date.now(), coords: { latitude: la, longitude: lo, accuracy: 20, speed: f.v, heading: null } });
+  }, 1000);
+}
+function navPfeilSetzen(an) {
+  nav.pfeil = an; store.set('navPfeil', an);
+  document.body.classList.toggle('nav-pfeil', an && nav.on);
+  $('navPfeil').classList.toggle('active', an);
+  nav.karteBis = 0;
+  // Talk: VOX hält das Mikrofon offen, im Pfeil-Modus nur Sprechtaste
+  if (an && nav.on && talkPrefs.mode === 'vox') { nav.voxVorher = true; talkPrefs.mode = 'ptt'; talkLoslassen(); talkVoxEinstellen(); talk.mic?.schliessen?.(); talkZeigen(); }
+  if (!an && nav.voxVorher) { nav.voxVorher = false; talkPrefs.mode = 'vox'; talkVoxEinstellen(); talkZeigen(); }
+  if (!an) { pfeilWatch(); const warten = [...nav.pausiert.values()]; nav.pausiert.clear(); warten.forEach(fn => fn()); }
+  if (nav.lastPos) navFix(nav.lastPos);
+}
+$('navPfeil').onclick = e => { e.stopPropagation(); navPfeilSetzen(!nav.pfeil); };
+// Tipp auf den schwarzen Bildschirm: Karte für 20 s
+$('nav').addEventListener('click', e => {
+  if (!nav.pfeil || e.target.closest('button')) return;
+  e.stopImmediatePropagation();
+  nav.karteBis = Date.now() + PFEIL_KARTE_MS;
+  document.body.classList.remove('nav-pfeil');
+  clearTimeout(nav.karteTimer);
+  nav.karteTimer = setTimeout(() => { nav.karteBis = 0; if (nav.on && nav.pfeil) document.body.classList.add('nav-pfeil'); }, PFEIL_KARTE_MS);
+  if (nav.lastPos) navFix(nav.lastPos);
+}, true);
+// Akku unter 20 % und nicht am Laden: einmal je Fahrt von selbst in den Pfeil-Modus
+function navAkku() {
+  navigator.getBattery?.().then(b => {
+    const pruefen = () => {
+      if (!nav.on || nav.pfeil || nav.akkuAuto || b.charging || b.level > PFEIL_AKKU) return;
+      nav.akkuAuto = true; navPfeilSetzen(true); say('Akku unter 20 Prozent. Pfeilmodus an.');
+    };
+    b.onlevelchange = b.onchargingchange = pruefen; pruefen();
+  }).catch(() => {});
 }
 
 // Tipp auf die Abbiegeanzeige: nächste Manöver der Reihe nach ansehen, die Karte springt jeweils hin.
@@ -161,7 +245,7 @@ function navPeek() {
   const m = ahead[i];
   nav.peek = i; nav.peekKm = m.km;
   $('nav').classList.add('peek');
-  $('navArrow').textContent = TURN_ARROWS[m.type] || (i === ahead.length - 1 ? '🏁' : '↑');
+  $('navArrow').innerHTML = turnIcon(m, i === ahead.length - 1 ? '🏁' : '↑');
   $('navDist').textContent = `${i + 1}/${ahead.length} · ${distText((m.km - nav.km) * 1000)}`;
   $('navText').textContent = m.text;
   $('navLanes').innerHTML = laneHtml(m.lanes);

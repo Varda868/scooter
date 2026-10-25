@@ -98,6 +98,9 @@
       <div id="exploreStats" class="hint"></div>
       <button id="expClear" class="secondary" hidden>Alle Fahrten löschen</button>
       </details>
+      <details id="experimentBox" class="fold">
+      <summary>🧪 Experimentell <span class="hint">Geocaches, Wettersonden</span></summary>
+      <p class="hint">Spielereien, die nicht zum Fahren nötig sind. Sie laden nur, wenn sie eingeschaltet sind.</p>
       <div id="cacheSummary"></div>
       <ul id="caches"></ul>
       <details id="ocBox" class="fold">
@@ -120,6 +123,7 @@
       <select id="sondeRadius"><option value="50">50 km</option><option value="100" selected>100 km</option><option value="200">200 km</option></select>
       <ul id="sondes" class="sonde-list"></ul>
       <p class="hint">Daten: <a href="https://sondehub.org" target="_blank" rel="noopener">SondeHub</a> (Empfangsstationen von Funkamateuren). 🎈 steigt, 🪂 sinkt, 🎯 vorhergesagte Landung, ✓ schon geborgen.</p>
+      </details>
       </details>
     </section>
     <section id="tab-roller" class="tab" role="tabpanel" hidden>
@@ -224,15 +228,39 @@
       <ul id="talkLog" class="talk-log"></ul>
       <p class="hint">Alle in der Gruppe tragen dieselbe PLZ-Region und dasselbe Passwort ein. Die Sprache wird im Handy mit Opus (Breitband, sonst Codec2) kodiert, signiert und über öffentliche Nostr-Relays verteilt, mit Passwort verschlüsselt; die Relays löschen sie nach 1 h. Jede Durchsage kommt als Ganzes an, die Verzögerung ist etwa die Sprechdauer. Bildschirm anlassen. Talk stammt aus der b:con-App (AGPL-3.0, siehe talk/QUELLE.md).</p>
       </details>
+      <details id="profilBox" class="fold">
+      <summary>💾 Profil sichern und übertragen <span class="hint">z. B. Handy ↔ PC</span></summary>
+      <p class="hint">Alles aus diesem Browser in einer Datei: Einstellungen, Roller und Wartungsbuch, eigene POIs, Planung, Kontakte und gefahrene Touren. Die Offline-Karte und zwischengespeicherte POIs bleiben draußen.</p>
+      <label><input id="profilSchluessel" type="checkbox"> 🔑 Schlüssel mitnehmen (TomTom, Opencaching, Gruppen-Passwort, Talk-Identität)</label>
+      <div id="profilWarnung" class="hint warn" hidden>⚠️ Die Datei enthält dann Zugangsdaten und deine Talk-Identität: nur auf eigene Geräte übertragen, nicht in Chats oder Clouds teilen, danach löschen.</div>
+      <div class="profil-knoepfe"><button id="profilExport">⬇ Profil speichern</button><button id="profilTeilen" hidden>📤 Teilen</button>
+        <label class="file-btn">📂 Profil laden<input id="profilImport" type="file" accept=".json,application/json"></label></div>
+      <div id="profilStatus" class="hint"></div>
+      </details>
+      <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
     </section>
   </div>
   <div id="map"></div>
+  <dialog id="intro" class="intro">
+    <h2>🛵 Scooterways</h2>
+    <p>Routenplaner und Navi für 50er-Roller (45 km/h): keine Autobahn, keine Kraftfahrstraße, Hauptstraßen nach Wunsch meiden.</p>
+    <ol>
+      <li><b>Route:</b> Auf die Karte tippen setzt Start, Ziel und Zwischenziele. Marker lassen sich ziehen, die Route auch (◆ Formpunkt oder Straße meiden).</li>
+      <li><b>Strecke:</b> Unter 🧭 Tour von „direkt“ bis „kleinste Straßen“ wählen. Feinheiten stehen unter ⚙ Einstellung → Fahrprofil.</li>
+      <li><b>Unterwegs:</b> POIs, Tankstopps, Wetter und Fähren entlang der Route stehen unter 📍 Unterwegs.</li>
+      <li><b>Navi:</b> 🧭 Navigation starten (mit Ansage). Tippen auf den Abbiegepfeil zeigt die nächsten Abbiegungen. ▶ Vorschaufahrt fährt die Strecke vorab im Zeitraffer ab.</li>
+      <li><b>Daten:</b> Alles bleibt in diesem Browser. Unter ⚙ Einstellung → 💾 Profil lässt es sich sichern und auf ein anderes Gerät übertragen.</li>
+    </ol>
+    <h3>Hinweis</h3>
+    <p class="hint">Privates Hobbyprojekt ohne Gewähr. Routen, Öffnungszeiten, Fähren und Sperrungen stammen aus OpenStreetMap und anderen offenen Quellen und können falsch oder veraltet sein. Es gelten immer die Verkehrsschilder und die StVO. Das Handy während der Fahrt nicht bedienen: Ziel vor der Abfahrt eingeben, unterwegs nur die Ansage nutzen. Bei Talk und Standort-Teilen laufen Daten verschlüsselt über öffentliche Nostr-Relays. Nutzung auf eigene Gefahr.</p>
+    <button id="introOk">Verstanden, los geht’s</button>
+  </dialog>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
     <div id="navLanes" class="nav-lanes"></div>
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
-      <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
+      <button id="navPfeil" title="Pfeil-Modus: schwarzer Bildschirm ohne Karte, spart Akku">⬛</button><button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
   </div>
   <button id="posChip" class="pos-chip" hidden></button><div id="gruppeInfo" class="gruppe-info"></div><div id="haltBar" class="halt-bar" hidden></div><div id="talkPtt" class="talk-ptt" hidden><div id="talkAnMenu" class="talk-an-menu" hidden></div><button id="talkAn" class="talk-an" hidden>an alle ▾</button><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
@@ -262,6 +290,7 @@
     </div>
   </div>
 </div>
+<script src="js/00-logger.js"></script>
 <dialog id="linkDlg" class="sw-dlg">
   <h3>🔗 Tour als Link</h3>
   <label>Gültig <select id="linkTage"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="90">90 Tage</option><option value="365">1 Jahr</option></select></label>
@@ -296,6 +325,7 @@
 <script src="js/23-standort.js"></script>
 <script src="js/24-tank.js"></script>
 <script src="js/25-faehre.js"></script>
+<script src="js/26-profil.js"></script>
 <script src="js/27-server.js"></script>
 <script src="js/28-kurzlink.js"></script>
 </body>

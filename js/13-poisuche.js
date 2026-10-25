@@ -114,6 +114,7 @@ async function tileElements(points, maxR, radiusFor) {
 }
 
 async function loadPois() {
+  if (globalThis.navPause?.('pois', loadPois)) return;
   poiLayer.clearLayers().addTo(map);
   $('pois').innerHTML = '';
   $('poiSummary').textContent = '';
