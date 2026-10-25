@@ -45,6 +45,8 @@ const POI_TYPES = [
     '[amenity=drinking_water]', '[amenity=water_point]', '[man_made=water_tap][drinking_water=yes]' ] },
   { id: 'fuel', icon: '⛽', name: 'Tankstelle', filters: [ '[amenity=fuel]' ] },
   { id: 'toilets', icon: '🚻', name: 'Toiletten', filters: [ '[amenity=toilets]' ] },
+  { id: 'food', icon: '🛒', name: 'Lebensmittel', filters: [
+    '[shop=supermarket]', '[shop=convenience]', '[shop=bakery]', '[shop=butcher]', '[shop=greengrocer]', '[shop=farm]' ] },
   // Anleger liegen am Wasser, oft abseits der Durchgangsstraße
   { id: 'ferry', icon: '⛴', name: 'Fähranleger', minRadius: 1000, filters: [ '[amenity=ferry_terminal]' ] },
   // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis; standardmäßig aus
@@ -149,8 +151,13 @@ $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
 $('radius').onchange = () => { loadPois(); loadOpencaching(); };
 $('cachesNearRoute').onchange = () => renderCaches();
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
-  `<label><input type="checkbox" value="${t.id}"${t.off ? '' : ' checked'}> ${t.icon} ${t.name}</label>`).join(''));
-$('poiTypes').onchange = () => loadPois();
+  `<label><input type="checkbox" value="${t.id}"${(store.get('settings', {}).poiTypes?.[t.id] ?? !t.off) ? ' checked' : ''}> ${t.icon} ${t.name}</label>`).join(''));
+// Auswahl merken (neue Typen starten mit ihrem Standard)
+$('poiTypes').onchange = () => {
+  settings.poiTypes = Object.fromEntries(POI_TYPES.map(t => [t.id, $('poiTypes').querySelector(`input[value="${t.id}"]`).checked]));
+  store.set('settings', settings);
+  loadPois();
+};
 $('brand').onchange = () => loadPois();
 // Nur Marken, die aktuell 50er/45-km/h-Fahrzeuge anbieten (Honda und Yamaha nur noch elektrisch: EM1 e:, Neo's). Suzuki hat keine mehr.
 const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju', 'Beta', 'Kreidler', 'Rex', 'Nova Motors', 'Baotian', 'Niu', 'Honda', 'Yamaha'];
