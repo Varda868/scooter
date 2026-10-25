@@ -209,6 +209,12 @@
 .talk-ptt[hidden] { display:none; }
 .talk-chip { pointer-events:auto; background:#1d3557e6; color:#fff; font-size:13px; padding:3px 8px; border-radius:10px; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .talk-chip:empty { display:none; }
+.talk-an { pointer-events:auto; margin:0; width:auto; padding:4px 10px; border-radius:12px; border:0; background:#1d3557e6; color:#fff; font-size:13px; }
+.talk-an.privat { background:#7b2cbf; }
+.talk-an-menu { pointer-events:auto; display:flex; flex-direction:column; gap:2px; padding:4px; border-radius:10px; background:var(--bg); border:1px solid var(--line); box-shadow:0 2px 8px #0004; max-width:60vw; }
+.talk-an-menu[hidden] { display:none; }
+.talk-an-menu button { margin:0; width:auto; text-align:left; padding:8px 12px; background:transparent; color:var(--fg); border:0; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.talk-an-menu button.on { font-weight:700; background:var(--line); }
 #talkBtn { pointer-events:auto; width:76px; height:76px; margin:0; padding:0; border-radius:50%; border:3px solid #fff; background:#1d3557; color:#fff;
   font-size:34px; box-shadow:0 3px 10px #0006; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 #talkBtn:disabled { opacity:.5; }
