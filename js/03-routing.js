@@ -140,12 +140,20 @@ async function grobePunkte(locs) {
   if (!lang) return locs;
   // Auch die Grobroute hat eine Grenze (1500 km Luftlinie über alle Punkte, Fehler 154): in Gruppen bis GROB_MAX_KM
   // teilen, die sich je einen Wegpunkt teilen, und die Abschnitte wieder aneinanderhängen
-  const gruppen = [[locs[0]]];
-  let summe = 0;
+  // Ein einzelner Abschnitt über GROB_MAX_KM (Augsburg–Istanbul) bekommt Teilungspunkte auf der Luftlinie; Valhalla
+  // rastet sie auf die nächste Straße, die Teil-Legs werden danach wieder zu einem Leg verbunden
+  const ext = [locs[0]];
   for (let i = 1; i < locs.length; i++) {
-    const d = locs[i - 1].latlng.distanceTo(locs[i].latlng) / 1000;
-    if (summe + d > GROB_MAX_KM && gruppen.at(-1).length > 1) { gruppen.push([locs[i - 1]]); summe = 0; }
-    gruppen.at(-1).push(locs[i]); summe += d;
+    const a = locs[i - 1].latlng, b = locs[i].latlng, n = Math.ceil(a.distanceTo(b) / 1000 / GROB_MAX_KM);
+    for (let k = 1; k < n; k++) ext.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), mitte: true });
+    ext.push(locs[i]);
+  }
+  const gruppen = [[ext[0]]];
+  let summe = 0;
+  for (let i = 1; i < ext.length; i++) {
+    const d = ext[i - 1].latlng.distanceTo(ext[i].latlng) / 1000;
+    if (summe + d > GROB_MAX_KM && gruppen.at(-1).length > 1) { gruppen.push([ext[i - 1]]); summe = 0; }
+    gruppen.at(-1).push(ext[i]); summe += d;
   }
   const grob = g => {
     const key = JSON.stringify([g.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
@@ -161,7 +169,8 @@ async function grobePunkte(locs) {
     // nacheinander, nie zwei Valhalla-Anfragen gleichzeitig
     const legs = [];
     for (const g of gruppen) { const t = (await grob(g)).trip; if (t?.legs?.length !== g.length - 1) return locs; legs.push(...t.legs); }
-    trip = { legs };
+    // Teil-Legs an den Teilungspunkten verbinden: danach wieder ein Leg je Abschnitt von locs
+    trip = { legs: legs.reduce((out, leg, k) => { if (ext[k].mitte) out.push(joinLegs(out.pop(), leg)); else out.push(leg); return out; }, []) };
   } catch { return locs; }
   if (trip?.legs?.length !== locs.length - 1) return locs;
   const out = [locs[0]];
