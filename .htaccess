@@ -3,3 +3,12 @@
   RewriteEngine On
   RewriteRule ^t/([A-Za-z0-9]{8})/?$ /?t=$1 [R=302,L]
 </IfModule>
+
+# Eigene Skripte, CSS und Service Worker immer beim Server nachfragen (304, wenn unverändert).
+# Ohne das hält der Browser einzelne Dateien nach eigener Schätzung fest, und nach einem Deploy
+# läuft neues 03-routing.js mit altem 08-verkehr.js („ttKeyDa is not defined“).
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|html|webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
