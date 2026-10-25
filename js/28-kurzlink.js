@@ -88,8 +88,9 @@ const kurzId = new URLSearchParams(location.search).get('t');
 if (/^[A-Za-z0-9]{8}$/.test(kurzId || '')) kurzOeffnen(kurzId);
 kurzKnopf();
 
-// Auf der alten Adresse einmal auf den Haupteingang hinweisen; Daten im Browser gelten je Adresse
-if (location.origin + '/' === STAMMADRESSE && !store.get('hauptadresseGezeigt', false)) {
+// Auf der alten Adresse einmal auf den Haupteingang hinweisen; Daten im Browser gelten je Adresse.
+// Nicht im Rahmen (Plesk-Rahmenweiterleitung zeigt diese Adresse unter dem Haupteingang)
+if (location.origin + '/' === STAMMADRESSE && window.top === window && !store.get('hauptadresseGezeigt', false)) {
   const b = document.createElement('div');
   b.className = 'adress-hinweis';
   b.innerHTML = `Scooterways hat eine neue Adresse: <a href="${HAUPTADRESSE}">scooterways.dns.navy</a>. ` +
