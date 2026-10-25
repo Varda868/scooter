@@ -11,10 +11,17 @@ function etaAtKm(km) {
   return base + withBreaks((km - from) / kmh * 3600) * 1000;
 }
 
+// Spritkosten aus „Mein Roller“ (Verbrauch l/100 km, Preis €/l); ohne Verbrauch nichts
+const fuelText = km => {
+  const l = km * (+roller.fuel || 0) / 100;
+  if (!l) return '';
+  const eur = l * (+roller.price || 0);
+  return ` · ⛽ ${l.toFixed(1).replace('.', ',')} l` + (eur ? ` ≈ ${eur.toFixed(2).replace('.', ',')} €` : '');
+};
 const climbText = () => tripClimb ? ` · ↑ ${tripClimb.up} m ↓ ${tripClimb.down} m` : '';
 const stageTripText = s => (routeStages.length
   ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${routeStages.length + 1} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
-  : tripText(s)) + climbText();
+  : tripText(s)) + fuelText(s.length) + climbText();
 
 function planStages() {
   routeStages = [];

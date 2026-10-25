@@ -2,6 +2,7 @@
 // nie auf den Server); Sicherung als JSON-Datei. km-Stand = Tacho-Eintrag + seitdem gefahrene Touren aus dem Entdecker.
 const ROLLER_TEXT = ['model', 'year', 'plate', 'vin', 'insurer', 'policy', 'assist', 'shop', 'shopTel', 'shopAddr'];
 const ROLLER_NUM = ['odo', 'oilEvery', 'serviceMonths'];
+const ROLLER_DEZ = ['fuel', 'price']; // Verbrauch l/100 km, Benzinpreis €/l; Komma erlaubt
 let roller = { oilEvery: 0, serviceMonths: 12, log: [], ...store.get('roller', {}) };
 const saveRoller = () => store.set('roller', roller);
 const telHref = t => 'tel:' + String(t).replace(/[^\d+]/g, '');
@@ -61,6 +62,7 @@ function rollerRender() {
 
 function rollerFill() {
   for (const k of [...ROLLER_TEXT, ...ROLLER_NUM]) $('rl_' + k).value = roller[k] ?? '';
+  for (const k of ROLLER_DEZ) $('rl_' + k).value = roller[k] ? String(roller[k]).replace('.', ',') : '';
   $('rollerEdit').open = !roller.model && !roller.odo; // leer: gleich die Eingabefelder zeigen
   rollerRender();
 }
@@ -73,6 +75,15 @@ for (const k of ROLLER_NUM) $('rl_' + k).onchange = () => {
   roller[k] = $('rl_' + k).value === '' ? '' : Math.max(0, Math.round(+$('rl_' + k).value));
   if (k === 'odo') roller.odoDate = new Date().toISOString(); // ab jetzt zählen neue Fahrten dazu
   saveRoller(); rollerRender();
+};
+// Spritkosten stehen in der Tour-Zusammenfassung; nach einer Änderung dort gleich nachziehen
+for (const k of ROLLER_DEZ) $('rl_' + k).onchange = () => {
+  const v = parseFloat($('rl_' + k).value.replace(',', '.'));
+  const ohne = currentTrip && stageTripText(currentTrip.summary);
+  roller[k] = v > 0 ? Math.round(v * 100) / 100 : '';
+  $('rl_' + k).value = roller[k] ? String(roller[k]).replace('.', ',') : '';
+  saveRoller(); rollerRender();
+  if (ohne) $('summary').textContent = $('summary').textContent.replace(ohne, stageTripText(currentTrip.summary));
 };
 $('mtAdd').onclick = () => {
   const what = $('mtWhat').value.trim();
