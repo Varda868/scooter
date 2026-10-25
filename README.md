@@ -21,6 +21,19 @@ POIs entlang der Route kommen zuerst aus eigenen Kacheln unter `poi/` (neben der
 - Daten © OpenStreetMap-Mitwirkende, ODbL 1.0.
 - Vektorkarte `poi/karte.pmtiles`: `.github/workflows/karte.yml` schneidet sie im März, Juli und Oktober aus dem aktuellen Protomaps-Build. Gebiet: `tools/karte-gebiet.geojson` (Europa ohne Ukraine, Belarus und Russland, mit Istanbul und der Nordafrika-Küste), Zoom bis 14, ca. 20 GB. Gleiches FTP-Konto wie die POI-Kacheln. Die alte Datei wird vor dem Upload gelöscht, in der Zwischenzeit zeigt die App die Online-Karte. Neue Datei (ETag geändert) → die App verwirft die gespeicherten Vektorkacheln.
 
+## Server-Funktionen (`api/`, PHP)
+
+Kleine PHP-Endpunkte für Dinge, die der Browser allein nicht kann. Kein SSH, kein Cron nötig: Aufräumen läuft bei normalen Aufrufen nebenher.
+
+- Geheimnisse (Admin-Passwort-Hash, Schlüssel, DB-Zugang) liegen in `config.php` im Datenordner **außerhalb des Webroots**: `private/scooterways/` neben dem Ordner der Subdomain (Plesk-Standard), sonst `scooterways-daten/`. Das Repo enthält nie Schlüssel.
+- Datenbank: SQLite-Datei im Datenordner (Standard) oder MySQL.
+- `api/status.php` zeigt, ob PHP läuft und die Erweiterungen da sind.
+- Ersteinrichtung `api/setup.php`: braucht den Einmalcode aus `private/scooterways/setup-code.txt` (Plesk-Dateimanager). Danach ist das Setup gesperrt.
+- `api/admin.php` (für den PC): Schlüssel und Endpunkte, Fehlerberichte, Passwort. Sitzung mit `__Host-`-Cookie (Secure, HttpOnly, SameSite=Strict), CSRF-Token in jedem Formular, Login-Sperre nach 5 Fehlversuchen je IP bzw. 30 insgesamt in 15 min. Weitere Bereiche kommen als `api/lib/admin-*.php` dazu.
+- `api/fehler.php`: Fehlerberichte der Dev-Version, nur von erlaubter Herkunft, höchstens 64 kB, 10 pro Stunde je Gerät, 30 Tage aufbewahrt.
+- `api/konfig.php`: öffentliche Endpunkte für die App, nie Schlüssel.
+- Der Service Worker lässt `api/` komplett in Ruhe.
+
 ## Lizenz
 
 AGPL-3.0 (`LICENSE`), weil Talk Teile der b:con-App (AGPL-3.0) übernimmt. In `talk/` gelten zusätzlich LGPL-2.1 für Codec2 und MIT für secp256k1, siehe `talk/QUELLE.md`.
