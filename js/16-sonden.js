@@ -20,10 +20,11 @@ async function loadSondes() {
   const req = ++sondeRequest;
   sondeMoved = Date.now();
   sondeLayer.clearLayers();
-  if (!sondePrefs.on) { $('sondeSummary').textContent = 'aus'; $('sondes').innerHTML = ''; return; }
+  if (!sondePrefs.on) { $('sondeSummary').textContent = 'aus'; $('sondes').innerHTML = ''; mapBusy('sonde', null); return; }
   const c = map.getCenter(), dist = sondePrefs.radius * 1000;
   const q = `lat=${c.lat.toFixed(4)}&lon=${c.lng.toFixed(4)}&distance=${dist}`;
   $('sondeSummary').textContent = 'lade …';
+  mapBusy('sonde', '🎈 Wettersonden laden …');
   try {
     const get = url => fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
     const [live, preds, rec] = await Promise.all([
@@ -69,12 +70,13 @@ async function loadSondes() {
     }
     sondes.sort((a, b) => (!!a.rec - !!b.rec) || a.km - b.km);
     const flying = sondes.filter(sd => !sd.down && !sd.rec).length;
+    mapBusy('sonde', null);
     $('sondeSummary').textContent = sondes.length ? `${flying} in der Luft · ${sondes.length - flying} gelandet/geborgen` : `keine im Umkreis von ${sondePrefs.radius} km`;
     $('sondes').innerHTML = sondes.map((sd, i) => `<li data-i="${i}">${sd.icon} ${escapeHtml(sd.serial)} · ${Math.round(sd.tel.alt).toLocaleString('de-DE')} m · ` +
       `${sd.land && !sd.down && !sd.rec ? '🎯 ' : ''}${sd.km.toFixed(0)} km${sd.rec ? ' · geborgen' : ''} · ${agoText(sd.ts)}</li>`).join('');
     $('sondes').onclick = e => { const sd = sondes[e.target.closest('li')?.dataset.i]; if (sd) { map.setView(sd.marker.getLatLng(), Math.max(map.getZoom(), 11)); sd.marker.openPopup(); } };
   } catch (err) {
-    if (req === sondeRequest) $('sondeSummary').textContent = '⚠️ SondeHub nicht erreichbar: ' + err.message;
+    if (req === sondeRequest) { $('sondeSummary').textContent = '⚠️ SondeHub nicht erreichbar: ' + err.message; mapBusy('sonde', '⚠️ Wettersonden: SondeHub nicht erreichbar', 6000); }
   }
 }
 function sondeSchedule() {

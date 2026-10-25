@@ -230,3 +230,5 @@
 /* Streckenstufe im Reiter Tour */
 .style-line { display:flex; align-items:center; gap:8px; white-space:nowrap; margin:6px 0 2px; font-size:14px; }
 .style-line select { flex:1 1 auto; min-width:0; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+.map-busy { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:1000; display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:none; }
+.map-busy > div { background:#1d3557e6; color:#fff; font-size:13px; padding:4px 10px; border-radius:12px; white-space:nowrap; max-width:70vw; overflow:hidden; text-overflow:ellipsis; }

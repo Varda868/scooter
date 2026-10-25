@@ -23,63 +23,105 @@ function locateOnRoute(lat, lon, coords = routeCoords, kms = coords === routeCoo
 }
 
 let poiRequest = 0;
+// Lange Touren abschnittsweise abfragen (je höchstens 50 km): kleinere Overpass-Abfragen laufen seltener in die
+// Zeitgrenze, und die ersten POIs stehen schon auf der Karte, während der Rest noch lädt.
+const POI_CHUNK_KM = 50;
+function routeChunks() {
+  const out = [];
+  let from = 0;
+  for (let i = 1; i < routeCoords.length; i++)
+    if (routeKm[i] - routeKm[from] >= POI_CHUNK_KM || i === routeCoords.length - 1) { out.push(routeCoords.slice(from, i + 1)); from = i; }
+  return out.length ? out : [routeCoords];
+}
 async function loadPois() {
   poiLayer.clearLayers().addTo(map);
   $('pois').innerHTML = '';
   $('poiSummary').textContent = '';
+  mapBusy('poi', null);
   if (!routeCoords) return;
   // Schutzhütten kommen bei Gewitter, Regen oder Schnee unterwegs automatisch dazu
   const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked || (t.id === 'shelter' && wxShelter));
   if (!active.length) return;
 
   const req = ++poiRequest;
-  $('poiSummary').textContent = 'Suche POIs …';
-  const line = simplify(routeCoords).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
-  const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
-  const query = `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
-  try {
-    let elements, note = '';
+  const queries = routeChunks().map(chunk => {
+    const line = simplify(chunk, 100).map(([la, lo]) => `${la.toFixed(5)},${lo.toFixed(5)}`).join(',');
+    const around = t => `(around:${Math.max(+$('radius').value, t.minRadius || 0)},${line})`;
+    return `[out:json][timeout:60];(${active.flatMap(t => t.filters.map(f => `nwr${f}${around(t)};`)).join('')});out center tags;`;
+  });
+  const key = queries.join('|'), n = queries.length;
+  const busy = (text, ms) => { if (req === poiRequest) mapBusy('poi', text, ms); };
+  const seen = new Set(), elements = [];
+  let note = '', failed = 0, lastErr = null;
+  const add = els => { for (const el of els) { const id = el.type + el.id; if (!el.id || !seen.has(id)) { seen.add(id); elements.push(el); } } };
+  for (let i = 0; i < n; i++) {
+    const teil = n > 1 ? ` ${i + 1}/${n}` : '';
+    busy(`📍 POIs laden${teil} …`);
+    $('poiSummary').textContent = 'Suche POIs …';
     try {
-      elements = (await overpassFetch(query, (host, n) => {
-        if (req === poiRequest) $('poiSummary').textContent = n ? `Suche POIs … ${host} (Ausweichserver ${n})` : `Suche POIs … ${host}`;
-      })).elements;
-      store.set('lastPois', { query, elements });
+      add((await overpassFetch(queries[i], (host, k) => {
+        if (req !== poiRequest) return;
+        $('poiSummary').textContent = k ? `Suche POIs … ${host} (Ausweichserver ${k})` : `Suche POIs … ${host}`;
+        busy(`📍 POIs laden${teil} … ${host}`);
+      })).elements);
+      if (req !== poiRequest) return;
+      showPois(elements, active, '', true);
     } catch (err) {
+      if (req !== poiRequest) return;
+      failed++; lastErr = err;
+    }
+  }
+  try {
+    if (failed < n) {
+      store.set('lastPois', { query: key, elements });
+      if (failed) note = ` · ⚠️ ${failed} von ${n} Abschnitten nicht geladen`;
+    } else {
       const camp = active.find(t => t.id === 'camp'), lastPois = store.get('lastPois', null);
-      if (lastPois?.query === query) { // offline oder Server weg: letzte Abfrage für genau diese Route
-        elements = lastPois.elements; note = ' · 📴 gespeicherte POIs';
+      if (lastPois?.query === key) { // offline oder Server weg: letzte Abfrage für genau diese Route
+        add(lastPois.elements); note = ' · 📴 gespeicherte POIs';
       } else if (camp) { // Overpass weg: wenigstens Zeltplätze über Nominatim/Photon, an Punkten entlang der Route
+        busy('📍 Overpass weg, suche Zeltplätze …');
         const rad = Math.max(+$('radius').value, camp.minRadius), total = routeKm.at(-1);
-        const n = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
-        const { camps, source } = await findCamps(Array.from({ length: n }, (_, i) => pointAtKm(total * i / (n - 1))), rad);
-        elements = camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } }));
+        const k = Math.min(12, Math.max(2, Math.ceil(total / (2 * rad / 1000)) + 1));
+        const { camps, source } = await findCamps(Array.from({ length: k }, (_, i) => pointAtKm(total * i / (k - 1))), rad);
+        add(camps.map(c => ({ lat: c.lat, lon: c.lon, tags: { tourism: 'camp_site', ...(c.name ? { name: c.name } : {}) } })));
         note = ` · ⚠️ Overpass nicht erreichbar, nur Zeltplätze (über ${source})`;
-      } else throw err;
+      } else throw lastErr;
     }
     if (req !== poiRequest) return;
-
-    const pois = elements.map(el => {
-      const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
-      const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
-      return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
-    }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
-
-    for (const p of pois) {
-      const title = p.tags.name || p.tags.brand || p.type.name;
-      p.marker = L.marker([p.lat, p.lon], {
-        icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
-      }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
-        (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
-    }
-    $('poiSummary').textContent = (pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
-      (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '') + note;
-    $('pois').innerHTML = pois.map((p, i) =>
-      `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
-    $('pois').onclick = e => {
-      const p = pois[e.target.closest('li')?.dataset.i];
-      if (p) { map.setView([p.lat, p.lon], 16); p.marker.openPopup(); }
-    };
+    const count = showPois(elements, active, note, false);
+    busy(count ? `📍 ${count} POIs` : '📍 keine POIs im Umkreis', 3000);
   } catch (err) {
-    if (req === poiRequest) $('poiSummary').textContent = '⚠️ POIs: ' + err.message;
+    if (req !== poiRequest) return;
+    $('poiSummary').textContent = '⚠️ POIs: ' + err.message;
+    busy('⚠️ POIs: Server nicht erreichbar', 6000);
   }
+}
+
+// Marker, Liste und Zusammenfassung aus den bisher geladenen Elementen; laeuft = weitere Abschnitte kommen noch
+function showPois(elements, active, note, laeuft) {
+  poiLayer.clearLayers();
+  const pois = elements.map(el => {
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon;
+    const type = active.find(t => t.filters.some(f => matches(el.tags || {}, f)));
+    return type && lat != null ? { lat, lon, type, tags: el.tags || {}, km: locateOnRoute(lat, lon).km } : null;
+  }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
+
+  for (const p of pois) {
+    const title = p.tags.name || p.tags.brand || p.type.name;
+    p.marker = L.marker([p.lat, p.lon], {
+      icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
+    }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
+      (p.tags.opening_hours ? `<br>${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p)).addTo(poiLayer);
+  }
+  $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`
+    : pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
+    (wxShelter && !$('poiTypes').querySelector('input[value="shelter"]').checked ? ' · 🛖 Schutzhütten wegen Wetter eingeblendet' : '') + note;
+  $('pois').innerHTML = pois.map((p, i) =>
+    `<li data-i="${i}">${p.type.icon} km ${p.km.toFixed(1)} · ${escapeHtml(p.tags.name || p.tags.brand || p.type.name)}</li>`).join('');
+  $('pois').onclick = e => {
+    const p = pois[e.target.closest('li')?.dataset.i];
+    if (p) { map.setView([p.lat, p.lon], 16); p.marker.openPopup(); }
+  };
+  return pois.length;
 }
