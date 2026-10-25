@@ -74,6 +74,9 @@ async function fetchRoute(body, signal) {
 // Die öffentliche Valhalla-Instanz rechnet höchstens 200 km Luftlinie je Anfrage. Lange Strecken: zwischen weit
 // entfernten Punkten Formpunkte auf der Luftlinie einfügen, in Anfragen bis MAX_REQUEST_KM teilen und wieder zusammensetzen.
 const MAX_REQUEST_KM = 180;
+// Ein einzelner Abschnitt bis MAX_LEG_KM Luftlinie geht am Stück an den Roller (Grenze 200 km), ohne Grobroute:
+// die rechnet als Motorrad und kennt manche Zweirad-Fähre nicht (Cairnryan–Belfast gibt es nur für motor_scooter)
+const MAX_LEG_KM = 195;
 // Fährhafen eines Grobpunkts: 'ab', 'an' oder 'anab' (Ankunft und gleich weiter mit der nächsten Fähre, z. B. Ciutadella)
 const hafenAb = w => w.hafen === 'ab' || w.hafen === 'anab', hafenAn = w => w.hafen === 'an' || w.hafen === 'anab';
 function chunkLocations(locs) {
@@ -81,7 +84,7 @@ function chunkLocations(locs) {
   locs.forEach((w, i) => {
     // Zwischen zwei Fährhäfen keine Punkte aufs Wasser setzen
     if (i && !(hafenAb(locs[i - 1]) && hafenAn(w))) {
-      const a = locs[i - 1].latlng, b = w.latlng, n = Math.ceil(a.distanceTo(b) / 1000 / (MAX_REQUEST_KM * 0.9));
+      const a = locs[i - 1].latlng, b = w.latlng, n = Math.ceil(a.distanceTo(b) / 1000 / (MAX_LEG_KM));
       for (let k = 1; k < n; k++) pts.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), shaping: true });
     }
     pts.push(w);
@@ -134,25 +137,54 @@ function joinLegs(a, b) {
 // Lange Strecken: Formpunkte nicht auf die Luftlinie (landet im Meer, rastet auf falsche Fähren ein, erzwingt Umwege),
 // sondern auf eine Grobroute fürs Auto ohne Autobahn, die das öffentliche Valhalla am Stück rechnet. Alle GROB_KM ein Punkt;
 // auf Fährabschnitten keiner, stattdessen an Abfahrts- und Ankunftshafen. Klappt die Grobroute nicht: Luftlinie wie bisher.
-const GROB_KM = 150, grobCache = new Map();
+const GROB_KM = 150, GROB_MAX_KM = 1450, grobCache = new Map();
 async function grobePunkte(locs) {
-  const lang = locs.some((w, i) => i && locs[i - 1].latlng.distanceTo(w.latlng) / 1000 > MAX_REQUEST_KM * 0.9);
+  const lang = locs.some((w, i) => i && locs[i - 1].latlng.distanceTo(w.latlng) / 1000 > MAX_LEG_KM);
   if (!lang) return locs;
-  const key = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
-  if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
-    locations: locs.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < locs.length - 1 ? 'through' : 'break' })),
-    costing: 'auto', costing_options: { auto: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
-    directions_options: { units: 'kilometers' }
-  }).catch(err => { grobCache.delete(key); throw err; }));
+  // Auch die Grobroute hat eine Grenze (1500 km Luftlinie über alle Punkte, Fehler 154): in Gruppen bis GROB_MAX_KM
+  // (knapp darunter, damit z. B. Augsburg–Athen am Stück bleibt und kein Teilungspunkt im Hinterland von Split landet)
+  // teilen, die sich je einen Wegpunkt teilen, und die Abschnitte wieder aneinanderhängen
+  // Ein einzelner Abschnitt über GROB_MAX_KM (Augsburg–Istanbul) bekommt Teilungspunkte auf der Luftlinie; Valhalla
+  // rastet sie auf die nächste Straße, die Teil-Legs werden danach wieder zu einem Leg verbunden
+  const ext = [locs[0]];
+  for (let i = 1; i < locs.length; i++) {
+    const a = locs[i - 1].latlng, b = locs[i].latlng, n = Math.ceil(a.distanceTo(b) / 1000 / GROB_MAX_KM);
+    for (let k = 1; k < n; k++) ext.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), mitte: true });
+    ext.push(locs[i]);
+  }
+  const gruppen = [[ext[0]]];
+  let summe = 0;
+  for (let i = 1; i < ext.length; i++) {
+    const d = ext[i - 1].latlng.distanceTo(ext[i].latlng) / 1000;
+    if (summe + d > GROB_MAX_KM && gruppen.at(-1).length > 1) { gruppen.push([ext[i - 1]]); summe = 0; }
+    gruppen.at(-1).push(ext[i]); summe += d;
+  }
+  const grob = g => {
+    const key = JSON.stringify([g.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
+    if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
+      locations: g.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < g.length - 1 ? 'through' : 'break' })),
+      // motorcycle statt auto: wählt Fähren wie ein Zweirad (Holyhead–Dublin statt Isle of Man, Cairnryan wird für
+      // Autos gar nicht gefunden) und bleibt mit use_highways 0 ebenso auf Landstraßen
+      costing: 'motorcycle', costing_options: { motorcycle: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
+      directions_options: { units: 'kilometers' }
+    }).catch(err => { grobCache.delete(key); throw err; }));
+    return grobCache.get(key);
+  };
   let trip;
-  try { trip = (await grobCache.get(key)).trip; } catch { return locs; }
+  try {
+    // nacheinander, nie zwei Valhalla-Anfragen gleichzeitig
+    const legs = [];
+    for (const g of gruppen) { const t = (await grob(g)).trip; if (t?.legs?.length !== g.length - 1) return locs; legs.push(...t.legs); }
+    // Teil-Legs an den Teilungspunkten verbinden: danach wieder ein Leg je Abschnitt von locs
+    trip = { legs: legs.reduce((out, leg, k) => { if (ext[k].mitte) out.push(joinLegs(out.pop(), leg)); else out.push(leg); return out; }, []) };
+  } catch { return locs; }
   if (trip?.legs?.length !== locs.length - 1) return locs;
   const out = [locs[0]];
   trip.legs.forEach((leg, j) => {
     const a = locs[j], b = locs[j + 1];
     // Von Hand eingebaute Fähre bleibt, wie sie ist (faehrWegpunkte)
     if (hafenAb(a) && hafenAn(b) && b.faehre) { out.push(b); return; }
-    if (a.latlng.distanceTo(b.latlng) / 1000 > MAX_REQUEST_KM * 0.9) {
+    if (a.latlng.distanceTo(b.latlng) / 1000 > MAX_LEG_KM) {
       const pts = decode(leg.shape), km = [0];
       for (let i = 1; i < pts.length; i++) km.push(km[i - 1] + L.latLng(pts[i - 1]).distanceTo(L.latLng(pts[i])) / 1000);
       // Fährstücke als Index-Bereiche [von, bis] der Shape
@@ -160,6 +192,8 @@ async function grobePunkte(locs) {
       const faehren = [];
       leg.maneuvers.forEach((m, k) => { if (m.type === 28) {
         const aus = leg.maneuvers.slice(k + 1).find(n => n.type === 29);
+        // weiteres 28 vor dem 29 gehört zur selben Überfahrt (Calais→Dover meldet zwei)
+        if (faehren.length && faehren.at(-1)[1] === (aus ? aus.begin_shape_index : m.end_shape_index)) return;
         faehren.push([m.begin_shape_index, aus ? aus.begin_shape_index : m.end_shape_index]);
       } });
       // ab dem Anlegerpunkt selbst: OSM-Fährlinien sind oft gerade, dann hat das Fährstück nur zwei Punkte
@@ -229,10 +263,17 @@ async function planRoute(locs, exclude = []) {
     const fa = chunk.length === 2 && hafenAb(chunk[0]) && chunk[1].faehre;
     if (fa) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
+    // Zwischen Grobpunkten ohne Fähre soll der Roller auch keine nehmen: sonst weicht ein langer Abschnitt über eine
+    // andere Überfahrt aus und pendelt (Rotterdam → Harwich → England → Newhaven–Dieppe → Calais)
+    if (chunk.some(w => w.grob)) body.costing_options.motor_scooter.use_ferry = 0;
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
     if (chunks.length === 1 && locs.length === 2) body.alternates = 2;
     const data = await fetchRoute(body, signal);
+    // Fähre im Roller-Abschnitt, obwohl die Grobroute dort keine hat: meist ist der Hafen für 50er nur über eine
+    // Kraftfahrstraße erreichbar (Europoort), dann sucht Valhalla einen Umweg übers Wasser
+    if (chunk.some(w => w.grob) && data.trip?.legs?.some(l => l.maneuvers.some(m => m.type === 28)) && !summaryNote.includes('Umweg über eine weitere Fähre'))
+      summaryNote += ' · ⚠ Umweg über eine weitere Fähre: Zufahrt zum Hafen für 50er vermutlich gesperrt';
     if (chunks.length === 1) return data;
     trips.push(data.trip);
   }

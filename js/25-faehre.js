@@ -13,7 +13,9 @@ function faehrenDerRoute(trip) {
       const i = off + m.begin_shape_index, p = routeCoords[i];
       // travel_type bleibt bei Valhalla das Fahrzeug, die Fähre steckt nur in den Manövern dazwischen
       const t = Number.isFinite(+m.time) ? +m.time : 0;
-      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
+      // Zwei 28 hintereinander (Calais→Dover: „Douvres – Calais“, dann „Dover – Calais“) sind eine Überfahrt
+      if (m.type === FAEHRE_EIN && cur) cur.s += t;
+      else if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
       else if (m.type === FAEHRE_AUS && cur && p) {
         const bisKm = routeKm[i] ?? cur.km;
         // Ohne Zeit von Valhalla mit 25 km/h schätzen (wie faehrTrip)
@@ -184,6 +186,7 @@ function faehrLinie(id, pts, t) {
 
 // Beide Anleger als Zwischenziele, in Fahrtrichtung: der vom vorigen Punkt aus nähere zuerst. Die Linie selbst und
 // die OSM-Dauer reisen am Ankunftspunkt mit, planRoute macht daraus einen Fährabschnitt (faehrWegpunkte)
+const FAEHR_ZIEL_M = 30000;
 function faehreInRoute(pts, t) {
   const a = L.latLng(pts[0]), b = L.latLng(pts.at(-1)), text = was => `⛴ ${t.name || 'Fähre'} · ${was}`;
   changeWaypoints(() => {
@@ -196,6 +199,10 @@ function faehreInRoute(pts, t) {
     waypoints[i].text = text(zuerstB ? 'an' : 'ab');
     if (zuerstB) waypoints[i].faehre = faehre;
     waypoints.splice(zuerstB ? i : i + 1, 0, { latlng: b, text: text(zuerstB ? 'ab' : 'an'), shaping: false, ...(zuerstB ? {} : { faehre }) });
+    // Liegt das Ziel am Abfahrtshafen (Route Augsburg→Genua, dann Genua–Olbia gewählt), wird der Ankunftshafen das
+    // neue Ziel; sonst führe die Route über die Fähre und wieder zurück zum alten Ziel
+    const j = waypoints.findIndex(w => /· an$/.test(w.text || '') && w.latlng === (zuerstB ? a : b)), ab = waypoints[j - 1]?.latlng;
+    if (j === waypoints.length - 2 && ab && waypoints.at(-1).latlng?.distanceTo(ab) < FAEHR_ZIEL_M) waypoints.pop();
   });
 }
 
