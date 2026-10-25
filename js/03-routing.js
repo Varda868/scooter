@@ -356,7 +356,7 @@ function showTrip(trip, alternates = []) {
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
-    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type,
+    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type, exits: m.roundabout_exit_count,
       verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }
