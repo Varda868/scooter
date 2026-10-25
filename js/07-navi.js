@@ -111,6 +111,7 @@ function navFix(pos) {
   const restM = (total - nav.km) * 1000;
   if (restM < 30 && !nav.done) { nav.done = true; say('Sie haben Ihr Ziel erreicht'); }
   navArriveWatch(ll);
+  tankNavi(nav.km);
   if (nav.overview) { $('navSpeed').textContent = kmh != null ? `${Math.round(kmh)} km/h` : ''; return; }
   if (nav.peek != null) {
     // Vorschau läuft: Anzeige und Karte gehören ihr; ist das angezeigte Manöver schon erreicht, zurück zur Fahrt

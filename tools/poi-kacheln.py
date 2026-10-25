@@ -11,7 +11,8 @@ import json, os, re, sys, datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEEP = {'name', 'brand', 'brands', 'operator', 'opening_hours', 'website', 'contact:website', 'url', 'phone', 'contact:phone',
         'contact:mobile', 'email', 'contact:email', 'fee', 'motorcycle:brands', 'addr:street', 'addr:housenumber', 'addr:postcode',
-        'addr:city', 'tents', 'caravans', 'cabins', 'reservation', 'stars', 'capacity', 'power_supply', 'shower', 'dog'}
+        'addr:city', 'tents', 'caravans', 'cabins', 'reservation', 'stars', 'capacity', 'power_supply', 'shower', 'dog',
+        'automated', 'self_service'}
 
 
 def filters():
@@ -63,7 +64,8 @@ def main(out):
         seen.add(oid)
         lon, lat = point(f['geometry'])
         keep = {k: v for k, v in tags.items() if k in KEEP or k in keys or
-                (re.match(r'^(motorcycle|scooter):', k) and v == 'yes')}
+                (re.match(r'^(motorcycle|scooter):', k) and v == 'yes') or
+                (re.match(r'^payment:(cash|coins|notes|credit_cards|debit_cards|girocard|maestro|visa|mastercard)$', k) and v in ('yes', 'no'))}
         tiles.setdefault(f'{int(lat // 1)}_{int(lon // 1)}', []).append([oid, round(lat, 5), round(lon, 5), keep])
     os.makedirs(os.path.join(out, 't'), exist_ok=True)
     for k, items in tiles.items():

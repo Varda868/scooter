@@ -108,6 +108,13 @@
   .file-btn { display:block; margin-top:14px; padding:8px; border:1px dashed var(--line); border-radius:6px; text-align:center; cursor:pointer; color:var(--fg); font-size:14px; }
   .file-btn input { display:none; }
   .poi-icon { font-size:20px; line-height:1; text-shadow:0 0 3px #fff; }
+  .poi-badge { position:absolute; left:14px; top:12px; font-size:9px; white-space:nowrap; text-shadow:none; }
+  .poi-badge:empty { display:none; }
+  .tank-stop { filter:drop-shadow(0 0 3px #2a9d8f); }
+  .stage-pin.tank-pin.reserve { background:#e9a400; }
+  .stage-pin.tank-pin.leer { background:#d7263d; }
+  .tank-row { display:flex; gap:8px; align-items:center; margin:6px 0; }
+  .tank-row button { width:auto; margin:0; }
   /* Unwetter: schlanker farbiger Ring je Gefahr */
   .wx-pin span { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border:1.5px solid; border-radius:50%;
     background:rgba(255,255,255,.75); font-size:15px; line-height:1; box-shadow:0 0 2px rgba(0,0,0,.3); }

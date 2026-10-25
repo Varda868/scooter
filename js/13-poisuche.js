@@ -218,9 +218,10 @@ function showPois(elements, active, note, laeuft) {
   for (const p of pois) {
     const title = p.tags.name || p.tags.brand || p.type.name;
     p.marker = L.marker([p.lat, p.lon], {
-      icon: L.divIcon({ className: 'poi-icon', html: p.type.icon, iconSize: [24, 24] }), title
+      icon: L.divIcon({ className: 'poi-icon', html: p.type.id === 'fuel' ? `⛽<span class="poi-badge">${fuelBadges(p.tags)}</span>` : p.type.icon, iconSize: [24, 24] }), title
     }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
-      (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') + workshopInfo(p) + contactInfo(p.tags)).addTo(poiLayer);
+      (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + workshopInfo(p) + contactInfo(p.tags) +
+      (p.type.id === 'fuel' && +roller.tank > 0 ? '<br><button data-tank-voll>⛽ Hier vollgetankt</button>' : '')).addTo(poiLayer);
   }
   $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`
     : pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +

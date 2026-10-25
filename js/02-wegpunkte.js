@@ -272,6 +272,7 @@ function clearRoute() {
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
   wxShelter = false;
   routeStages = []; routeStageNights = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
+  tankPlan();
   loadPois();
   oc.request++;
   caches = caches.filter(c => !c.oc);
