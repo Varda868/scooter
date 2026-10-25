@@ -37,6 +37,8 @@ self.addEventListener('fetch', e => {
   // Range-Anfragen (PMTiles-Kartendatei) nicht anfassen: 206-Antworten lassen sich nicht cachen,
   // die Kacheln der Vektorkarte speichert die App selbst in IndexedDB
   if (req.method !== 'GET' || req.headers.has('range') || url.pathname.endsWith('.pmtiles')) return;
+  // Server-API und Admin-Bereich nie anfassen: immer live, und die Admin-Seite darf nicht als App-Hülle im Speicher landen
+  if (url.origin === location.origin && url.pathname.includes('/api/')) return;
 
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
