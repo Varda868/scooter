@@ -11,10 +11,15 @@ function etaAtKm(km) {
   return base + withBreaks((km - from) / kmh * 3600) * 1000;
 }
 
-// Spritkosten aus „Mein Roller“ (Verbrauch l/100 km, Preis €/l); ohne Verbrauch nichts
+// Spritkosten aus „Mein Roller“ (Verbrauch l/100 km, Preis €/l); ohne Verbrauch nichts.
+// Zuschläge: Steigung als Hubarbeit m·g·h (180 kg Roller und Fahrer, 32 MJ/l Benzin, ~18 % Wirkungsgrad
+// → gut 0,03 l je 100 hm bergauf, bergab zurück gibt es fast nichts); Mehrtagestour mit Gepäck: +20 kg und
+// +5 % auf der Ebene (Roll- und Luftwiderstand der Taschen).
+const FUEL_MASSE = 180, FUEL_GEPAECK = 20, FUEL_MJ_L = 32 * 0.18;
 const fuelText = km => {
-  const l = km * (+roller.fuel || 0) / 100;
-  if (!l) return '';
+  if (!(+roller.fuel > 0)) return '';
+  const gepaeck = routeStages.length > 0, masse = FUEL_MASSE + (gepaeck ? FUEL_GEPAECK : 0);
+  const l = km * roller.fuel / 100 * (gepaeck ? 1.05 : 1) + (tripClimb ? masse * 9.81 * tripClimb.up / 1e6 / FUEL_MJ_L : 0);
   const eur = l * (+roller.price || 0);
   return ` · ⛽ ${l.toFixed(1).replace('.', ',')} l` + (eur ? ` ≈ ${eur.toFixed(2).replace('.', ',')} €` : '');
 };
