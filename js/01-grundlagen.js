@@ -83,6 +83,16 @@ const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, 
 const gradeSignLayer = L.layerGroup().addTo(map);
 const stageLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
+// Ladeanzeige oben auf der Karte, je Quelle eine Zeile (POIs, Sonden …); text = null nimmt sie weg, ms blendet nach Zeit aus
+const mapBusyBox = L.DomUtil.create('div', 'map-busy', map.getContainer()), mapBusyTimer = {};
+function mapBusy(key, text, ms) {
+  clearTimeout(mapBusyTimer[key]);
+  let el = mapBusyBox.querySelector(`[data-k="${key}"]`);
+  if (text == null) { el?.remove(); return; }
+  if (!el) { el = L.DomUtil.create('div', '', mapBusyBox); el.dataset.k = key; }
+  el.textContent = text;
+  if (ms) mapBusyTimer[key] = setTimeout(() => el.remove(), ms);
+}
 const cacheLayer = L.layerGroup().addTo(map);
 let caches = [];
 const oc = { key: '', on: true, request: 0 };
