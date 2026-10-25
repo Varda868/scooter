@@ -150,6 +150,13 @@ async function faehrenZeigen(trip) {
 // Eine Linie der Kartenebene: zart mit ⛴ in der Mitte; Hover oder Antippen hebt sie hervor, zeigt die Anleger
 // und das Infokästchen. Kurze Fluss- und Seefähren (unter FAEHR_KLEIN_KM) bleiben weg, die stehen nur an der Route.
 const FAEHR_KLEIN_KM = 5;
+// Eigenes Schiffchen statt Emoji: ⛴ wird unter Windows klein und blass gezeichnet und sieht dann aus wie eine Wolke
+const FAEHR_SVG = '<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="11" fill="#1f6fd1" stroke="#fff" stroke-width="2"/>' +
+  '<path d="M7 9h10l-1 3H8zM10 6h4v3h-4zM5.5 13h13l-2 4h-9z" fill="#fff"/></svg>';
+// Die Mitten-Symbole erst ab FAEHR_MITTE_ZOOM, weiter draußen (Ägäis) wird es sonst ein Teppich
+const FAEHR_MITTE_ZOOM = 7;
+const faehrMitteKlasse = () => map.getContainer().classList.toggle('faehr-weit', map.getZoom() < FAEHR_MITTE_ZOOM);
+map.on('zoomend', faehrMitteKlasse); faehrMitteKlasse();
 const faehrLaenge = pts => pts.reduce((s, p, i) => i ? s + L.latLng(pts[i - 1]).distanceTo(p) : 0, 0) / 1000;
 function faehrLinie(id, pts, t) {
   const g = L.layerGroup().addTo(faehrLayer);
@@ -159,14 +166,14 @@ function faehrLinie(id, pts, t) {
   const linie = L.polyline(pts, { color: farbe, ...zart, dashArray: ok ? null : '6 6' }).addTo(g);
   const anleger = L.layerGroup([pts[0], pts.at(-1)].map(p => L.circleMarker(p, { radius: 5, color: '#fff', weight: 2, fillColor: farbe, fillOpacity: 1, interactive: false })));
   const mitte = L.marker(linie.getCenter(), { keyboard: false,
-    icon: L.divIcon({ className: 'poi-icon faehr-mitte', html: '⛴', iconSize: [20, 20] }), title: t.name || 'Fähre' }).addTo(g);
+    icon: L.divIcon({ className: 'faehr-mitte', html: FAEHR_SVG, iconSize: [18, 18] }), title: t.name || 'Fähre' }).addTo(g);
   let offen = false;
   const hell = an => { linie.setStyle(an ? stark : zart); if (an) { linie.bringToFront(); anleger.addTo(g); } else if (!offen) g.removeLayer(anleger); };
   const popup = () => {
     const box = document.createElement('div');
     box.innerHTML = `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`;
     if (waypoints[0].latlng && waypoints.at(-1).latlng)
-      box.append(menuBox([['faehre', '⛴ Diese Fähre in die Route']], () => faehreInRoute(pts, t.name)));
+      box.append(menuBox([['faehre', '⛴ Diese Fähre in die Route']], () => faehreInRoute(pts, t)));
     else box.insertAdjacentHTML('beforeend', '<div class="hint">Erst Start und Ziel setzen, dann lässt sich die Fähre einbauen.</div>');
     return box;
   };
@@ -175,15 +182,20 @@ function faehrLinie(id, pts, t) {
   return g;
 }
 
-// Beide Anleger als Zwischenziele, in Fahrtrichtung: der vom vorigen Punkt aus nähere zuerst
-function faehreInRoute(pts, name) {
-  const a = L.latLng(pts[0]), b = L.latLng(pts.at(-1)), text = was => `⛴ ${name || 'Fähre'} · ${was}`;
+// Beide Anleger als Zwischenziele, in Fahrtrichtung: der vom vorigen Punkt aus nähere zuerst. Die Linie selbst und
+// die OSM-Dauer reisen am Ankunftspunkt mit, planRoute macht daraus einen Fährabschnitt (faehrWegpunkte)
+function faehreInRoute(pts, t) {
+  const a = L.latLng(pts[0]), b = L.latLng(pts.at(-1)), text = was => `⛴ ${t.name || 'Fähre'} · ${was}`;
   changeWaypoints(() => {
     insertVia(a);
     const i = waypoints.findIndex(w => w.latlng === a), vor = waypoints[i - 1]?.latlng;
     const zuerstB = vor && vor.distanceTo(b) < vor.distanceTo(a);
+    const coords = pts.map(p => [L.latLng(p).lat, L.latLng(p).lng]);
+    if (zuerstB) coords.reverse();
+    const faehre = { coords, s: faehreDauer(t.duration) };
     waypoints[i].text = text(zuerstB ? 'an' : 'ab');
-    waypoints.splice(zuerstB ? i : i + 1, 0, { latlng: b, text: text(zuerstB ? 'ab' : 'an'), shaping: false });
+    if (zuerstB) waypoints[i].faehre = faehre;
+    waypoints.splice(zuerstB ? i : i + 1, 0, { latlng: b, text: text(zuerstB ? 'ab' : 'an'), shaping: false, ...(zuerstB ? {} : { faehre }) });
   });
 }
 

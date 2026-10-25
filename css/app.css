@@ -271,7 +271,9 @@
 .faehre-info a { white-space: nowrap; }
 /* POI bei Ankunft geschlossen */
 .poi-icon.poi-zu { opacity: 0.45; filter: grayscale(1); }
-.poi-icon.faehr-mitte { font-size: 15px; opacity: 0.9; cursor: pointer; }
+.faehr-mitte { cursor: pointer; line-height: 0; }
+.faehr-mitte svg { display: block; filter: drop-shadow(0 0 1px rgba(0,0,0,.4)); }
+.faehr-weit .faehr-mitte { display: none; }
 /* Ortsvorschläge: Art, nächste Stadt, Entfernung klein dahinter */
 .suggest .hint { font-size:12px; margin-left:4px; }
 .suggest .suggest-laedt { padding:4px 8px; }
