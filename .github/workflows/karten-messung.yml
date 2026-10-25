@@ -1,0 +1,26 @@
+# Einmalige Messung: wie groß wäre ein PMTiles-Ausschnitt aus dem Protomaps-Build (nur --dry-run, lädt nichts herunter)
+name: Karten-Messung
+on:
+  push:
+    branches: [karten-messung]
+permissions:
+  contents: read
+jobs:
+  messen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pmtiles
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          url=$(gh api repos/protomaps/go-pmtiles/releases/latest --jq '.assets[] | select(.name | test("Linux_x86_64")) | .browser_download_url')
+          curl -fsSL "$url" | tar xz pmtiles
+          build=$(curl -fsSL https://build-metadata.protomaps.dev/builds.json | jq -r '.[-1].key')
+          echo "::notice::Build $build"
+          for area in "Deutschland 5.8,47.2,15.1,55.1" "Mitteleuropa 2.0,45.0,24.5,55.5" "Europa -11,34,32,71.5"; do
+            set -- $area
+            for z in 14 15; do
+              out=$(./pmtiles extract "https://build.protomaps.com/$build" x.pmtiles --bbox=$2 --maxzoom=$z --dry-run 2>&1 | grep -i -E "total|size|bytes" | tail -2 | tr '\n' ' ')
+              echo "::notice::$1 z$z: $out"
+            done
+          done
