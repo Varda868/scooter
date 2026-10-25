@@ -1,6 +1,6 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v47';
+const VERSION = 'v48';
 // Stammadresse wie in js/01-grundlagen.js: Zweitadressen laden POI-Kacheln von dort
 const STAMM_ORIGIN = 'https://scooter.thai-klasse.de';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
@@ -10,7 +10,7 @@ const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
 const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-poidetails.js', 'js/17-fahrten.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js'];
-const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', ...APP_FILES];
+const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'favicon.svg', 'logo-scw.svg', 'icon-192.png', 'badge-96.png', ...APP_FILES];
 const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
 
 // CDN-Dateien einzeln und fehlertolerant: ein Aussetzer dort soll die Installation nicht verhindern
@@ -130,7 +130,7 @@ async function pushSprachpost(p) {
   fenster.forEach(f => f.postMessage({ post: id }));
   // App im Vordergrund: dort erscheint sie in der Liste, keine Benachrichtigung nötig
   if (fenster.some(f => f.focused && f.visibilityState === 'visible')) return;
-  await self.registration.showNotification(`🎙 Sprachpost von ${name}`, { body: 'Tippen zum Abhören', icon: 'icon-192.png', badge: 'icon-192.png',
+  await self.registration.showNotification(`🎙 Sprachpost von ${name}`, { body: 'Tippen zum Abhören', icon: 'icon-192.png', badge: 'badge-96.png',
     tag: 'post-' + p.von, renotify: true, data: { post: id } });
 }
 self.addEventListener('push', e => e.waitUntil((async () => {
@@ -145,7 +145,7 @@ self.addEventListener('push', e => e.waitUntil((async () => {
     n.a === 'halt' ? [`${name} ${PUSH_HALT[n.g] || 'steht'}`, n.la != null ? 'Tippen zeigt den Ort' : ''] :
     n.a === 'treff' ? [`🤝 Treffpunkt von ${name}`, String(n.t || '').slice(0, 80) + (zeit ? ` · bis ${zeit}` : '')] :
     [`💬 ${name}`, String(n.t || '').slice(0, 200)];
-  await self.registration.showNotification(titel, { body: text, icon: 'icon-192.png', badge: 'icon-192.png', tag: n ? `${n.a}-${name}` : 'gruppe',
+  await self.registration.showNotification(titel, { body: text, icon: 'icon-192.png', badge: 'badge-96.png', tag: n ? `${n.a}-${name}` : 'gruppe',
     renotify: true, requireInteraction: n?.g === 'panne', data: n && Number.isFinite(n.la) && Number.isFinite(n.lo) ? { ort: [n.la, n.lo] } : {} });
 })()));
 self.addEventListener('notificationclick', e => {

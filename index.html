@@ -6,15 +6,16 @@
 <title>Scooterways</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#e4572e">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
 <div id="app">
   <div id="panel">
-    <h1>🛵 Scooterways <span id="clock" class="clock"></span><button id="sheetBtn" class="sheet-btn" title="Leiste ein-/ausklappen" aria-expanded="true">▾</button></h1>
+    <h1><img src="logo-scw.svg" alt="" class="logo"> Scooterways <span id="clock" class="clock"></span><button id="sheetBtn" class="sheet-btn" title="Leiste ein-/ausklappen" aria-expanded="true">▾</button></h1>
     <nav id="tabs" class="tabs" role="tablist">
       <button role="tab" data-tab="tour">🧭<span>Tour</span></button>
       <button role="tab" data-tab="unterwegs">📍<span>Unterwegs</span><b id="tabBadgeUnterwegs" class="badge" hidden></b></button>
@@ -224,7 +225,7 @@
   </div>
   <div id="map"></div>
   <dialog id="intro" class="intro">
-    <h2>🛵 Scooterways</h2>
+    <h2><img src="logo-scw.svg" alt="" class="logo"> Scooterways</h2>
     <p>Routenplaner und Navi für 50er-Roller (45 km/h): keine Autobahn, keine Kraftfahrstraße, Hauptstraßen nach Wunsch meiden.</p>
     <ol>
       <li><b>Route:</b> Auf die Karte tippen setzt Start, Ziel und Zwischenziele. Marker lassen sich ziehen, die Route auch (◆ Formpunkt oder Straße meiden).</li>
