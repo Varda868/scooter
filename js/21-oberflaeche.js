@@ -1,4 +1,4 @@
-// --- Oberfläche: Leiste in Reiter gegliedert (Tour, Unterwegs, Entdecker, Roller, Einstellung).
+// --- Oberfläche: Leiste in Reiter gegliedert (Tour, Unterwegs, Roller, Einstellung).
 // Am Handy liegt die Leiste unten unter der Karte und lässt sich auf Kopf und Reiter einklappen,
 // auf Tablet und PC links und lässt sich auf eine schmale Spalte mit den Reitern einklappen.
 function showTab(name) {
@@ -26,7 +26,7 @@ $('sheetBtn').onclick = () => setSheet(document.body.classList.contains('sheet-m
 matchMedia('(max-width:700px)').addEventListener('change', () => setSheet(!document.body.classList.contains('sheet-min')));
 
 // Einzelne Bereiche in eigenem Reiter immer offen
-$('exploreBox').open = $('rollerBox').open = true;
+$('rollerBox').open = true;
 if (settings.profileBox == null) $('profileBox').open = true;
 
 // Fahrprofil-Kurzfassung auch im Reiter Tour; Antippen führt zu den Einstellungen

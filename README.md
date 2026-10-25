@@ -6,7 +6,7 @@
 
 - `index.html` – nur HTML-Gerüst, lädt `css/app.css` und die Skripte aus `js/` in fester Reihenfolge.
 - `js/NN-thema.js` – klassische Skripte (keine ES-Module), teilen sich den globalen Gültigkeitsbereich. Die Nummer ist die Ladereihenfolge: Code, der beim Laden sofort läuft, darf nur Funktionen und Variablen aus gleich- oder niedriger nummerierten Dateien benutzen. In Funktionen und Ereignissen ist die Reihenfolge egal.
-- Oberfläche (`js/21-oberflaeche.js`): Leiste in Reiter Tour · Unterwegs · Entdecker · Roller · Einstellung, gewählter Reiter wird gemerkt. Am Handy liegt die Leiste unter der Karte und klappt auf Kopf und Reiter ein (▾).
+- Oberfläche (`js/21-oberflaeche.js`): Leiste in Reiter Tour · Unterwegs · Roller · Einstellung, gewählter Reiter wird gemerkt. Entdecker, Geocaches und Wettersonden liegen ganz unten in den Einstellungen unter „🧪 Experimentell“. Am Handy liegt die Leiste unter der Karte und klappt auf Kopf und Reiter ein (▾).
 - Talk (`js/22-talk.js`, `talk/`): Gruppenfunk über Nostr-Relays mit Taste oder VOX. Codec2, Wiedergabe, VOX und Netz sind unveränderte Kopien aus der b:con-App (Herkunft und Lizenzen in `talk/QUELLE.md`); geladen wird erst, wenn Talk eingeschaltet ist.
 - Standort teilen (`js/23-standort.js`): über die Talk-Verbindung, nur versiegelt mit der Gruppe (Gruppen-Passwort) oder per NIP-44 an einen Kontakt, als flüchtige Nostr-Art 24425 (Relays speichern nichts). Gesendet wird nur bei sichtbarer App mit laufendem GPS, höchstens alle 30 s; die Freigabe endet nach der gewählten Zeit von selbst.
 - `sw.js` – Service Worker. Neue Dateien in `APP_FILES` eintragen und `VERSION` erhöhen. Eigene Skripte und CSS kommen „Netz zuerst“, damit Seite und Module immer zusammenpassen.

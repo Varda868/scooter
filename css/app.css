@@ -192,7 +192,7 @@
   .tabs button.on { color:var(--fg); border-bottom-color:var(--accent); }
   .tabs .badge { position:absolute; top:1px; right:6px; min-width:16px; padding:0 4px; border-radius:8px; background:var(--accent); color:#fff; font-size:10px; line-height:16px; font-weight:700; }
   .tab > details.fold:first-child { margin-top:4px; }
-  #exploreBox, #rollerBox { border:0; padding:0; }
+  #rollerBox { border:0; padding:0; }
   .profile-line { margin-top:10px; cursor:pointer; text-decoration:underline dotted; }
   .sheet-btn { display:none; }
   /* Tablet und PC: Leiste links lässt sich auf eine schmale Reiter-Spalte einklappen */
