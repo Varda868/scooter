@@ -72,7 +72,7 @@
     {
       "name": "Talk: Gruppenfunk",
       "short_name": "Talk",
-      "url": "./?tab=unterwegs&talk=1",
+      "url": "./?tab=setup&talk=1",
       "icons": [
         {
           "src": "icon-192.png",
