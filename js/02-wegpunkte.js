@@ -33,6 +33,7 @@ function renderWaypoints() {
     ${w.noteOpen || w.note ? `<textarea rows="2" placeholder="Notiz, z. B. Pause, Tanken, Treffpunkt …">${escapeHtml(w.note || '')}</textarea>` : ''}</li>`).join('');
   $('undo').disabled = !undoStack.length;
   $('reverse').disabled = waypoints.length < 2;
+  $('optimize').disabled = !canOptimize();
 
   wpLayer.clearLayers();
   waypoints.forEach((w, i) => {
@@ -238,6 +239,26 @@ $('wpList').addEventListener('keydown', e => { if (e.key === 'Escape') e.target.
 
 $('addVia').onclick = () => changeWaypoints(() => waypoints.splice(waypoints.length - 1, 0, { latlng: null, text: '' }), false);
 $('reverse').onclick = () => changeWaypoints(() => waypoints.reverse());
+// Reihenfolge optimieren (Valhalla /optimized_route): Start und Ziel bleiben, die Zwischenziele werden umsortiert.
+// Nur ohne Formpunkte, die gehören zu ihrem Abschnitt und lassen sich nicht sinnvoll mitsortieren.
+const canOptimize = () => { const l = waypoints.filter(w => w.latlng); return l.length >= 4 && !l.some(w => w.shaping); };
+$('optimize').onclick = async () => {
+  if (!canOptimize()) return;
+  const located = waypoints.filter(w => w.latlng);
+  $('optimize').disabled = true;
+  $('summary').textContent = 'Reihenfolge wird optimiert …';
+  try {
+    let res;
+    try { res = await fetch(VALHALLA_URL.replace(/\/route$/, '/optimized_route'), { method: 'POST', body: JSON.stringify(routeBody(located)) }); }
+    catch { throw new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen.'); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(valhallaError(res.status, data));
+    const order = (data.trip?.locations || []).map(l => l.original_index);
+    if (order.length !== located.length || new Set(order).size !== order.length) throw new Error('Unerwartete Antwort vom Routing-Server.');
+    summaryNote += order.every((o, i) => o === i) ? ' · ⚡ Reihenfolge war schon die kürzeste' : ' · ⚡ Reihenfolge optimiert';
+    changeWaypoints(() => { waypoints = order.map(i => located[i]); });
+  } catch (e) { $('summary').textContent = '⚠️ ' + e.message; renderWaypoints(); }
+};
 // Hin und zurück: Start als neues Ziel anhängen, das bisherige Ziel wird zum Halt
 $('backHome').onclick = () => {
   const start = waypoints[0], end = waypoints.at(-1);

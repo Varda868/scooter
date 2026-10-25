@@ -162,7 +162,7 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '');
+    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '') + ($('unpaved').checked ? ' · nur befestigt' : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
   $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
 }
@@ -187,6 +187,9 @@ $('rideStyle').onchange = () => {
   if (ready()) route();
 };
 for (const id of ['primary', 'hills']) $(id).addEventListener('change', showRideStyle);
+$('unpaved').checked = settings.unpaved !== false;
+updateFoldSummaries();
+$('unpaved').onchange = () => { settings.unpaved = $('unpaved').checked; updateFoldSummaries(); if (ready()) route(); };
 showRideStyle();
 
 const coordText = ll => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;

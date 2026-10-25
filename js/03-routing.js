@@ -27,9 +27,14 @@ function routeBody(locs) {
     costing_options: { motor_scooter: {
       top_speed: +$('speed').value,
       use_primary: +$('primary').value,
-      use_hills: +$('hills').value
+      use_hills: +$('hills').value,
+      // Schotter, Feld- und Waldwege: ausschließen (außer direkt an Start und Ziel)
+      ...($('unpaved').checked ? { exclude_unpaved: true, use_tracks: 0 } : {})
     } },
-    directions_options: { language: 'de-DE', units: 'kilometers' }
+    directions_options: { language: 'de-DE', units: 'kilometers' },
+    // Höhen alle 30 m je Abschnitt gleich mit der Route (spart /height), Spuren je Manöver fürs Navi
+    elevation_interval: 30,
+    turn_lanes: true
   };
   if (excluded.length) body.exclude_locations = excluded.map(ll => ({ lat: ll.lat, lon: ll.lng }));
   return body;
@@ -198,7 +203,7 @@ async function route() {
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
-    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value)]);
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value), $('unpaved').checked]);
     let data;
     try {
       data = await planTrip(locs);
@@ -278,17 +283,18 @@ function showTrip(trip, alternates = []) {
   let off = 0;
   for (const l of trip.legs) {
     for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type,
-      verbal: m.verbal_pre_transition_instruction || m.instruction });
+      verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
   enableRouteEditing(routeLayer);
   if (!map.getBounds().contains(routeLayer.getBounds())) map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
 
-  $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + summaryNote;
+  const rough = trip.legs.some(l => l.maneuvers.some(m => m.rough)) ? ' · ⚠ unbefestigte Stücke' : '';
+  $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + rough + summaryNote;
   summaryNote = '';
   $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
-  loadElevation();
+  loadElevation(trip);
   loadPois();
   renderCaches();
   renderMyPois();
