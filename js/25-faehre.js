@@ -145,10 +145,29 @@ function faehrLinie(id, pts, t) {
     icon: L.divIcon({ className: 'poi-icon faehr-mitte', html: '⛴', iconSize: [20, 20] }), title: t.name || 'Fähre' }).addTo(g);
   let offen = false;
   const hell = an => { linie.setStyle(an ? stark : zart); if (an) { linie.bringToFront(); anleger.addTo(g); } else if (!offen) g.removeLayer(anleger); };
-  const popup = () => `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`;
+  const popup = () => {
+    const box = document.createElement('div');
+    box.innerHTML = `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`;
+    if (waypoints[0].latlng && waypoints.at(-1).latlng)
+      box.append(menuBox([['faehre', '⛴ Diese Fähre in die Route']], () => faehreInRoute(pts, t.name)));
+    else box.insertAdjacentHTML('beforeend', '<div class="hint">Erst Start und Ziel setzen, dann lässt sich die Fähre einbauen.</div>');
+    return box;
+  };
   for (const l of [linie, mitte]) l.bindPopup(popup).on('mouseover', () => hell(true)).on('mouseout', () => offen || hell(false))
     .on('popupopen', () => { offen = true; hell(true); }).on('popupclose', () => { offen = false; hell(false); });
   return g;
+}
+
+// Beide Anleger als Zwischenziele, in Fahrtrichtung: der vom vorigen Punkt aus nähere zuerst
+function faehreInRoute(pts, name) {
+  const a = L.latLng(pts[0]), b = L.latLng(pts.at(-1)), text = was => `⛴ ${name || 'Fähre'} · ${was}`;
+  changeWaypoints(() => {
+    insertVia(a);
+    const i = waypoints.findIndex(w => w.latlng === a), vor = waypoints[i - 1]?.latlng;
+    const zuerstB = vor && vor.distanceTo(b) < vor.distanceTo(a);
+    waypoints[i].text = text(zuerstB ? 'an' : 'ab');
+    waypoints.splice(zuerstB ? i : i + 1, 0, { latlng: b, text: text(zuerstB ? 'ab' : 'an'), shaping: false });
+  });
 }
 
 // --- Kartenebene: alle Fährlinien (und ab Zoom 10 die Anleger) im Ausschnitt, aus den eigenen Kacheln ---
