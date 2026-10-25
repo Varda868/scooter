@@ -1,6 +1,8 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v38';
+const VERSION = 'v39';
+// Stammadresse wie in js/01-grundlagen.js: Zweitadressen laden POI-Kacheln von dort
+const STAMM_ORIGIN = 'https://scooter.thai-klasse.de';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
@@ -60,7 +62,7 @@ self.addEventListener('fetch', e => {
   }
 
   // Eigene POI-Kacheln: index.json Netz zuerst, Kacheln (URL trägt den Datenstand) Speicher zuerst; offline aus dem Speicher
-  if (url.origin === location.origin && url.pathname.includes('/poi/')) {
+  if ((url.origin === location.origin || url.origin === STAMM_ORIGIN) && url.pathname.includes('/poi/')) {
     e.respondWith(caches.open(POIS).then(async cache => {
       const index = url.pathname.endsWith('/index.json'), hit = !index && await cache.match(req);
       if (hit) return hit;

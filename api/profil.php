@@ -7,6 +7,7 @@
 // POST {aktion: 'weg', id}           löschen
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 
 const PROFIL_MAX_BYTES = 4 * 1048576, PROFIL_MAX_ANZAHL = 300, PROFIL_TAGE = 365;
 

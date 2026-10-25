@@ -2,6 +2,7 @@
 // Fehlerberichte aus der Dev-Version (🐞-Dialog → „An Server senden“). Nur aus der eigenen App, gedrosselt, Größe begrenzt.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_cors();
 
 const FEHLER_MAX_BYTES = 65536, FEHLER_PRO_STUNDE = 10, FEHLER_PRO_TAG_ALLE = 300, FEHLER_BEHALTEN = 1000;
 

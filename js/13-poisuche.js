@@ -72,7 +72,7 @@ function routeChunks() {
 }
 // --- Eigene POI-Kacheln (1°×1°, monatlich aus Geofabrik gebaut: tools/poi-kacheln.py, .github/workflows/poi-kacheln.yml) ---
 // Liegen neben der App unter poi/ (Plesk, später ggf. Raspi). Fehlen sie oder deckt der Stand die Route nicht ab: Overpass.
-const POI_TILE_URL = 'poi/';
+const POI_TILE_URL = BASIS_URL + 'poi/';
 let poiIndex = null;
 const poiTiles = new Map();
 function poiTileIndex() {
