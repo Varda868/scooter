@@ -134,18 +134,35 @@ function joinLegs(a, b) {
 // Lange Strecken: Formpunkte nicht auf die Luftlinie (landet im Meer, rastet auf falsche Fähren ein, erzwingt Umwege),
 // sondern auf eine Grobroute fürs Auto ohne Autobahn, die das öffentliche Valhalla am Stück rechnet. Alle GROB_KM ein Punkt;
 // auf Fährabschnitten keiner, stattdessen an Abfahrts- und Ankunftshafen. Klappt die Grobroute nicht: Luftlinie wie bisher.
-const GROB_KM = 150, grobCache = new Map();
+const GROB_KM = 150, GROB_MAX_KM = 1300, grobCache = new Map();
 async function grobePunkte(locs) {
   const lang = locs.some((w, i) => i && locs[i - 1].latlng.distanceTo(w.latlng) / 1000 > MAX_REQUEST_KM * 0.9);
   if (!lang) return locs;
-  const key = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
-  if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
-    locations: locs.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < locs.length - 1 ? 'through' : 'break' })),
-    costing: 'auto', costing_options: { auto: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
-    directions_options: { units: 'kilometers' }
-  }).catch(err => { grobCache.delete(key); throw err; }));
+  // Auch die Grobroute hat eine Grenze (1500 km Luftlinie über alle Punkte, Fehler 154): in Gruppen bis GROB_MAX_KM
+  // teilen, die sich je einen Wegpunkt teilen, und die Abschnitte wieder aneinanderhängen
+  const gruppen = [[locs[0]]];
+  let summe = 0;
+  for (let i = 1; i < locs.length; i++) {
+    const d = locs[i - 1].latlng.distanceTo(locs[i].latlng) / 1000;
+    if (summe + d > GROB_MAX_KM && gruppen.at(-1).length > 1) { gruppen.push([locs[i - 1]]); summe = 0; }
+    gruppen.at(-1).push(locs[i]); summe += d;
+  }
+  const grob = g => {
+    const key = JSON.stringify([g.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
+    if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
+      locations: g.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < g.length - 1 ? 'through' : 'break' })),
+      costing: 'auto', costing_options: { auto: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
+      directions_options: { units: 'kilometers' }
+    }).catch(err => { grobCache.delete(key); throw err; }));
+    return grobCache.get(key);
+  };
   let trip;
-  try { trip = (await grobCache.get(key)).trip; } catch { return locs; }
+  try {
+    // nacheinander, nie zwei Valhalla-Anfragen gleichzeitig
+    const legs = [];
+    for (const g of gruppen) { const t = (await grob(g)).trip; if (t?.legs?.length !== g.length - 1) return locs; legs.push(...t.legs); }
+    trip = { legs };
+  } catch { return locs; }
   if (trip?.legs?.length !== locs.length - 1) return locs;
   const out = [locs[0]];
   trip.legs.forEach((leg, j) => {
