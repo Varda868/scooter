@@ -305,3 +305,15 @@ body.nav-pfeil .nav-stats { justify-content:center; flex-wrap:wrap; color:#bbb; 
 body.nav-pfeil .nav-zoom { display:none; }
 body.nav-pfeil .talk-ptt { z-index:1002; }
 #navPfeil.active { outline:2px solid #fff; }
+
+/* Dialoge (Kurzlink) */
+.sw-dlg { max-width: min(92vw, 420px); border: 0; border-radius: 12px; padding: 1rem 1.1rem; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+.sw-dlg::backdrop { background: rgba(0,0,0,.4); }
+.sw-dlg h3 { margin: 0 0 .6rem; }
+.sw-dlg label { display: block; margin: .5rem 0; }
+.sw-dlg input, .sw-dlg select { width: 100%; box-sizing: border-box; }
+.dlg-knoepfe { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .7rem; }
+#linkErgebnis a { word-break: break-all; }
+#linkListe { padding-left: 1.1rem; margin: .4rem 0; }
+#linkListe li { margin: .3rem 0; }
+#linkListe button { padding: .1rem .5rem; margin-left: .3rem; }

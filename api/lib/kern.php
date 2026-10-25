@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 1;
+const SW_SCHEMA = 2;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -105,6 +105,9 @@ function sw_schema(PDO $db): void {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_drossel (k VARCHAR(128) PRIMARY KEY, fenster INTEGER NOT NULL, ende INTEGER NOT NULL, n INTEGER NOT NULL)");
     $db->exec("CREATE TABLE IF NOT EXISTS sw_login (id $id, ip VARCHAR(64) NOT NULL, t INTEGER NOT NULL)");
     $db->exec("CREATE TABLE IF NOT EXISTS sw_fehler (id $id, t INTEGER NOT NULL, ip VARCHAR(64), version VARCHAR(64), ua VARCHAR(255), text $txt)");
+  }
+  if ($v < 2) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_kurz (id VARCHAR(16) PRIMARY KEY, t INTEGER NOT NULL, bis INTEGER NOT NULL, loesch VARCHAR(64) NOT NULL, abrufe INTEGER NOT NULL DEFAULT 0, ip VARCHAR(64), daten $txt)");
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);

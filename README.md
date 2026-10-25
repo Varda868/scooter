@@ -34,7 +34,8 @@ Kleine PHP-Endpunkte für Dinge, die der Browser allein nicht kann. Kein SSH, ke
 - `api/konfig.php`: öffentliche Endpunkte für die App, nie Schlüssel.
 - `api/proxy.php`: Zwischenspeicher-Proxy für Open-Meteo, Photon, Overpass und TomTom (Meldungen und Fluss-Kacheln). Kein offener Proxy: feste Ziele aus der Konfiguration, nur bekannte Parameter, nur Aufrufe der eigenen Seite (Sec-Fetch-Site/Origin/Referer), Drosselung je Gerät pro Minute und Tageskontingent je Dienst, keine Weiterleitungen, nur JSON/PNG zurück, höchstens 300 MB Speicher. Der TomTom-Schlüssel bleibt auf dem Server.
 - App-Seite: `js/27-server.js` liest `konfig.php`, leitet die passenden `fetch`-Aufrufe auf den Proxy um und fällt bei Ausfall, 429 oder 5xx auf den direkten Weg zurück. Schalter unter Einstellung → 🖥 Eigener Server.
-- Der Service Worker lässt `api/` komplett in Ruhe.
+- `api/kurz.php` + `.htaccess`: Kurzlinks für Touren. `/t/<id>` leitet auf `/?t=<id>` um, die App lädt die Tour (Wegpunkte, Sperrstellen, Name) und übernimmt sie nach Rückfrage (mit ↶ rückgängig). Ablauf 7/30/90/365 Tage, Löschcode bleibt beim Ersteller im Browser, 20 neue Links pro Stunde je Gerät. Ohne mod_rewrite erzeugt die App `?t=`-Links. App-Seite: `js/28-kurzlink.js`.
+- Der Service Worker lässt `api/` und `/t/` komplett in Ruhe.
 
 ## Lizenz
 

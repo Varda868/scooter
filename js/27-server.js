@@ -39,6 +39,7 @@ function serverZeigen() {
     [k.proxy ? 'Proxy an' : 'Proxy aus', k.tomtomAmServer ? 'TomTom-Schlüssel' : ''].filter(Boolean).join(' · ');
   const tomtom = serverAn() && !!k.proxy && !!k.tomtomAmServer;
   if (tomtom !== ttServer) { ttServer = tomtom; applyTraffic(); }
+  document.dispatchEvent(new Event('serverkonfig'));
 }
 async function serverKonfigLaden() {
   try {

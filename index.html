@@ -55,6 +55,7 @@
       <button id="mapSave" hidden title="Vektorkarte im Korridor von 2 km um die Route im Gerät speichern">⬇ Karte für diese Tour offline speichern</button>
       <div id="mapSaveInfo" class="hint"></div>
       <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
+      <button id="tourLink" hidden class="secondary" title="Kurzlink über den eigenen Server, z. B. für Freunde oder das zweite Gerät">🔗 Tour als Link teilen</button>
       <div id="elevation"></div>
       <div id="wxRouteSummary"></div>
       <div id="incidentSummary"></div>
@@ -290,6 +291,15 @@
   </div>
 </div>
 <script src="js/00-logger.js"></script>
+<dialog id="linkDlg" class="sw-dlg">
+  <h3>🔗 Tour als Link</h3>
+  <label>Gültig <select id="linkTage"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="90">90 Tage</option><option value="365">1 Jahr</option></select></label>
+  <label>Name (optional) <input id="linkName" maxlength="80" autocomplete="off"></label>
+  <div id="linkErgebnis" class="hint"></div>
+  <div class="dlg-knoepfe"><button id="linkMachen">Link erzeugen</button><button id="linkTeilen" hidden>Teilen</button><button id="linkKopieren" hidden class="secondary">Kopieren</button></div>
+  <details id="linkMeine"><summary>Meine Links</summary><ul id="linkListe"></ul></details>
+  <div class="dlg-knoepfe"><button id="linkZu" class="secondary">Schließen</button></div>
+</dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="js/01-grundlagen.js"></script>
 <script src="js/02-wegpunkte.js"></script>
@@ -317,5 +327,6 @@
 <script src="js/25-faehre.js"></script>
 <script src="js/26-profil.js"></script>
 <script src="js/27-server.js"></script>
+<script src="js/28-kurzlink.js"></script>
 </body>
 </html>

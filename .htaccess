@@ -1,0 +1,5 @@
+# Kurzlinks für Touren: /t/<id> → App mit ?t=<id> (die App lädt die Tour über api/kurz.php)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^t/([A-Za-z0-9]{8})/?$ /?t=$1 [R=302,L]
+</IfModule>
