@@ -219,6 +219,12 @@ function relay_adresswechsel(array $r, array $e): array {
     $e['fehler'] .= ' · neue Adresse ' . $neu . ' gefunden, aber nicht erreichbar: ' . $e2['fehler'];
     return $e;
   }
+  // Unter der neuen Adresse muss dasselbe Relay antworten: Ein altes, gültig signiertes Event kann auf ein Präfix
+  // zeigen, das inzwischen ein anderer Anschluss hat
+  if (($e2['nip11']['self'] ?? null) !== $r['pk']) {
+    $e['fehler'] .= ' · neue Adresse ' . $neu . ' gefunden, dort antwortet aber ein anderes Relay (NIP-11 self)';
+    return $e;
+  }
   relay_eintrag_aendern($r['url'], ['url' => $neu]);
   relay_merken($e, 'server');  // der Fehlschlag der alten Adresse bleibt im Verlauf
   $e2['fehler'] = 'Adresse gewechselt, vorher ' . $r['url'];

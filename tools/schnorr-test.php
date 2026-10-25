@@ -12,10 +12,10 @@ $ev = json_decode('{"pubkey":"f9308a019258c31049344f85f89d5229b531c845836f99b086
   '"content":"","id":"200e5eb7e4e15bd93fd3435d608f851eb173aa9d8f696c04d66175a1e050771b",' .
   '"sig":"bd135060b64facad8cc0ab7e2d1a46528d9639df4fda6dde6f7b9ea25649c0099c7ea8b4a31574535694489da909d3906484ff443e7db565c6b16dc3f32e8025"}', true);
 
-$fehler = 0;
+$fehler = 0; $gelaufen = 0;
 foreach (['gmp', 'bcmath'] as $weg) {
   if (!extension_loaded($weg)) { echo "$weg: nicht vorhanden, übersprungen\n"; continue; }
-  Secp::$erzwingen = $weg;
+  Secp::$erzwingen = $weg; $gelaufen++;
   $kaputt = substr($ev['sig'], 0, 127) . ($ev['sig'][127] === '0' ? '1' : '0');
   $faelle = [
     'gültig' => [fn() => nostr_event_pruefen($ev), true],
@@ -33,5 +33,6 @@ foreach (['gmp', 'bcmath'] as $weg) {
   }
 }
 Secp::$erzwingen = null;
+if (!$gelaufen) { echo "weder gmp noch bcmath vorhanden, nichts geprüft\n"; exit(1); }
 echo $fehler ? "$fehler Fehler\n" : "alles bestanden (im Betrieb: " . schnorr_rechenweg() . ")\n";
 exit($fehler ? 1 : 0);
