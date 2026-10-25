@@ -135,8 +135,16 @@ async function loadStageCamps(kms) {
   const req = ++stageRequest;
   if (!kms.length) return;
   try {
-    const { camps, source } = await findCamps(kms.map(km => pointAtKm(km)));
+    const punkte = kms.map(km => pointAtKm(km)), { camps, source } = await findCamps(punkte);
     if (req !== stageRequest) return;
+    // Etappenenden ohne Platz in 8 km (Alpen, Venetien): dort bis 20 km weiter suchen
+    const ohne = punkte.filter(p => !camps.some(c => L.latLng(c.lat, c.lon).distanceTo(p) <= 8000));
+    let weit = 0;
+    if (ohne.length) {
+      const mehr = (await findCamps(ohne, 20000).catch(() => ({ camps: [] }))).camps.filter(c => !camps.some(d => d.lat === c.lat && d.lon === c.lon));
+      if (req !== stageRequest) return;
+      camps.push(...mehr); weit = mehr.length;
+    }
     for (const c of camps) {
       const ll = L.latLng(c.lat, c.lon), name = c.name || 'Zeltplatz';
       L.marker(ll, { icon: L.divIcon({ className: 'poi-icon', html: '⛺', iconSize: [24, 24] }), title: name })
@@ -149,7 +157,8 @@ async function loadStageCamps(kms) {
         }, { className: 'map-menu', minWidth: 170 }).addTo(stageLayer);
     }
     const n = camps.length, via = ['Overpass', 'eigene Daten'].includes(source) ? '' : ` (über ${source})`;
-    $('stageSummary').textContent += (n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden` : ' · ⛺ keine Zeltplätze im Umkreis von 8 km') + via;
+    $('stageSummary').textContent += (n ? ` · ⛺ ${n} ${n > 1 ? 'Zeltplätze' : 'Zeltplatz'} nahe den Etappenenden${weit ? ' (teils bis 20 km entfernt)' : ''}`
+      : ' · ⛺ keine Zeltplätze im Umkreis von 20 km') + via;
   } catch (err) {
     if (req === stageRequest) $('stageSummary').textContent += ` · ⚠️ Zeltplätze: ${err.message}`;
   }

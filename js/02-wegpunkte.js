@@ -355,7 +355,7 @@ function clearRoute() {
   $('navStart').hidden = true;
   $('gpxTour').hidden = true;
   $('mapSave').hidden = true; $('mapSaveInfo').textContent = '';
-  routeLayer = routeCoords = routeKm = null;
+  routeLayer = routeCoords = routeKm = null; routeFaehren = [];
   queueMicrotask(expRouteChanged);
   $('summary').textContent = '';
   $('steps').innerHTML = '';

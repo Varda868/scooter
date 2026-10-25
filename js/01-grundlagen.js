@@ -148,7 +148,7 @@ function setRouteCoords(coords) {
   $('play').hidden = false;
   $('navStart').hidden = false;
   $('gpxTour').hidden = false;
-  $('mapSave').hidden = typeof vm === 'undefined' || !vm.layer; // js/19 lädt später, offline kommt eine Route schon vorher $('mapSaveInfo').textContent = '';
+  $('mapSave').hidden = typeof vm === 'undefined' || !vm.layer; $('mapSaveInfo').textContent = '';
   routeCoords = coords;
   routeFaehren = [];
   routeKm = [0];

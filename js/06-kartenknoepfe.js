@@ -54,7 +54,8 @@ $('centerBtn').onclick = e => {
   }, err => {
     // Nur „verweigert“ ist endgültig; Zeitüberschreitung oder kurz kein Signal: die Überwachung läuft weiter,
     // sonst bleiben Standort teilen, Halt und Treffpunkt in der Gruppe nach einem Aussetzer still stehen
-    if (err.code === err.PERMISSION_DENIED) { navigator.geolocation.clearWatch(me.watch); me.watch = null; setFollow(false); }
+    if (err.code !== err.PERMISSION_DENIED) return;
+    navigator.geolocation.clearWatch(me.watch); me.watch = null; setFollow(false);
     $('summary').textContent = '⚠️ Standort nicht verfügbar: ' + err.message;
   }, { enableHighAccuracy: true, maximumAge: 5000 });
 };
