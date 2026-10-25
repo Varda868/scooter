@@ -15,7 +15,7 @@ const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
 // (sie werden sonst beim nächsten Laden über den fetch-Handler nachgeholt)
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL)
-    .then(c => Promise.all([c.addAll(SHELL_FILES), ...CDN_FILES.map(u => c.add(u).catch(() => {}))]))
+    .then(c => Promise.all([c.addAll(SHELL_FILES.map(u => new Request(u, { cache: 'reload' }))), ...CDN_FILES.map(u => c.add(u).catch(() => {}))]))
     .then(() => self.skipWaiting()));
 });
 
@@ -43,15 +43,16 @@ self.addEventListener('fetch', e => {
 
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) caches.open(SHELL).then(c => c.put('./', res.clone()));
       return res;
     }).catch(() => caches.match('./')));
     return;
   }
   // Eigene Skripte und CSS ebenso Netz zuerst, damit nie eine neue Seite mit alten Modulen läuft (talk/ wird erst bei Bedarf geladen)
+  // cache: 'no-cache' fragt am Browser-Cache vorbei beim Server nach (sonst kann eine alte Fassung aus dem HTTP-Cache kommen)
   if (url.origin === location.origin && /\/(js|css|talk)\/[^/]+$/.test(url.pathname)) {
-    e.respondWith(fetch(req).then(res => {
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) caches.open(SHELL).then(c => c.put(req, res.clone()));
       return res;
     }).catch(() => caches.match(req)));
