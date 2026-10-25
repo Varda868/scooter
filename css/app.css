@@ -273,3 +273,7 @@
 .poi-icon.poi-zu { opacity: 0.45; filter: grayscale(1); }
 /* Abbiegeskizzen: so groß wie die Zeichen vorher */
 .turn-svg { width: 1em; height: 1em; vertical-align: middle; }
+/* Profil sichern */
+.profil-knoepfe { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:8px; }
+.profil-knoepfe .file-btn { margin-top:0; flex:1; }
+.hint.warn { color:#b23a1e; }

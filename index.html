@@ -222,6 +222,15 @@
       <ul id="talkLog" class="talk-log"></ul>
       <p class="hint">Alle in der Gruppe tragen dieselbe PLZ-Region und dasselbe Passwort ein. Die Sprache wird im Handy mit Opus (Breitband, sonst Codec2) kodiert, signiert und über öffentliche Nostr-Relays verteilt, mit Passwort verschlüsselt; die Relays löschen sie nach 1 h. Jede Durchsage kommt als Ganzes an, die Verzögerung ist etwa die Sprechdauer. Bildschirm anlassen. Talk stammt aus der b:con-App (AGPL-3.0, siehe talk/QUELLE.md).</p>
       </details>
+      <details id="profilBox" class="fold">
+      <summary>💾 Profil sichern und übertragen <span class="hint">z. B. Handy ↔ PC</span></summary>
+      <p class="hint">Alles aus diesem Browser in einer Datei: Einstellungen, Roller und Wartungsbuch, eigene POIs, Planung, Kontakte und gefahrene Touren. Die Offline-Karte und zwischengespeicherte POIs bleiben draußen.</p>
+      <label><input id="profilSchluessel" type="checkbox"> 🔑 Schlüssel mitnehmen (TomTom, Opencaching, Gruppen-Passwort, Talk-Identität)</label>
+      <div id="profilWarnung" class="hint warn" hidden>⚠️ Die Datei enthält dann Zugangsdaten und deine Talk-Identität: nur auf eigene Geräte übertragen, nicht in Chats oder Clouds teilen, danach löschen.</div>
+      <div class="profil-knoepfe"><button id="profilExport">⬇ Profil speichern</button><button id="profilTeilen" hidden>📤 Teilen</button>
+        <label class="file-btn">📂 Profil laden<input id="profilImport" type="file" accept=".json,application/json"></label></div>
+      <div id="profilStatus" class="hint"></div>
+      </details>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
     </section>
   </div>
@@ -285,5 +294,6 @@
 <script src="js/23-standort.js"></script>
 <script src="js/24-tank.js"></script>
 <script src="js/25-faehre.js"></script>
+<script src="js/26-profil.js"></script>
 </body>
 </html>
