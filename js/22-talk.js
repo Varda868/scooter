@@ -104,7 +104,7 @@ async function talkStart() {
 const talkKopf = codec => ({ codec, flags: 0, ziel: talk.mod.ALLE, zeit: Math.floor(Date.now() / 1000), name: talkName(), region: talk.netz.region, gruppe: 0 });
 async function talkDruecken(vonVox = false) {
   if (talk.tx || !talkBereit()) return;
-  const t = talk.tx = { vox: vonVox, ms: 0, vorlauf: null };
+  const t = talk.tx = { vox: vonVox, ms: 0, vorlauf: null, an: talkAn };
   talkZeigen();
   try {
     const probe = new Sprechfunk.Codec(TALK_CODEC), n = probe.n; probe.frei();
@@ -132,18 +132,19 @@ function talkLoslassen() {
   if (!t) return;
   talk.tx = null;
   clearTimeout(t.bis); clearInterval(t.uhr);
-  if (t.codec) { t.codec.frei(); if (t.ms >= 300) talkSenden(t.a, t.ms); }
+  if (t.codec) { t.codec.frei(); if (t.ms >= 300) talkSenden(t.a, t.ms, t.an); }
   if (t.enc) talkOpusEnde(t);
   talk.vox?.zuruecksetzen();
   talk.sperreBis = Date.now() + 500;
   talkZeigen();
 }
-async function talkSenden(a, ms) {
+async function talkSenden(a, ms, an) {
   try {
     const k = await a.fertig();
     if (!k || !talk.netz) return;
-    const n = await talk.netz.senden(k, Math.floor(Date.now() / 1000));
-    talkLog(n ? `ich · ${(ms / 1000).toFixed(1).replace('.', ',')} s · ${talk.opus ? 'Opus' : 'Codec2'} · an ${n} Relays` : '⚠️ von keinem Relay angenommen');
+    const n = await talk.netz.senden(k, Math.floor(Date.now() / 1000), an || undefined);
+    const wen = an ? ` → 🔒 ${talkKontakte.find(x => x.pk === an)?.name || an.slice(0, 8)}` : '';
+    talkLog(n ? `ich${wen} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · ${talk.opus ? 'Opus' : 'Codec2'} · an ${n} Relays` : '⚠️ von keinem Relay angenommen');
   } catch (e) { talkLog('⚠️ Senden: ' + e.message); }
 }
 
@@ -237,7 +238,7 @@ async function talkOpusEnde(t) {
   try { await t.enc.flush(); } catch {}
   try { t.enc.close(); } catch {}
   talkOpusPaket(t);
-  if (t.ms >= 300) talkSenden(t.a, t.ms);
+  if (t.ms >= 300) talkSenden(t.a, t.ms, t.an);
 }
 
 // Ein Empfänger für alle Mikrofon-Blöcke: laufende Sendung kodieren, sonst VOX hören lassen
@@ -294,11 +295,12 @@ async function talkHoeren(d) {
   if (!c && !opus || (!d.signatur && !d.fehlend)) return; // unbekannter Codec oder gefälschte Durchsage
   // Rufname nur, wenn der Kopf geprüft ist; sonst die ersten Stellen des Schlüssels
   const wer = (d.signatur || d.absender === k.schluessel) && k.name || k.schluessel.slice(0, 8);
-  talk.hoert = wer; talkZeigen();
+  if (d.absender) talkKontaktMerken(d.absender, wer);
+  talk.hoert = (d.privat ? '🔒 ' : '') + wer; talkZeigen();
   if (opus) {
     const ms = await talkOpusHoeren(d.pakete).catch(() => 0);
     talk.hoert = '';
-    talkLog(`${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+    talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
     talkZeigen();
     return;
   }
@@ -315,7 +317,7 @@ async function talkHoeren(d) {
   await new Promise(r => setTimeout(r, ms + 300));
   talk.empf.beenden(slot);
   talk.hoert = '';
-  talkLog(`${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+  talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
   talkZeigen();
 }
 
@@ -383,6 +385,36 @@ function talkZeigen() {
   $('talkBtn').disabled = !talkBereit();
   if (talk.voxLetzt && talkPrefs.mode === 'vox') $('talkVoxMess').textContent = `Pegel ${Math.round(talk.voxLetzt.db)} dB · Schwelle ${Math.round(talk.voxLetzt.schwelle)} dB`;
 }
+
+// Direkt an einen: knappes Klappmenü über der Sprechtaste. Kontakte sind die zuletzt Gehörten (höchstens 8),
+// die Durchsage geht dann versiegelt nur an deren Schlüssel. Nach dem Start spricht die Taste wieder an alle.
+const TALK_KONTAKTE_MAX = 8;
+let talkKontakte = store.get('talkKontakte', []), talkAn = null;
+function talkKontaktMerken(pk, name) {
+  if (!/^[0-9a-f]{64}$/.test(pk)) return;
+  const alt = talkKontakte.find(k => k.pk === pk);
+  if (alt?.name === name && talkKontakte[0] === alt) return;
+  talkKontakte = [{ pk, name }, ...talkKontakte.filter(k => k.pk !== pk)].slice(0, TALK_KONTAKTE_MAX);
+  store.set('talkKontakte', talkKontakte);
+  talkAnZeigen();
+}
+function talkAnZeigen() {
+  const k = talkKontakte.find(x => x.pk === talkAn);
+  $('talkAn').textContent = k ? `🔒 an ${k.name} ▾` : 'an alle ▾';
+  $('talkAn').classList.toggle('privat', !!k);
+  $('talkAn').hidden = !talkKontakte.length;
+  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}</button>`)].join('');
+  $('talkAnMenu').querySelector(`[data-pk="${talkAn || ''}"]`)?.classList.add('on');
+}
+$('talkAn').onclick = () => { $('talkAnMenu').hidden = !$('talkAnMenu').hidden; };
+$('talkAnMenu').onclick = e => {
+  const b = e.target.closest('[data-pk]');
+  if (!b) return;
+  talkAn = b.dataset.pk || null;
+  $('talkAnMenu').hidden = true;
+  talkAnZeigen();
+};
+talkAnZeigen();
 
 map.getContainer().appendChild($('talkPtt'));
 L.DomEvent.disableClickPropagation($('talkPtt'));

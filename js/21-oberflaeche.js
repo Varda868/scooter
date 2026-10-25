@@ -35,14 +35,14 @@ new MutationObserver(mirrorProfile).observe($('profileSummary'), { childList: tr
 mirrorProfile();
 $('profileLine').onclick = () => { showTab('setup'); $('profileBox').open = true; };
 
-// Zähler am Reiter: gefundene POIs und Caches entlang der Route, Hinweis bei fälliger Wartung
+// Zähler am Reiter: gefundene POIs entlang der Route, Hinweis bei fälliger Wartung
 function updateBadges() {
-  const n = document.querySelectorAll('#pois li, #caches li').length;
+  const n = document.querySelectorAll('#pois li').length;
   $('tabBadgeUnterwegs').hidden = !n;
   $('tabBadgeUnterwegs').textContent = n > 99 ? '99+' : n;
   $('tabBadgeRoller').hidden = !$('rollerDue').textContent.trim() || $('rollerDue').textContent.startsWith('✓');
 }
-['pois', 'caches', 'rollerDue'].forEach(id => new MutationObserver(updateBadges).observe($(id), { childList: true, characterData: true, subtree: true }));
+['pois', 'rollerDue'].forEach(id => new MutationObserver(updateBadges).observe($(id), { childList: true, characterData: true, subtree: true }));
 updateBadges();
 
 // Verknüpfungen der installierten App (Langdruck aufs Symbol): ?tab=… wählt den Reiter, talk=1 klappt Talk auf

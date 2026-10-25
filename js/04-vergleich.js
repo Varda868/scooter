@@ -61,6 +61,7 @@ const eleCursor = L.circleMarker([0, 0], { radius: 6, color: '#fff', weight: 2, 
 
 async function loadElevation() {
   const req = ++elevationRequest;
+  tripClimb = null;
   $('elevation').innerHTML = '<div class="ele-stats">Höhenprofil wird geladen …</div>';
   const lenM = routeKm[routeKm.length - 1] * 1000;
   try {
@@ -102,6 +103,9 @@ function renderElevation(pts, lenM) {
   const Y = h => T0 + (hi - h) / (hi - lo) * (H - T0 - B0);
   const line = xs.map((x, i) => `${X(x).toFixed(1)},${Y(hs[i]).toFixed(1)}`).join(' ');
   const { up, down } = climb(pts);
+  // Höhenmeter auch in die Zusammenfassung unter „Route berechnen“
+  if (currentTrip) { const ohne = stageTripText(currentTrip.summary); tripClimb = { up, down };
+    $('summary').textContent = $('summary').textContent.replace(ohne, stageTripText(currentTrip.summary)); }
   // Steilster Abschnitt über mindestens 200 m
   let maxGrade = 0;
   for (let i = 0, j = 0; i < pts.length; i++) {
