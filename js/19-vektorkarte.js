@@ -1,7 +1,8 @@
 // --- Eigene Vektorkarte: PMTiles-Datei auf dem eigenen Server (OSM-Daten via Protomaps), gezeichnet von MapLibre
 // als Ebene in Leaflet. Jede geladene Kachel landet in IndexedDB; "Karte für diese Tour offline speichern" lädt
 // den Korridor um die Route vorab. Fehlt die Datei, bleibt die OSM-Rasterkarte.
-const VECTOR_MAP_URL = 'karte/region.pmtiles';
+// Die Datei schneidet .github/workflows/karte.yml aus dem Protomaps-Build und lädt sie neben die POI-Kacheln.
+const VECTOR_MAP_URL = 'poi/karte.pmtiles';
 const VM_LIBS = ['https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js', 'https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js',
   'https://cdn.jsdelivr.net/npm/@protomaps/basemaps@5.5.0/dist/basemaps.js', 'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js'];
 const VM_CSS = 'https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css';
@@ -53,10 +54,20 @@ function prefetchMapAssets() {
 async function initVectorMap() {
   // Gibt es die Kartendatei? Offline zählt der zuletzt bekannte Stand.
   let available = false;
-  try { const res = await fetch(VECTOR_MAP_URL, { headers: { range: 'bytes=0-15' } }); available = res.status === 206 || res.ok; res.body?.cancel().catch(() => {}); }
-  catch { available = store.get('vectorMap', false); }
+  let stand = store.get('vectorMapStand', null);
+  try {
+    const res = await fetch(VECTOR_MAP_URL, { headers: { range: 'bytes=0-15' } });
+    available = res.status === 206 || res.ok;
+    stand = res.headers.get('etag') || res.headers.get('last-modified') || stand;
+    res.body?.cancel().catch(() => {});
+  } catch { available = store.get('vectorMap', false); }
   store.set('vectorMap', available);
   if (!available) return;
+  // Neue Kartendatei (Update im März/Juli/Oktober): gespeicherte Kacheln der alten verwerfen
+  if (stand && stand !== store.get('vectorMapStand', null)) {
+    if (store.get('vectorMapStand', null)) await tileDb().then(db => new Promise(ok => { const tx = db.transaction('tiles', 'readwrite'); tx.objectStore('tiles').clear(); tx.oncomplete = tx.onerror = ok; })).catch(() => {});
+    store.set('vectorMapStand', stand);
+  }
   const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = VM_CSS; document.head.append(css);
   for (const src of VM_LIBS) await loadScript(src);
   vm.archive = new pmtiles.PMTiles(new URL(VECTOR_MAP_URL, location.href).href);

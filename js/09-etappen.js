@@ -93,12 +93,12 @@ const PHOTON_URL = 'https://photon.komoot.io/api/';
 async function findCamps(points, radiusM = 8000) {
   try {
     const local = await tileElements(points, radiusM, tags => tags.tourism === 'camp_site' ? radiusM : 0);
-    if (local) return { source: 'eigene Daten', camps: local.elements.map(el => ({ lat: el.lat, lon: el.lon, name: el.tags.name })) };
+    if (local) return { source: 'eigene Daten', camps: local.elements.map(el => ({ lat: el.lat, lon: el.lon, name: el.tags.name, tags: el.tags })) };
   } catch {}
   try {
     const around = points.map(([la, lo]) => `nwr[tourism=camp_site](around:${radiusM},${la.toFixed(5)},${lo.toFixed(5)});`).join('');
     const data = await overpassFetch(`[out:json][timeout:30];(${around});out center tags;`);
-    return { source: 'Overpass', camps: data.elements.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags?.name })).filter(c => c.lat != null) };
+    return { source: 'Overpass', camps: data.elements.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, name: el.tags?.name, tags: el.tags })).filter(c => c.lat != null) };
   } catch {}
   // Umkreis als Rechteck um jeden Punkt
   const boxes = points.map(([la, lo]) => { const dLat = radiusM / 111320, dLon = dLat / Math.cos(la * Math.PI / 180); return [lo - dLon, la - dLat, lo + dLon, la + dLat]; });
@@ -133,7 +133,7 @@ async function loadStageCamps(kms) {
       L.marker(ll, { icon: L.divIcon({ className: 'poi-icon', html: '⛺', iconSize: [24, 24] }), title: name })
         .bindPopup(() => {
           const box = document.createElement('div');
-          box.innerHTML = `<b>⛺ ${escapeHtml(name)}</b>`;
+          box.innerHTML = `<b>⛺ ${escapeHtml(name)}</b>` + (c.tags?.opening_hours ? `<br>🕒 ${escapeHtml(c.tags.opening_hours)}` : '') + (c.tags ? contactInfo({ tourism: 'camp_site', ...c.tags }) : '');
           box.append(menuBox([['via', 'Als Übernachtung (Zwischenziel)']], () =>
             changeWaypoints(() => { insertVia(ll); Object.assign(waypoints.find(w => w.latlng === ll), { text: name, night: 1 }); })));
           return box;
