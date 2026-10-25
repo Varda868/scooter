@@ -159,7 +159,9 @@ async function grobePunkte(locs) {
     const key = JSON.stringify([g.map(w => [w.latlng.lat.toFixed(4), w.latlng.lng.toFixed(4), !!w.shaping]), $('ferry').checked]);
     if (!grobCache.has(key)) grobCache.set(key, fetchRoute({
       locations: g.map((w, i) => ({ lat: w.latlng.lat, lon: w.latlng.lng, type: w.shaping && i && i < g.length - 1 ? 'through' : 'break' })),
-      costing: 'auto', costing_options: { auto: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
+      // motorcycle statt auto: wählt Fähren wie ein Zweirad (Holyhead–Dublin statt Isle of Man, Cairnryan wird für
+      // Autos gar nicht gefunden) und bleibt mit use_highways 0 ebenso auf Landstraßen
+      costing: 'motorcycle', costing_options: { motorcycle: { use_highways: 0, use_tolls: 0, ...($('ferry').checked ? { use_ferry: 1 } : {}) } },
       directions_options: { units: 'kilometers' }
     }).catch(err => { grobCache.delete(key); throw err; }));
     return grobCache.get(key);
@@ -257,6 +259,9 @@ async function planRoute(locs, exclude = []) {
     const fa = chunk.length === 2 && hafenAb(chunk[0]) && chunk[1].faehre;
     if (fa) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
+    // Zwischen Grobpunkten ohne Fähre soll der Roller auch keine nehmen: sonst weicht ein langer Abschnitt über eine
+    // andere Überfahrt aus und pendelt (Rotterdam → Harwich → England → Newhaven–Dieppe → Calais)
+    if (chunk.some(w => w.grob)) body.costing_options.motor_scooter.use_ferry = 0;
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
     if (chunks.length === 1 && locs.length === 2) body.alternates = 2;
