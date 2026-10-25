@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 3;
+const SW_SCHEMA = 4;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -113,6 +113,12 @@ function sw_schema(PDO $db): void {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_push (id $id, ep VARCHAR(64) NOT NULL UNIQUE, gruppe VARCHAR(64) NOT NULL, endpoint TEXT NOT NULL, p256dh VARCHAR(128) NOT NULL, auth VARCHAR(64) NOT NULL, name VARCHAR(16), t INTEGER NOT NULL, zuletzt INTEGER, fehler INTEGER NOT NULL DEFAULT 0" .
       (sw_mysql() ? ', INDEX sw_push_gruppe (gruppe))' : ')'));
     if (!sw_mysql()) $db->exec('CREATE INDEX IF NOT EXISTS sw_push_gruppe ON sw_push (gruppe)');
+  }
+  // v4: ein Gerät kann in einer Gruppe und in seinem Postfach (Sprachpost) stehen; ep = Hash aus Ziel und Endpunkt
+  if ($v < 4) {
+    $db->exec('ALTER TABLE sw_push ADD COLUMN geraet VARCHAR(64)');
+    $db->exec("ALTER TABLE sw_push ADD COLUMN art VARCHAR(8) NOT NULL DEFAULT 'gruppe'");
+    $db->exec('UPDATE sw_push SET geraet = ep');
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);
