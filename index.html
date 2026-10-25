@@ -196,6 +196,16 @@
       <label><input id="useServer" type="checkbox" checked> Wetter, Ortssuche, Overpass und Verkehr über den eigenen Server (Zwischenspeicher)</label>
       <div class="hint">Fällt der Server aus, geht die App wie bisher direkt an die Dienste.</div>
       </details>
+      <details id="pushBox" class="fold" hidden>
+      <summary>🔔 Push an die Gruppe <span id="pushSummary" class="hint"></span></summary>
+      <label><input id="pushAn" type="checkbox"> Push für meine Talk-Gruppe (auch bei geschlossener App)</label>
+      <label><input id="pushHalt" type="checkbox" checked> Panne, Tanken, Pause melden</label>
+      <label><input id="pushTreff" type="checkbox" checked> Treffpunkt-Vorschläge melden</label>
+      <div class="push-text"><input id="pushText" maxlength="200" placeholder="Kurznachricht an die Gruppe" autocomplete="off"><button id="pushSenden" title="Als Push an alle in der Gruppe">📣</button></div>
+      <div id="pushSchnell" class="push-schnell"><button data-t="Wartet auf mich" class="secondary">⏳ wartet</button><button data-t="Alles ok, fahre weiter" class="secondary">👍 ok</button><button data-t="Bin gleich da" class="secondary">🛵 gleich da</button></div>
+      <div id="pushHint" class="hint"></div>
+      <div class="hint">Verschlüsselt mit dem Gruppen-Passwort; der Server sieht keinen Inhalt.</div>
+      </details>
       <details id="talkBox" class="fold">
       <summary>📻 Talk: Gruppenfunk übers Netz <span id="talkSummary" class="hint"></span></summary>
       <label><input id="talkOn" type="checkbox"> Talk einschalten</label>
@@ -298,5 +308,6 @@
 <script src="js/25-faehre.js"></script>
 <script src="js/27-server.js"></script>
 <script src="js/28-kurzlink.js"></script>
+<script src="js/29-push.js"></script>
 </body>
 </html>
