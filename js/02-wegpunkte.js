@@ -252,11 +252,11 @@ function showSuggestions(input) {
   const q = input.value.trim(), req = ++ortReq;
   clearTimeout(ortTimer);
   if (q.length >= 3 && !isCoordText(q)) ortTimer = setTimeout(async () => {
-    // Doppelte nur weglassen, wenn Name und Ort (auf ~10 km) gleich sind: sonst verdrängt das Dorf Bastia aus dem
-    // Ortsindex das gleichnamige Bastia auf Korsika aus Photon
-    const um = map.getCenter(), lokal = suggestionsFor(input.value), schl = x => `${x.name.toLowerCase()}|${x.lat != null ? `${Math.round(x.lat * 10)},${Math.round(x.lon * 10)}` : ''}`;
-    const namen = new Set(lokal.map(schl));
-    const dazu = it => { if (namen.has(schl(it))) return false; namen.add(schl(it)); return true; };
+    // Doppelte nur weglassen, wenn der Name gleich ist und der Ort keine 15 km entfernt (Photon liefert Stadt und
+    // Gemeinde oft getrennt); sonst verdrängt das Dorf Bastia aus dem Ortsindex das korsische Bastia aus Photon
+    const um = map.getCenter(), lokal = suggestionsFor(input.value), kopf = x => x.name.split(',')[0].trim().toLowerCase();
+    const schon = [...lokal];
+    const dazu = it => { if (schon.some(o => kopf(o) === kopf(it) && (o.lat == null || it.lat == null || map.distance([o.lat, o.lon], [it.lat, it.lon]) < 15000))) return false; schon.push(it); return true; };
     const orte = (await orteSuchen(q, um).catch(() => [])).filter(dazu);
     if (req !== ortReq || document.activeElement !== input) return;
     zeigeVorschlaege(input, [...lokal, ...orte], true);
