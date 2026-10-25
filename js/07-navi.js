@@ -23,6 +23,11 @@ function say(text) {
   } catch {}
 }
 
+// Spuren vor der Kreuzung (Valhalla turn_lanes): hell = beste Spur, halb = geht auch, grau = falsch
+const LANE_PFEILE = [[16, '↖'], [8, '←'], [4, '↙'], [2, '↑'], [32, '↗'], [64, '→'], [128, '↘'], [256, '↶'], [512, '⇠'], [1024, '⇢']];
+const laneHtml = lanes => (lanes || []).map(l => `<span class="${l.active ? 'on' : l.valid ? 'ok' : ''}">${LANE_PFEILE.filter(([b]) => l.directions & b).map(([, c]) => c).join('') || '↑'}</span>`).join('');
+const LANE_M = 600;
+
 const distText = m => m < 100 ? `${Math.max(0, Math.round(m / 10) * 10)} m` : m < 1000 ? `${Math.round(m / 50) * 50} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
 
 // Position auf der Route: zuerst kurz vor bis ein paar km nach dem letzten Stand suchen, damit Touren mit Start = Ziel
@@ -47,7 +52,7 @@ function startNav() {
   $('nav').hidden = false;
   $('navZoom').hidden = false; $('navZoomAuto').hidden = true;
   $('navArrow').textContent = '📡'; $('navDist').textContent = 'GPS …'; $('navText').textContent = 'Warte auf Standort';
-  $('navSpeed').textContent = ''; $('navRest').textContent = '';
+  $('navSpeed').textContent = ''; $('navRest').textContent = ''; $('navLanes').innerHTML = '';
   setFull(true);
   keepScreenOn();
   nav.marker = L.marker(routeCoords[0], { interactive: false, zIndexOffset: 1000,
@@ -119,11 +124,13 @@ function navFix(pos) {
   if (!next || restM < 30) {
     $('navArrow').textContent = '🏁'; $('navDist').textContent = restM < 30 ? 'Ziel erreicht' : distText(restM);
     $('navText').textContent = routeManeuvers.at(-1)?.text || 'Ziel';
+    $('navLanes').innerHTML = '';
   } else {
     const m = (next.km - nav.km) * 1000;
     $('navArrow').textContent = TURN_ARROWS[next.type] || '↑';
     $('navDist').textContent = distText(m);
     $('navText').textContent = next.text;
+    $('navLanes').innerHTML = m < LANE_M ? laneHtml(next.lanes) : '';
     // Ansage je Manöver einmal pro Stufe; die weite Stufe hängt vom Tempo ab
     const far = (kmh || 30) > 35 ? 400 : 250;
     const key = `${next.km}`;
@@ -155,6 +162,7 @@ function navPeek() {
   $('navArrow').textContent = TURN_ARROWS[m.type] || (i === ahead.length - 1 ? '🏁' : '↑');
   $('navDist').textContent = `${i + 1}/${ahead.length} · ${distText((m.km - nav.km) * 1000)}`;
   $('navText').textContent = m.text;
+  $('navLanes').innerHTML = laneHtml(m.lanes);
   $('navNote').textContent = 'Vorschau · Tippen: nächstes Manöver';
   const at = pointAtKm(m.km);
   (nav.peekMark ||= L.circleMarker(at, { radius: 14, color: '#1d3557', weight: 4, fillColor: '#fff', fillOpacity: .6, interactive: false })).setLatLng(at).addTo(map);

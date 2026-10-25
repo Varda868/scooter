@@ -27,6 +27,7 @@
       <div class="wp-tools">
         <button id="addVia" title="Zwischenziel hinzufügen">＋ Zwischenziel</button>
         <button id="reverse" title="Reihenfolge umkehren">⇅ Umkehren</button>
+        <button id="optimize" title="Zwischenziele in die kürzeste Reihenfolge bringen (Start und Ziel bleiben)">⚡ Reihenfolge</button>
         <button id="undo" title="Letzten Schritt rückgängig machen">↶ Zurück</button>
       </div>
       <div class="back-tools">
@@ -160,6 +161,7 @@
       <input id="primary" type="range" min="0" max="1" step="0.1" value="0.2">
       <label for="hills">Steigungen: <span id="hillsVal">eher meiden</span></label>
       <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
+      <label><input id="unpaved" type="checkbox" checked> Schotter, Feld- und Waldwege meiden</label>
       <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
       <select id="gradeWarn">
         <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
@@ -212,6 +214,7 @@
   <div id="map"></div>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
+    <div id="navLanes" class="nav-lanes"></div>
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
       <button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
