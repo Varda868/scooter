@@ -106,6 +106,16 @@ let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
 let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
 let routeStages = [], currentTrip = null, tripClimb = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
 let routeStageNights = []; // je Etappenende: Nächte dort (2 = Ruhetag), parallel zu routeStages
+let routeFaehren = []; // Fährstücke der Route als [{ km, bisKm, s }]: zählen nicht als Fahrt (Tank, Etappen, Steigung)
+// Gefahrene km bis Routen-km (ohne Fährstrecken) und umgekehrt; auf einer Fähre steht der Zähler still,
+// die Umkehrung liefert dann den Anleger davor
+const fahrKm = km => routeFaehren.reduce((r, f) => r - Math.max(0, Math.min(km, f.bisKm) - f.km), km);
+function beiFahrKm(fk) {
+  let km = fk;
+  for (const f of routeFaehren) if (f.km < km) km += f.bisKm - f.km; else break;
+  return km;
+}
+const aufFaehre = km => routeFaehren.some(f => km > f.km && km < f.bisKm);
 const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, zoomTo: 0, marker: null, profile: false };
 const gradeSignLayer = L.layerGroup().addTo(map);
 const stageLayer = L.layerGroup().addTo(map);
@@ -140,6 +150,7 @@ function setRouteCoords(coords) {
   $('gpxTour').hidden = false;
   $('mapSave').hidden = !vm.layer; $('mapSaveInfo').textContent = '';
   routeCoords = coords;
+  routeFaehren = [];
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
   loadOpencaching();

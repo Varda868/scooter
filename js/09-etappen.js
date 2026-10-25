@@ -12,7 +12,9 @@ function etaAtKm(km) {
   const from = n ? routeStages[n - 1] : 0;
   let base = Date.now();
   if (day) { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(+$('dayStart').value, 0, 0, 0); base = d.getTime(); }
-  return base + withBreaks((km - from) / kmh * 3600) * 1000;
+  // Fährzeit kommt dazu, ohne Pausen auszulösen
+  const faehre = routeFaehren.reduce((t, f) => t + (f.km >= from && f.km < km ? f.s * Math.min(1, (km - f.km) / ((f.bisKm - f.km) || 1)) : 0), 0);
+  return base + (withBreaks((fahrKm(km) - fahrKm(from)) / kmh * 3600) + faehre) * 1000;
 }
 
 // Spritkosten aus „Mein Roller“ (Verbrauch l/100 km, Preis €/l); ohne Verbrauch nichts.
@@ -33,7 +35,7 @@ const fuelText = km => {
 const climbText = () => tripClimb ? ` · ↑ ${tripClimb.up} m ↓ ${tripClimb.down} m` : '';
 const stageTripText = s => (routeStages.length
   ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${tourDays()} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
-  : tripText(s)) + fuelText(s.length) + climbText();
+  : tripText(s)) + fuelText(routeKm?.at(-1) ? s.length * fahrKm(routeKm.at(-1)) / routeKm.at(-1) : s.length) + climbText();
 
 // Feste Übernachtungen (🌙 am Zwischenziel) als Routen-km. Über die Abschnittslängen statt locateOnRoute,
 // weil bei Hin und zurück auf derselben Straße ein Punkt sonst auf der falschen Richtung landen kann.
@@ -56,15 +58,17 @@ function planStages() {
   const fixedAt = [];
   stageLayer.clearLayers();
   $('stageSummary').textContent = '';
-  const hours = +$('dayMax').value, total = routeKm?.at(-1);
-  if (!total) return;
-  const fixed = fixedNights(total);
+  const hours = +$('dayMax').value, routeTotal = routeKm?.at(-1);
+  if (!routeTotal) return;
+  // Geteilt wird nach gefahrenen km: Fährstrecken zählen nicht, ein Etappenende fällt nie aufs Wasser
+  const total = fahrKm(routeTotal);
+  const fixed = fixedNights(routeTotal).map(f => ({ ...f, km: fahrKm(f.km) }));
   // Ohne Tagesgrenze (aus) zählen nur die festen Übernachtungen
   const perDay = hours && routeKmh ? routeKmh * hours : Infinity;
   if (!fixed.length && total <= perDay * 1.1) return;
   // Halte (keine Formpunkte) als bevorzugte Etappenenden
   const located = waypoints.filter(w => w.latlng);
-  const stopKms = located.filter((w, i) => i && i < located.length - 1 && !w.shaping).map(w => locateOnRoute(w.latlng.lat, w.latlng.lng).km);
+  const stopKms = located.filter((w, i) => i && i < located.length - 1 && !w.shaping).map(w => fahrKm(locateOnRoute(w.latlng.lat, w.latlng.lng).km));
   // Jeder Abschnitt bis zur nächsten festen Übernachtung (bzw. zum Ziel) wird für sich in Tage geteilt,
   // die Rückfahrt zählt also ab dem Übernachtungsort neu
   let from = 0;
@@ -78,7 +82,9 @@ function planStages() {
     }
     if (seg.nights) { from = seg.km; routeStages.push(from); routeStageNights.push(seg.nights); fixedAt.push(seg); }
   }
+  // Tageslängen in gefahrenen km, Etappenenden zurück auf Routen-km (Anleger vor der Fähre)
   const ends = [...routeStages, total], dayNo = d => 1 + nightsBefore(d);
+  routeStages = routeStages.map(beiFahrKm);
   $('stageSummary').textContent = '🌙 ' + ends.map((e, d) => `Tag ${dayNo(d)}: ${(e - (d ? ends[d - 1] : 0)).toFixed(0)} km` +
     (routeStageNights[d] > 1 ? ` · Tag ${dayNo(d) + 1}: Ruhetag` : '')).join(' · ');
   routeStages.forEach((km, d) => {

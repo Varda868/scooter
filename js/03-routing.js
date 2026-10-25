@@ -143,7 +143,12 @@ async function grobePunkte(locs) {
       const pts = decode(leg.shape), km = [0];
       for (let i = 1; i < pts.length; i++) km.push(km[i - 1] + L.latLng(pts[i - 1]).distanceTo(L.latLng(pts[i])) / 1000);
       // Fährstücke als Index-Bereiche [von, bis] der Shape
-      const faehren = leg.maneuvers.filter(m => m.travel_type === 'ferry').map(m => [m.begin_shape_index, m.end_shape_index]);
+      // Valhalla meldet Fähren nur über die Manövertypen 28 (an Bord) und 29 (von Bord), travel_type bleibt das Fahrzeug
+      const faehren = [];
+      leg.maneuvers.forEach((m, k) => { if (m.type === 28) {
+        const aus = leg.maneuvers.slice(k + 1).find(n => n.type === 29);
+        faehren.push([m.begin_shape_index, aus ? aus.begin_shape_index : m.end_shape_index]);
+      } });
       const aufFaehre = i => faehren.find(([v, z]) => i > v && i < z);
       const add = (i, hafen) => out.push({ latlng: L.latLng(pts[i]), shaping: true, grob: true, hafen });
       let last = 0;
@@ -154,7 +159,7 @@ async function grobePunkte(locs) {
           if (km[f[0]] - km[last] > 5 || !out.at(-1).grob) add(f[0], 'ab'); else out.at(-1).hafen = 'ab';
           add(f[1], 'an'); last = f[1]; i = f[1];
           // Fährstrecke selbst merken: zu lang für eine Roller-Anfrage, aber Fähre ist Fähre, egal mit welchem Fahrzeug
-          const fm = leg.maneuvers.filter(m => m.travel_type === 'ferry' && m.begin_shape_index >= f[0] && m.begin_shape_index < f[1]);
+          const fm = leg.maneuvers.filter(m => m.begin_shape_index >= f[0] && m.begin_shape_index < f[1] && m.type !== 29);
           out.at(-1).faehre = { coords: pts.slice(f[0], f[1] + 1), m: fm[0] || {},
             km: km[f[1]] - km[f[0]], s: fm.reduce((t, m) => t + (m.time || 0), 0) };
           continue;
@@ -350,7 +355,11 @@ function showTrip(trip, alternates = []) {
   });
   if (alternates.length) compareRoutes([trip, ...alternates], pick);
   setRouteCoords(tripCoords(trip));
-  routeKmh = trip.summary.length / (tripTime(trip.summary) / 3600);
+  routeFaehren = typeof faehrenDerRoute === 'function' ? faehrenDerRoute(trip) : []; // js/25 lädt später
+  // Schnitt nur über die Fahrt, ohne Fährstrecke und -zeit (Valhalla-Länge und Shape-km weichen leicht ab, daher als Anteil)
+  const fahrAnteil = routeKm.at(-1) ? fahrKm(routeKm.at(-1)) / routeKm.at(-1) : 1;
+  const fahrt = { length: trip.summary.length * fahrAnteil, time: Math.max(60, trip.summary.time - routeFaehren.reduce((t, f) => t + f.s, 0)) };
+  routeKmh = fahrt.length / (tripTime(fahrt) / 3600);
   planStages();
   loadWeather(trip);
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg

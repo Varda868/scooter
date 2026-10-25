@@ -47,7 +47,8 @@ function steepSections(limit) {
   const out = [], total = routeKm[routeKm.length - 1];
   let cur = null;
   for (let km = 0; km <= total; km += 0.05) {
-    const g = gradeAt(km), dir = Math.sign(g);
+    // Auf der Fähre gibt es keine Steigung, das Höhenmodell springt dort nur an der Küste
+    const g = aufFaehre(km) ? 0 : gradeAt(km), dir = Math.sign(g);
     if (cur && (Math.abs(g) < limit * 0.7 || dir !== cur.dir)) {
       if (km - cur.from >= 0.1) out.push({ ...cur, to: km });
       cur = null;
