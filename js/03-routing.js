@@ -298,4 +298,5 @@ function showTrip(trip, alternates = []) {
   loadPois();
   renderCaches();
   renderMyPois();
+  tankPlan();
 }

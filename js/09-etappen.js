@@ -20,10 +20,13 @@ function etaAtKm(km) {
 // → gut 0,03 l je 100 hm bergauf, bergab zurück gibt es fast nichts); Mehrtagestour mit Gepäck: +20 kg und
 // +5 % auf der Ebene (Roll- und Luftwiderstand der Taschen).
 const FUEL_MASSE = 180, FUEL_GEPAECK = 20, FUEL_MJ_L = 32 * 0.18;
+const fuelLiters = km => {
+  const gepaeck = routeStages.length > 0, masse = FUEL_MASSE + (gepaeck ? FUEL_GEPAECK : 0);
+  return km * roller.fuel / 100 * (gepaeck ? 1.05 : 1) + (tripClimb ? masse * 9.81 * tripClimb.up / 1e6 / FUEL_MJ_L : 0);
+};
 const fuelText = km => {
   if (!(+roller.fuel > 0)) return '';
-  const gepaeck = routeStages.length > 0, masse = FUEL_MASSE + (gepaeck ? FUEL_GEPAECK : 0);
-  const l = km * roller.fuel / 100 * (gepaeck ? 1.05 : 1) + (tripClimb ? masse * 9.81 * tripClimb.up / 1e6 / FUEL_MJ_L : 0);
+  const l = fuelLiters(km);
   const eur = l * (+roller.price || 0);
   return ` · ⛽ ${l.toFixed(1).replace('.', ',')} l` + (eur ? ` ≈ ${eur.toFixed(2).replace('.', ',')} €` : '');
 };

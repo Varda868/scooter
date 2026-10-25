@@ -122,7 +122,7 @@ function renderElevation(pts, lenM) {
   const { up, down } = climb(pts);
   // Höhenmeter auch in die Zusammenfassung unter „Route berechnen“
   if (currentTrip) { const ohne = stageTripText(currentTrip.summary); tripClimb = { up, down };
-    $('summary').textContent = $('summary').textContent.replace(ohne, stageTripText(currentTrip.summary)); }
+    $('summary').textContent = $('summary').textContent.replace(ohne, stageTripText(currentTrip.summary)); tankPlan(); }
   // Steilster Abschnitt über mindestens 200 m
   let maxGrade = 0;
   for (let i = 0, j = 0; i < pts.length; i++) {
