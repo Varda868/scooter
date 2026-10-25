@@ -120,7 +120,7 @@ const sim = { km: 0, running: false, frame: 0, last: 0, zoomAt: 0, zoomFrom: 0, 
 const gradeSignLayer = L.layerGroup().addTo(map);
 const stageLayer = L.layerGroup().addTo(map);
 const poiLayer = L.layerGroup();
-// Ladeanzeige oben auf der Karte, je Quelle eine Zeile (POIs, Sonden …); text = null nimmt sie weg, ms blendet nach Zeit aus
+// Ladeanzeige oben auf der Karte, je Quelle eine Zeile (POIs, Wetter …); text = null nimmt sie weg, ms blendet nach Zeit aus
 const mapBusyBox = L.DomUtil.create('div', 'map-busy', map.getContainer()), mapBusyTimer = {};
 function mapBusy(key, text, ms) {
   clearTimeout(mapBusyTimer[key]);
@@ -130,9 +130,6 @@ function mapBusy(key, text, ms) {
   el.textContent = text;
   if (ms) mapBusyTimer[key] = setTimeout(() => el.remove(), ms);
 }
-const cacheLayer = L.layerGroup().addTo(map);
-let caches = [];
-const oc = { key: '', on: true, request: 0 };
 
 // Referenzlinie für POI-/Cache-Filter: berechnete Route oder geladener GPX-Track
 function setRouteCoords(coords) {
@@ -153,8 +150,6 @@ function setRouteCoords(coords) {
   routeFaehren = [];
   routeKm = [0];
   for (let i = 1; i < coords.length; i++) routeKm.push(routeKm[i - 1] + map.distance(coords[i - 1], coords[i]) / 1000);
-  loadOpencaching();
-  queueMicrotask(expRouteChanged);
 }
 
 const $ = id => document.getElementById(id);
@@ -166,8 +161,7 @@ $('speed').oninput = e => $('speedVal').textContent = e.target.value;
 $('primary').oninput = e => $('primaryVal').textContent = label(+e.target.value, primaryWords);
 $('hills').oninput = e => $('hillsVal').textContent = label(+e.target.value, hillsWords);
 $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
-$('radius').onchange = () => { loadPois(); loadOpencaching(); };
-$('cachesNearRoute').onchange = () => renderCaches();
+$('radius').onchange = () => loadPois();
 // Vorgabe seit v35: alles aus außer Tankstellen. Einmalig auch eine früher gespeicherte Auswahl zurücksetzen
 { const s = store.get('settings', {}); if (s.poiStd !== 2) { delete s.poiTypes; s.poiStd = 2; store.set('settings', s); } }
 $('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
@@ -190,7 +184,7 @@ const settings = store.get('settings', {});
 if (settings.dayAuto == null) { settings.dayAuto = 1; if (!+settings.dayMax) settings.dayMax = '6'; }
 if (settings.dayMax === '2') settings.dayMax = '3'; // 2 h gibt es nicht mehr
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
-['profileBox', 'poiBox', 'trafficBox', 'ocBox', 'experimentBox', 'exploreBox'].forEach(id => {
+['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
   $(id).open = !!settings[id];
   $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
 });

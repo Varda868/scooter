@@ -356,7 +356,6 @@ function clearRoute() {
   $('gpxTour').hidden = true;
   $('mapSave').hidden = true; $('mapSaveInfo').textContent = '';
   routeLayer = routeCoords = routeKm = null; routeFaehren = [];
-  queueMicrotask(expRouteChanged);
   $('summary').textContent = '';
   $('steps').innerHTML = '';
   // Höhenprofil samt Steigungsschildern weg; eine noch laufende Höhenanfrage verfällt
@@ -368,9 +367,6 @@ function clearRoute() {
   tankPlan();
   faehrenZeigen(null);
   loadPois();
-  oc.request++;
-  caches = caches.filter(c => !c.oc);
-  renderCaches();
 }
 
 async function geocode(q) {

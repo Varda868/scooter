@@ -82,15 +82,7 @@
   fieldset label { display:inline-flex; align-items:center; gap:4px; margin:4px 10px 4px 0; color:var(--fg); font-size:14px; }
   #pois { list-style:none; padding:0; font-size:13px; }
   #pois li { margin:4px 0; cursor:pointer; }
-  #pois li:hover, #caches li:hover { text-decoration:underline; }
-  #caches { list-style:none; padding:0; font-size:13px; }
-  #caches li { margin:4px 0; cursor:pointer; }
-  .exp-square { pointer-events:none; }
-  #sondeRadius { width:100%; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  .sonde-list { list-style:none; padding:0; margin:8px 0; font-size:13px; }
-  .sonde-list li { padding:5px 0; border-bottom:1px solid var(--line); cursor:pointer; }
-  .sonde-pin { font-size:20px; line-height:24px; text-align:center; filter:drop-shadow(0 0 2px #fff); }
-  .sonde-pin.old { opacity:.55; }
+  #pois li:hover { text-decoration:underline; }
   #rollerBox input[type=number], .roller-add input { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   .roller-add { display:flex; gap:6px; margin-top:6px; }
   #rollerBox .roller-add input[type=number] { width:80px; flex:none; }

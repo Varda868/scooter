@@ -1,5 +1,5 @@
 // --- Mein Roller: Fahrzeugdaten, Werkstatt, Wartungsbuch. Nur localStorage auf diesem Gerät (persönliche Daten,
-// nie auf den Server); Sicherung als JSON-Datei. km-Stand = Tacho-Eintrag + seitdem gefahrene Touren aus dem Entdecker.
+// nie auf den Server); Sicherung als JSON-Datei. km-Stand = Tacho-Eintrag + seitdem gefahrene Navi-Fahrten.
 const ROLLER_TEXT = ['model', 'year', 'plate', 'vin', 'insurer', 'policy', 'assist', 'shop', 'shopTel', 'shopAddr'];
 const ROLLER_NUM = ['odo', 'oilEvery', 'serviceMonths'];
 const ROLLER_DEZ = ['fuel', 'price', 'tank', 'reserve']; // Verbrauch l/100 km, Benzinpreis €/l, Tank und Reserve l; Komma erlaubt

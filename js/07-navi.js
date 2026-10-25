@@ -171,7 +171,7 @@ function navFix(pos) {
 // --- Pfeil-Modus: schwarzer Bildschirm mit großem Pfeil, ohne Karte. Spart Display, Kacheln und GPS.
 // GPS nach Abstand: weiter als PFEIL_WEIT_M bis zum nächsten Manöver nur alle PFEIL_TAKT_MS ein Fix, dazwischen wird
 // mit dem letzten Tempo entlang der Route weitergerechnet; näher als PFEIL_NAH_M oder neben der Route wieder durchgehend.
-// Wetter, Verkehr, POIs und Geocaches warten, Talk nur per Sprechtaste. Ein Tipp zeigt die Karte für PFEIL_KARTE_MS.
+// Wetter, Verkehr, und POIs warten, Talk nur per Sprechtaste. Ein Tipp zeigt die Karte für PFEIL_KARTE_MS.
 const PFEIL_WEIT_M = 1000, PFEIL_NAH_M = 500, PFEIL_TAKT_MS = 12000, PFEIL_KARTE_MS = 20000, PFEIL_AKKU = 0.2;
 nav.pfeil = store.get('navPfeil', false);
 nav.pausiert = new Map();
@@ -343,11 +343,10 @@ function navArrive() {
   const ride = exp.rec.length > 1 ? exp.rec.slice() : null;
   arrival = { here, home: nav.home, coords: ride || routeCoords.slice() };
   const kmh = nav.moveSec > 60 ? nav.odo / nav.moveSec * 3600 : null;
-  const tiles = ride && exp.tiles.size ? newTilesOf(ride).size : null;
   stopNav(true);
   say('Navigation beendet');
   $('arriveStats').innerHTML = [`<b>${nav.odo.toFixed(1).replace('.', ',')} km</b>`, `${durText(nav.moveSec)} Fahrzeit`,
-    kmh ? `Ø ${Math.round(kmh)} km/h` : '', tiles != null ? `🧭 ${tiles} neue Kacheln` : ''].filter(Boolean).join(' · ');
+    kmh ? `Ø ${Math.round(kmh)} km/h` : ''].filter(Boolean).join(' · ');
   const canBack = !!arrival.home?.latlng && here.distanceTo(arrival.home.latlng) > BACK_HOME_M;
   $('arriveBack').hidden = $('arriveBackDiff').hidden = !canBack;
   $('arriveSave').hidden = $('arriveDrop').hidden = !ride;
