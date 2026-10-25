@@ -171,4 +171,7 @@ $('go').onclick = () => {
 };
 renderWaypoints();
 renderMyPois();
-if (ready()) route();
+// Erst rechnen, wenn alle Skripte geladen sind: offline kommt die gespeicherte Route sofort, und showTrip braucht
+// Teile aus späteren Dateien (Vektorkarte, Fähren)
+const ersteRoute = () => { if (ready()) route(); };
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ersteRoute); else ersteRoute();

@@ -73,11 +73,13 @@ async function fetchRoute(body) {
 // Die öffentliche Valhalla-Instanz rechnet höchstens 200 km Luftlinie je Anfrage. Lange Strecken: zwischen weit
 // entfernten Punkten Formpunkte auf der Luftlinie einfügen, in Anfragen bis MAX_REQUEST_KM teilen und wieder zusammensetzen.
 const MAX_REQUEST_KM = 180;
+// Fährhafen eines Grobpunkts: 'ab', 'an' oder 'anab' (Ankunft und gleich weiter mit der nächsten Fähre, z. B. Ciutadella)
+const hafenAb = w => w.hafen === 'ab' || w.hafen === 'anab', hafenAn = w => w.hafen === 'an' || w.hafen === 'anab';
 function chunkLocations(locs) {
   const pts = [];
   locs.forEach((w, i) => {
     // Zwischen zwei Fährhäfen keine Punkte aufs Wasser setzen
-    if (i && !(locs[i - 1].hafen === 'ab' && w.hafen === 'an')) {
+    if (i && !(hafenAb(locs[i - 1]) && hafenAn(w))) {
       const a = locs[i - 1].latlng, b = w.latlng, n = Math.ceil(a.distanceTo(b) / 1000 / (MAX_REQUEST_KM * 0.9));
       for (let k = 1; k < n; k++) pts.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), shaping: true });
     }
@@ -149,15 +151,17 @@ async function grobePunkte(locs) {
         const aus = leg.maneuvers.slice(k + 1).find(n => n.type === 29);
         faehren.push([m.begin_shape_index, aus ? aus.begin_shape_index : m.end_shape_index]);
       } });
-      const aufFaehre = i => faehren.find(([v, z]) => i > v && i < z);
+      // ab dem Anlegerpunkt selbst: OSM-Fährlinien sind oft gerade, dann hat das Fährstück nur zwei Punkte
+      const aufFaehre = i => faehren.find(([v, z]) => i >= v && i < z);
       const add = (i, hafen) => out.push({ latlng: L.latLng(pts[i]), shaping: true, grob: true, hafen });
       let last = 0;
       for (let i = 1; i < pts.length - 1; i++) {
         const f = aufFaehre(i);
         if (f) {
           // Hafen davor (falls nicht gerade erst gesetzt) und danach; weiter zählen ab Ankunft
-          if (km[f[0]] - km[last] > 5 || !out.at(-1).grob) add(f[0], 'ab'); else out.at(-1).hafen = 'ab';
-          add(f[1], 'an'); last = f[1]; i = f[1];
+          if (km[f[0]] - km[last] > 5 || !out.at(-1).grob) add(f[0], 'ab'); else out.at(-1).hafen = out.at(-1).hafen === 'an' ? 'anab' : 'ab';
+          // weiter beim Ankunftshafen selbst, dort kann gleich die nächste Fähre ablegen
+          add(f[1], 'an'); last = f[1]; i = f[1] - 1;
           // Fährstrecke selbst merken: zu lang für eine Roller-Anfrage, aber Fähre ist Fähre, egal mit welchem Fahrzeug
           const fm = leg.maneuvers.filter(m => m.begin_shape_index >= f[0] && m.begin_shape_index < f[1] && m.type !== 29);
           out.at(-1).faehre = { coords: pts.slice(f[0], f[1] + 1), m: fm[0] || {},
@@ -187,7 +191,7 @@ async function planRoute(locs, exclude = []) {
   const chunks = chunkLocations(await grobePunkte(locs));
   const trips = [];
   for (const chunk of chunks) {
-    const fa = chunk.length === 2 && chunk[0].hafen === 'ab' && chunk[1].faehre;
+    const fa = chunk.length === 2 && hafenAb(chunk[0]) && chunk[1].faehre;
     if (fa && chunk[0].latlng.distanceTo(chunk[1].latlng) / 1000 > MAX_REQUEST_KM * 0.9) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
@@ -360,7 +364,7 @@ function showTrip(trip, alternates = []) {
   });
   if (alternates.length) compareRoutes([trip, ...alternates], pick);
   setRouteCoords(tripCoords(trip));
-  routeFaehren = typeof faehrenDerRoute === 'function' ? faehrenDerRoute(trip) : []; // js/25 lädt später
+  routeFaehren = faehrenDerRoute(trip);
   // Schnitt nur über die Fahrt, ohne Fährstrecke und -zeit (Valhalla-Länge und Shape-km weichen leicht ab, daher als Anteil)
   const fahrAnteil = routeKm.at(-1) ? fahrKm(routeKm.at(-1)) / routeKm.at(-1) : 1;
   const fahrt = { length: trip.summary.length * fahrAnteil, time: Math.max(60, trip.summary.time - routeFaehren.reduce((t, f) => t + f.s, 0)) };
