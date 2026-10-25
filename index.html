@@ -209,6 +209,13 @@
       <div class="profil-knoepfe"><button id="profilExport">⬇ Profil speichern</button><button id="profilTeilen" hidden>📤 Teilen</button>
         <label class="file-btn">📂 Profil laden<input id="profilImport" type="file" accept=".json,application/json"></label></div>
       <div id="profilStatus" class="hint"></div>
+      <div id="syncBox" hidden>
+        <div class="section-title">☁️ Über den eigenen Server abgleichen</div>
+        <p class="hint">Verschlüsselt mit einem Sync-Passwort, das nur deine Geräte kennen (der Server sieht nur Datensalat). Auf jedem Gerät dasselbe Passwort eingeben. „Schlüssel mitnehmen“ gilt auch hier.</p>
+        <div id="syncAus" class="talk-row"><input id="syncPw" type="password" autocomplete="new-password" placeholder="Sync-Passwort (mind. 10 Zeichen)"><button id="syncSetzen">Verbinden</button></div>
+        <div id="syncAn" class="profil-knoepfe" hidden><button id="syncHoch">⬆ Auf Server sichern</button><button id="syncRunter">⬇ Vom Server laden</button><button id="syncTrennen" class="secondary">Trennen</button></div>
+        <div id="syncStatus" class="hint"></div>
+      </div>
       </details>
       <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
       <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>

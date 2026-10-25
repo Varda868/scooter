@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 5;
+const SW_SCHEMA = 6;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -131,6 +131,10 @@ function sw_schema(PDO $db): void {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_relay (id $id, t INTEGER NOT NULL, url VARCHAR(255) NOT NULL, quelle VARCHAR(8) NOT NULL, ok INTEGER NOT NULL, " .
       "ms_verb INTEGER, ms_eose INTEGER, schreiben INTEGER, ip VARCHAR(64), cert_bis INTEGER, nip11 $txt, fehler VARCHAR(255))");
     $db->exec('CREATE INDEX ' . (sw_mysql() ? '' : 'IF NOT EXISTS ') . 'sw_relay_url ON sw_relay (url, t)');
+  }
+  // v6: verschlüsselte Profile für den Abgleich zwischen eigenen Geräten (Schlüssel und Fach-Kennung kennt nur die App)
+  if ($v < 6) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_profil (id VARCHAR(64) PRIMARY KEY, t INTEGER NOT NULL, abruf INTEGER, groesse INTEGER NOT NULL, ip VARCHAR(64), daten " . (sw_mysql() ? 'LONGTEXT' : 'TEXT') . ")");
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);
