@@ -148,8 +148,11 @@ async function grobePunkte(locs) {
   // rastet sie auf die nächste Straße, die Teil-Legs werden danach wieder zu einem Leg verbunden
   const ext = [locs[0]];
   for (let i = 1; i < locs.length; i++) {
-    const a = locs[i - 1].latlng, b = locs[i].latlng, n = Math.ceil(a.distanceTo(b) / 1000 / GROB_MAX_KM);
-    for (let k = 1; k < n; k++) ext.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * k / n, a.lng + (b.lng - a.lng) * k / n), mitte: true });
+    // Teilungspunkte nicht in die Mitte, sondern so spät wie möglich: das lange erste Stück rechnet die Grobroute am
+    // Stück und wählt die Fähre selbst (Augsburg–Athen: Mitte läge im Hinterland von Split, danach Split–Ancona–
+    // Igoumenitsa), der Rest kurz vor dem Ziel liegt meist schon an Land
+    const a = locs[i - 1].latlng, b = locs[i].latlng, d = a.distanceTo(b) / 1000, schritt = GROB_MAX_KM * 0.95;
+    if (d > GROB_MAX_KM) for (let k = 1; k * schritt < d - 50; k++) { const f = k * schritt / d; ext.push({ latlng: L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f), mitte: true }); }
     ext.push(locs[i]);
   }
   const gruppen = [[ext[0]]];
