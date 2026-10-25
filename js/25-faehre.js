@@ -12,12 +12,13 @@ function faehrenDerRoute(trip) {
     for (const m of l.maneuvers) {
       const i = off + m.begin_shape_index, p = routeCoords[i];
       // travel_type bleibt bei Valhalla das Fahrzeug, die Fähre steckt nur in den Manövern dazwischen
-      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: m.time || 0, name: m.street_names?.[0] || '' };
+      const t = Number.isFinite(+m.time) ? +m.time : 0;
+      if (m.type === FAEHRE_EIN && p) cur = { km: routeKm[i] ?? 0, lat: p[0], lon: p[1], s: t, name: m.street_names?.[0] || '' };
       else if (m.type === FAEHRE_AUS && cur && p) {
         const bisKm = routeKm[i] ?? cur.km;
         // Ohne Zeit von Valhalla mit 25 km/h schätzen (wie faehrTrip)
         Object.assign(cur, { bisKm, zLat: p[0], zLon: p[1], s: cur.s || (bisKm - cur.km) / 25 * 3600 }); out.push(cur); cur = null;
-      } else if (cur) { cur.s += m.time || 0; cur.name ||= m.street_names?.[0] || ''; }
+      } else if (cur) { cur.s += t; cur.name ||= m.street_names?.[0] || ''; }
     }
     off += decode(l.shape).length - 1;
   }
@@ -36,7 +37,9 @@ async function faehreAusKacheln(f) {
   const k = `${Math.floor(f.lat)}_${Math.floor(f.lon)}`;
   if (!ix?.ferryTiles?.includes(k)) return null;
   const n = f.name.toLowerCase(), nah = (await faehrKachel(ix, k)).filter(([, pts]) => faehreAbstand(f.lat, f.lon, pts) <= FAEHRE_R);
-  const el = nah.find(([, , t]) => n && (t.name || '').toLowerCase() === n) || nah[0];
+  // Sonst die Linie, die auch am Zielhafen vorbeikommt (Liverpool hat Linien zur Isle of Man und nach Dublin)
+  const el = nah.find(([, , t]) => n && (t.name || '').toLowerCase() === n)
+    || (f.zLat != null && nah.find(([, pts]) => faehreAbstand(f.zLat, f.zLon, pts) <= 2000)) || nah[0];
   return el ? { ...el[2], '@osm': `way/${el[0].slice(1)}` } : null;
 }
 // Kürzester Abstand in m vom Punkt zur Linie (flach gerechnet, reicht für ein paar hundert Meter)
