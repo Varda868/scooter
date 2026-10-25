@@ -150,6 +150,8 @@ async function grobePunkte(locs) {
   const out = [locs[0]];
   trip.legs.forEach((leg, j) => {
     const a = locs[j], b = locs[j + 1];
+    // Von Hand eingebaute Fähre bleibt, wie sie ist (faehrWegpunkte)
+    if (hafenAb(a) && hafenAn(b) && b.faehre) { out.push(b); return; }
     if (a.latlng.distanceTo(b.latlng) / 1000 > MAX_REQUEST_KM * 0.9) {
       const pts = decode(leg.shape), km = [0];
       for (let i = 1; i < pts.length; i++) km.push(km[i - 1] + L.latLng(pts[i - 1]).distanceTo(L.latLng(pts[i])) / 1000);
@@ -185,9 +187,29 @@ async function grobePunkte(locs) {
   return out;
 }
 
+// Von Hand eingebaute Fähre („Diese Fähre in die Route“): Anleger-Paar „⛴ Name · ab“ → „· an“ wird zum Fährabschnitt
+// wie aus der Grobroute, mit der OSM-Linie oder (Kurzlink, alter Stand) der Luftlinie. Sonst bekäme Valhalla zwei
+// Wegpunkte auf dem Wasser, bei Genua–Olbia 480 km weit, und fände keine Roller-Route.
+function faehrWegpunkte(locs) {
+  const name = w => /^⛴ (.*) · (?:ab|an)$/.exec(w?.text || '')?.[1];
+  const out = locs.map(w => ({ ...w }));
+  for (let i = 1; i < out.length; i++) {
+    const vor = out[i - 1], w = out[i], n = name(w);
+    if (!n || n !== name(vor) || !vor.latlng || !w.latlng) continue;
+    // Linie vom Abfahrtsanleger aus; nach „Umkehren“ steht sie andersherum am anderen Punkt
+    let coords = (w.faehre || locs[i - 1].faehre)?.coords || [[vor.latlng.lat, vor.latlng.lng], [w.latlng.lat, w.latlng.lng]];
+    if (vor.latlng.distanceTo(coords[0]) > vor.latlng.distanceTo(coords.at(-1))) coords = [...coords].reverse();
+    const km = coords.reduce((s, p, k) => k ? s + L.latLng(coords[k - 1]).distanceTo(p) : 0, 0) / 1000;
+    vor.hafen = vor.hafen === 'an' ? 'anab' : 'ab';
+    w.hafen = 'an';
+    w.faehre = { coords, km, s: (w.faehre || locs[i - 1].faehre)?.s || 0, m: { street_names: [n], instruction: `Nehmen Sie die Fähre ${n}.` } };
+  }
+  return out;
+}
+
 // Lange Fähre als eigener Abschnitt aus der Grobroute; Start und Ankunft sind Platzhalter, die joinLegs wegschneidet
 function faehrTrip(fa) {
-  const n = fa.coords.length - 1, name = fa.m.street_names, len = fa.km, time = fa.s || len / 25 * 3600;
+  const n = fa.coords.length - 1, name = fa.m.street_names, len = fa.km, time = Number.isFinite(fa.s) && fa.s > 0 ? fa.s : len / 25 * 3600;
   const leg = { shape: encode(fa.coords), summary: { length: len, time }, maneuvers: [
     { type: 1, instruction: 'Start', begin_shape_index: 0 },
     { type: 28, instruction: fa.m.instruction || 'Nehmen Sie die Fähre.', street_names: name, travel_type: 'ferry', time, length: len, begin_shape_index: 0 },
@@ -200,7 +222,7 @@ function faehrTrip(fa) {
 // Valhalla-Anfrage ab, damit nie zwei Läufe gleichzeitig fragen und kein altes Ergebnis auf der Karte landet
 let routeLauf = 0, routeAbbruch = new AbortController();
 async function planRoute(locs, exclude = []) {
-  const lauf = routeLauf, signal = routeAbbruch.signal, chunks = chunkLocations(await grobePunkte(locs));
+  const lauf = routeLauf, signal = routeAbbruch.signal, chunks = chunkLocations(await grobePunkte(faehrWegpunkte(locs)));
   const trips = [];
   for (const chunk of chunks) {
     if (lauf !== routeLauf) throw ueberholt();

@@ -359,7 +359,8 @@ function clearRoute() {
   queueMicrotask(expRouteChanged);
   $('summary').textContent = '';
   $('steps').innerHTML = '';
-  $('elevation').innerHTML = '';
+  // Höhenprofil samt Steigungsschildern weg; eine noch laufende Höhenanfrage verfällt
+  $('elevation').innerHTML = ''; eleData = null; elevationRequest++; gradeSignLayer.clearLayers();
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
   wxShelter = false;
