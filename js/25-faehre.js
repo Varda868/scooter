@@ -118,8 +118,16 @@ function faehrStrichZeichnen(fs) {
       L.polyline(pts, { color: '#1f6fd1', weight: 4, dashArray: '8 7', interactive: false }).addTo(faehrStrich);
     }
     // Anleger der gewählten Fähre deutlich, die Linien-Ebene ist dann ausgeblendet
-    for (const [la, lo] of [[f.lat, f.lon], [f.zLat, f.zLon]]) if (la != null)
-      L.circleMarker([la, lo], { radius: 6, color: '#fff', weight: 2, fillColor: '#1f6fd1', fillOpacity: 1, interactive: false }).addTo(faehrStrich);
+    // Antippen: dort übernachten (vor der Abfahrt oder nach der Ankunft)
+    [[f.lat, f.lon, 'ab'], [f.zLat, f.zLon, 'an']].forEach(([la, lo, was]) => {
+      if (la == null) return;
+      const ll = L.latLng(la, lo), name = `⛴ ${f.name || 'Fähre'} · ${was}`;
+      L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#1f6fd1', fillOpacity: 1, bubblingMouseEvents: false })
+        .bindPopup(() => { const box = document.createElement('div'); box.innerHTML = `<b>${escapeHtml(name)}</b>`;
+          box.append(menuBox([['nacht', '🌙 Hier übernachten']], () =>
+            changeWaypoints(() => { insertVia(ll); Object.assign(waypoints.find(w => w.latlng === ll), { text: name, night: 1 }); })));
+          return box; }, { className: 'map-menu', minWidth: 170 }).addTo(faehrStrich);
+    });
     L.marker(pointAtKm((f.km + f.bisKm) / 2), { keyboard: false, zIndexOffset: 300,
       icon: L.divIcon({ className: 'poi-icon', html: '⛴', iconSize: [24, 24] }) })
       .bindTooltip(`⛴ ${escapeHtml(f.name || 'Fähre')} · ${Math.round(f.bisKm - f.km)} km · ca. ${durText(f.s)}`).addTo(faehrStrich);
