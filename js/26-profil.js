@@ -108,8 +108,8 @@ const syncZeit = t => new Date(t * 1000).toLocaleString('de-DE', { dateStyle: 's
 async function syncInfo() {
   try {
     const j = await syncAnfrage({ aktion: 'info' });
-    $('syncStatus').textContent = j.leer ? '☁️ Auf dem Server liegt noch nichts.' : `☁️ Auf dem Server: Stand ${syncZeit(j.t)} (${Math.ceil(j.groesse / 1024)} kB)`;
-  } catch (e) { $('syncStatus').textContent = '⚠️ ' + e.message; }
+    syncStatusText(j.leer ? '☁️ Auf dem Server liegt noch nichts.' : `☁️ Auf dem Server: Stand ${syncZeit(j.t)} (${Math.ceil(j.groesse / 1024)} kB)`);
+  } catch (e) { syncFehler(e.message); }
 }
 function syncZeigen() {
   $('syncBox').hidden = !serverAn();
@@ -117,10 +117,21 @@ function syncZeigen() {
   if (syncDaten && serverAn() && !syncZeigen.gefragt) { syncZeigen.gefragt = true; syncInfo(); }
 }
 document.addEventListener('serverkonfig', syncZeigen);
+function syncStatusText(t) { const st = $('syncStatus'); st.textContent = t; st.classList.remove('sync-fehler'); }
+// Fehler gut sichtbar: großer roter Kasten statt kleinem Hinweis
+function syncFehler(text) {
+  const st = $('syncStatus');
+  st.textContent = '⚠️ ' + text; st.classList.add('sync-fehler');
+}
+$('syncPw').addEventListener('input', () => { $('syncPw').classList.remove('feld-fehler'); $('syncStatus').classList.remove('sync-fehler'); });
 $('syncSetzen').onclick = async () => {
   const pw = $('syncPw').value;
-  if (pw.length < 10) { $('syncStatus').textContent = 'Das Sync-Passwort braucht mindestens 10 Zeichen.'; return; }
-  $('syncStatus').textContent = 'Schlüssel wird abgeleitet …';
+  $('syncStatus').classList.remove('sync-fehler');
+  if (pw.length < 10) {
+    syncFehler(`Passwort zu kurz: ${pw.length} von mindestens 10 Zeichen.`);
+    $('syncPw').classList.add('feld-fehler'); $('syncPw').focus(); return;
+  }
+  syncStatusText('Schlüssel wird abgeleitet …');
   syncDaten = await syncAbleiten(pw); store.set('sync', syncDaten);
   $('syncPw').value = ''; syncZeigen.gefragt = false; syncZeigen();
 };
@@ -128,20 +139,20 @@ $('syncHoch').onclick = async () => {
   const mit = $('profilSchluessel').checked;
   if (mit && !confirm('Mit Schlüsseln sichern? Sie liegen dann verschlüsselt auf dem Server, lesbar nur mit dem Sync-Passwort.')) return;
   try {
-    $('syncStatus').textContent = 'Sichere …';
+    syncStatusText('Sichere …');
     const roh = await strom(JSON.stringify(await profilInhalt(mit)), new CompressionStream('gzip'));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await syncSchluessel(), roh));
     const daten = new Uint8Array(1 + iv.length + ct.length); daten.set([1]); daten.set(iv, 1); daten.set(ct, 13);
     const j = await syncAnfrage({ aktion: 'hoch', daten: b64u(daten) });
-    $('syncStatus').textContent = `☁️ Gesichert ${syncZeit(j.t)} (${Math.ceil(daten.length / 1024)} kB${mit ? ', mit Schlüsseln' : ''})`;
-  } catch (e) { $('syncStatus').textContent = '⚠️ ' + e.message; }
+    syncStatusText(`☁️ Gesichert ${syncZeit(j.t)} (${Math.ceil(daten.length / 1024)} kB${mit ? ', mit Schlüsseln' : ''})`);
+  } catch (e) { syncFehler(e.message); }
 };
 $('syncRunter').onclick = async () => {
   try {
-    $('syncStatus').textContent = 'Lade …';
+    syncStatusText('Lade …');
     const j = await syncAnfrage({ aktion: 'runter' });
-    if (j.leer) { $('syncStatus').textContent = '☁️ Auf dem Server liegt noch nichts.'; return; }
+    if (j.leer) { syncStatusText('☁️ Auf dem Server liegt noch nichts.'); return; }
     const d = b64uDec(j.daten);
     if (d[0] !== 1) throw new Error('Unbekanntes Format');
     let roh;
@@ -149,15 +160,15 @@ $('syncRunter').onclick = async () => {
     catch { throw new Error('Nicht lesbar: anderes Sync-Passwort?'); }
     const inhalt = JSON.parse(new TextDecoder().decode(await strom(roh, new DecompressionStream('gzip'))));
     if (inhalt?.app !== PROFIL_APP) throw new Error('Kein Scooterways-Profil');
-    $('syncStatus').textContent = '';
+    syncStatusText('');
     await profilAnwenden(inhalt);
-  } catch (e) { $('syncStatus').textContent = '⚠️ ' + e.message; }
+  } catch (e) { syncFehler(e.message); }
 };
 $('syncTrennen').onclick = async () => {
   if (!confirm('Dieses Gerät vom Abgleich trennen?')) return;
   if (confirm('Auch das Profil auf dem Server löschen (für alle Geräte mit diesem Passwort)?')) try { await syncAnfrage({ aktion: 'weg' }); } catch {}
   syncDaten = null; store.set('sync', null); localStorage.removeItem(PROFIL_PREFIX + 'sync');
-  $('syncStatus').textContent = 'Getrennt.'; syncZeigen();
+  syncStatusText('Getrennt.'); syncZeigen();
 };
 
 // --- Kurzanleitung und Hinweis beim ersten Start (und jederzeit unter ⚙ Einstellung)
