@@ -83,7 +83,9 @@ async function tankStationsLaden() {
   const seen = new Set();
   tank.stations = els.map(el => ({ lat: el.lat ?? el.center?.lat, lon: el.lon ?? el.center?.lon, tags: el.tags || {}, id: el.type + el.id }))
     .filter(s => s.lat != null && !seen.has(s.id) && seen.add(s.id))
-    .map(s => ({ ...s, ...locateOnRoute(s.lat, s.lon) })).filter(s => s.dist <= TANK_M).sort((a, b) => a.km - b.km);
+    .map(s => ({ ...s, ...locateOnRoute(s.lat, s.lon) })).filter(s => s.dist <= TANK_M)
+    // Nicht auf See tanken: Tankstellen an Anlegern unterwegs (Lanzarote auf Sevilla→Las Palmas) liegen im Fährstück
+    .filter(s => !routeFaehren?.some(f => s.km > f.km + 0.2 && s.km < f.bisKm - 0.2)).sort((a, b) => a.km - b.km);
   return tank.stations;
 }
 
