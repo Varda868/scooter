@@ -139,14 +139,35 @@ function wartung_nacht(array &$p, array &$i): void {
   else {
     $datei = "$ziel/scooterways-$tag.sqlite";
     @unlink($datei);
-    try { $db->exec('VACUUM INTO ' . $db->quote($datei)); @chmod($datei, 0600); $i[] = 'Gesichert: ' . basename($datei) . ' (' . round(filesize($datei) / 1024) . ' kB)'; }
-    catch (Throwable $e) { $p[] = 'Sicherung der Datenbank fehlgeschlagen: ' . $e->getMessage(); }
+    try { wartung_sqlite_sichern($db, $datei); @chmod($datei, 0600); $i[] = 'Gesichert: ' . basename($datei) . ' (' . round(filesize($datei) / 1024) . ' kB)'; }
+    catch (Throwable $e) { @unlink($datei); $p[] = 'Sicherung der Datenbank fehlgeschlagen: ' . $e->getMessage(); }
   }
   foreach (['config-*.php', 'scooterways-*.sqlite'] as $muster) {
     $alle = glob("$ziel/$muster") ?: [];
     sort($alle);
     foreach (array_slice($alle, 0, max(0, count($alle) - WARTUNG_SICHERUNGEN)) as $alt) @unlink($alt);
   }
+}
+
+// VACUUM INTO gibt es erst ab SQLite 3.27; ältere Server: Datei und WAL unter Schreibsperre kopieren und die Kopie
+// danach zu einer einzelnen Datei zusammenführen
+function wartung_sqlite_sichern(PDO $db, string $datei): void {
+  $v = (string)$db->query('SELECT sqlite_version()')->fetchColumn();
+  if (version_compare($v, '3.27.0', '>=')) { $db->exec('VACUUM INTO ' . $db->quote($datei)); return; }
+  $quelle = sw_daten() . '/scooterways.sqlite';
+  $db->query('PRAGMA wal_checkpoint(TRUNCATE)')->fetchAll();
+  $db->exec('BEGIN IMMEDIATE');
+  try {
+    if (!copy($quelle, $datei)) throw new RuntimeException('Kopieren nicht möglich');
+    @unlink("$datei-wal");
+    if (is_file("$quelle-wal") && filesize("$quelle-wal") > 0 && !copy("$quelle-wal", "$datei-wal")) throw new RuntimeException('WAL nicht kopierbar');
+  } finally { $db->exec('ROLLBACK'); }
+  $k = new PDO("sqlite:$datei", null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+  $k->query('PRAGMA wal_checkpoint(TRUNCATE)')->fetchAll();
+  $k->query('PRAGMA journal_mode=DELETE')->fetchAll();
+  if ($k->query('PRAGMA quick_check')->fetchColumn() !== 'ok') throw new RuntimeException("Kopie fehlerhaft (SQLite $v)");
+  $k = null;
+  @unlink("$datei-wal"); @unlink("$datei-shm");
 }
 
 function wartung_groesse(string $ordner): int {
