@@ -42,7 +42,7 @@ if (devLog.an) addEventListener('DOMContentLoaded', () => {
   knopf.className = 'dev-knopf'; knopf.title = 'Dev-Log';
   feld.className = 'dev-log';
   feld.innerHTML = '<div class="dev-kopf"><b>🐞 Dev-Log</b><button data-dev="kopieren">Kopieren</button><button data-dev="leeren" class="secondary">Leeren</button>' +
-    '<button data-dev="zu" class="secondary">✕</button></div><pre></pre><p class="hint">Ausschalten: Adresse mit ?dev=0 öffnen.</p>';
+    '<button data-dev="senden" hidden>An Server senden</button><button data-dev="zu" class="secondary">✕</button></div><pre></pre><p class="hint">Ausschalten: Adresse mit ?dev=0 öffnen.</p>';
   document.body.append(knopf, feld);
   const uhr = t => new Date(t).toLocaleTimeString('de-DE');
   async function bericht() {
@@ -57,11 +57,24 @@ if (devLog.an) addEventListener('DOMContentLoaded', () => {
     if (feld.open) bericht().then(t => { feld.querySelector('pre').textContent = t; });
   };
   devLog.beiNeuem(neu); neu();
-  knopf.onclick = () => { feld.showModal(); neu(); };
+  // Senden nur, wenn der eigene Server eingerichtet ist (27-server.js); landet im Admin-Bereich unter Fehlerberichte
+  knopf.onclick = () => { feld.querySelector('[data-dev=senden]').hidden = !(typeof serverAn === 'function' && serverAn()); feld.showModal(); neu(); };
   feld.onclick = async e => {
     const a = e.target.dataset?.dev;
     if (a === 'zu') feld.close();
     if (a === 'leeren') devLog.leeren();
+    if (a === 'senden') {
+      const b = e.target;
+      b.disabled = true; b.textContent = 'sende …';
+      try {
+        const text = await bericht(), ver = text.match(/^Scooterways (\S+)/)?.[1] || '?';
+        const res = await fetch(API_URL + 'fehler.php', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text.slice(0, 60000), version: ver }) });
+        const j = await res.json().catch(() => ({}));
+        b.textContent = res.ok ? `✓ gesendet (#${j.id})` : '⚠️ ' + (j.fehler || res.status);
+      } catch { b.textContent = '⚠️ nicht erreichbar'; }
+      setTimeout(() => { b.textContent = 'An Server senden'; b.disabled = false; }, 4000);
+    }
     if (a === 'kopieren') {
       const t = await bericht();
       try { await navigator.clipboard.writeText(t); e.target.textContent = '✓ kopiert'; }
