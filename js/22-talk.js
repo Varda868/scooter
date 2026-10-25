@@ -135,7 +135,7 @@ function talkLoslassen() {
   clearTimeout(t.bis); clearInterval(t.uhr);
   if (t.codec) { t.codec.frei(); if (t.ms >= 300) talkSenden(t.a, t.ms, t.an); }
   if (t.enc) talkOpusEnde(t);
-  if (t.post?.length * t.post[0].length >= 0.3 * 8000) pushSprache(t.an, t.post);
+  if (t.post?.length && t.post.length * t.post[0].length >= 0.3 * 8000) pushSprache(t.an, t.post);
   talk.vox?.zuruecksetzen();
   talk.sperreBis = Date.now() + 500;
   talkZeigen();

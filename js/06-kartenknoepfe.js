@@ -52,7 +52,9 @@ $('centerBtn').onclick = e => {
     if (me.follow) map.setView(ll, first ? Math.max(map.getZoom(), 15) : map.getZoom(), { animate: !first });
     first = false;
   }, err => {
-    setFollow(false); me.watch = null;
+    // Nur „verweigert“ ist endgültig; Zeitüberschreitung oder kurz kein Signal: die Überwachung läuft weiter,
+    // sonst bleiben Standort teilen, Halt und Treffpunkt in der Gruppe nach einem Aussetzer still stehen
+    if (err.code === err.PERMISSION_DENIED) { navigator.geolocation.clearWatch(me.watch); me.watch = null; setFollow(false); }
     $('summary').textContent = '⚠️ Standort nicht verfügbar: ' + err.message;
   }, { enableHighAccuracy: true, maximumAge: 5000 });
 };

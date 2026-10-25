@@ -86,7 +86,8 @@ function routeSamples(stepKm) {
   const out = [routeCoords[0]];
   for (let i = 1, next = stepKm; i < routeCoords.length; i++) {
     const [a, b] = [routeCoords[i - 1], routeCoords[i]], k0 = routeKm[i - 1], k1 = routeKm[i];
-    for (; next <= k1; next += stepKm) { const t = (next - k0) / ((k1 - k0) || 1); out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]); }
+    // Auf der Fähre nichts suchen (Meer), Anleger bleiben über die Punkte davor und danach
+    for (; next <= k1; next += stepKm) { if (aufFaehre(next)) continue; const t = (next - k0) / ((k1 - k0) || 1); out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]); }
   }
   out.push(routeCoords.at(-1));
   return out;
@@ -102,8 +103,10 @@ async function tileElements(points, maxR, radiusFor) {
     for (let a = Math.floor(la - dLat); a <= Math.floor(la + dLat); a++)
       for (let o = Math.floor(lo - dLon); o <= Math.floor(lo + dLon); o++) keys.add(`${a}_${o}`);
   }
-  const have = [...keys].filter(k => ix.set.has(k));
-  if (have.length < keys.size * 0.9) return null;
+  // Abgedeckt, wenn fast alle Kacheln unter den Punkten selbst da sind; Nachbarkacheln im Umkreis fehlen an der Küste
+  // oft (Meer), das darf nicht auf Overpass umschalten
+  const have = [...keys].filter(k => ix.set.has(k)), unter = new Set(points.map(([la, lo]) => `${Math.floor(la)}_${Math.floor(lo)}`));
+  if ([...unter].filter(k => ix.set.has(k)).length < unter.size * 0.9) return null;
   // Geladene Kacheln für die Sitzung behalten: neu berechnen oder Typ umschalten liest sie nur noch aus dem Speicher
   const tiles = await Promise.all(have.map(k => {
     const url = `${POI_TILE_URL}t/${k}.json?v=${ix.date}`;
