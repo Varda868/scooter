@@ -217,11 +217,12 @@ async function orteSuchen(q, um) {
   return out.sort((a, b) => a.rang - b.rang).slice(0, 8);
 }
 const PHOTON_ART = { house: '🏠', street: '🛣', city: '🏙', town: '🏙', village: '🏡', locality: '📍', district: '📍' };
-async function photonSuchen(q, um) {
+async function photonSuchen(q, um, nurStaedte = false) {
   // Ohne zoom gewichtet Photon nur die Nähe („Oslo“ in Kiel → Osloring). Orte weiträumig (zoom 5), mit Hausnummer
   // eher örtlich (Kartenzoom), damit „Bahnhofstr. 3“ in der Nähe bleibt
   const zoom = /\d/.test(q) ? Math.min(14, Math.max(8, Math.round(map.getZoom()))) : 5;
-  const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=8&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}&zoom=${zoom}`,
+  const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=${nurStaedte ? 3 : 8}&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}&zoom=${zoom}` +
+    (nurStaedte ? '&osm_tag=place:city&osm_tag=place:town' : ''),
     { signal: AbortSignal.timeout(6000) });
   if (!r.ok) return [];
   return ((await r.json()).features || []).map(f => {
@@ -233,15 +234,17 @@ async function photonSuchen(q, um) {
     const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
     // Größe aus place=*: Photon nennt Städte und Dörfer gleichermaßen type „city“
     const gr = p.osm_key === 'place' ? ({ city: 0, town: 1, village: 2 }[p.osm_value] ?? 3) : 3;
-    return name && { icon: p.osm_key === 'place' && gr >= 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
+    return name && { icon: gr === 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
       info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
   }).filter(Boolean);
 }
-// Ortsindex und Photon gemeinsam ordnen: genau der gesuchte Name zuerst, Städte vor Dörfern, bei Gleichstand die
-// größere (city vor town vor village), sonst wie geliefert („Prag“ → Prag vor Pragsdorf, „Bastia“ → Korsika vor Venetien)
+// Ortsindex und Photon gemeinsam ordnen: Name beginnt mit dem Gesuchten, dann Städte vor Dörfern (city, town, village),
+// erst dann der genau gleiche Name, sonst wie geliefert. „Prag“ → Prag vor Pragsdorf, „Palma“ → Palma vor la Palma
+// de Cervelló, „Höchstädt“ → Höchstädt an der Donau vor dem Dorf Hochstadt (ortNorm macht beide gleich)
 function ortRang(q, items) {
-  const n = ortNorm(q), stufe = it => (ortNorm(it.name.split(',')[0].trim()) === n ? 0 : 2) + (it.icon === '🏙' ? 0 : 1);
-  return items.map((it, k) => [stufe(it), it.gr ?? 3, k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]).map(x => x[3]);
+  const n = ortNorm(q), kopf = it => it.name.split(',')[0].trim();
+  const schluessel = it => [ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3, kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1];
+  return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]).map(x => x[5]);
 }
 let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
@@ -254,7 +257,13 @@ function showSuggestions(input) {
     const orte = (await orteSuchen(q, um).catch(() => [])).filter(dazu);
     if (req !== ortReq || document.activeElement !== input) return;
     zeigeVorschlaege(input, [...lokal, ...orte], true);
-    const web = (await photonSuchen(q, um).catch(() => [])).filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 1500 && o.name === it.name));
+    let web = await photonSuchen(q, um).catch(() => []);
+    // Nur Dörfer dieses Namens, keine Stadt? Einmal nur nach Städten fragen: bei „Bastia“ füllen sonst italienische
+    // Dörfer alle Plätze, und das korsische Bastia kommt gar nicht erst mit
+    const gleich = it => it.gr != null && ortNorm(it.name.split(',')[0].trim()) === ortNorm(q), alle = [...orte, ...web];
+    if (alle.some(it => gleich(it) && it.gr >= 2) && !alle.some(it => gleich(it) && it.gr <= 1)) web = [...(await photonSuchen(q, um, true).catch(() => [])), ...web];
+    if (req !== ortReq || document.activeElement !== input) return;
+    web = web.filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 1500 && o.name === it.name));
     if (req !== ortReq || document.activeElement !== input) return;
     zeigeVorschlaege(input, [...lokal, ...ortRang(q, [...orte, ...web])], false);
   }, 300);
