@@ -133,6 +133,7 @@ const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpe
 const settings = store.get('settings', {});
 // Mehrtagestour ist jetzt ab 6 h automatisch an; ältere Einstellungen hatten „aus“ als Vorgabe gespeichert
 if (settings.dayAuto == null) { settings.dayAuto = 1; if (!+settings.dayMax) settings.dayMax = '6'; }
+if (settings.dayMax === '2') settings.dayMax = '3'; // 2 h gibt es nicht mehr
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
 ['profileBox', 'poiBox', 'trafficBox', 'ocBox'].forEach(id => {
   $(id).open = !!settings[id];
