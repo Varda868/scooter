@@ -20,3 +20,6 @@ td, th { text-align: left; padding: .35rem; border-bottom: 1px solid var(--rand)
 td form { margin: 0; }
 pre { white-space: pre-wrap; word-break: break-word; background: var(--feld); border: 1px solid var(--rand); padding: .7rem; border-radius: 6px; max-height: 70vh; overflow: auto; }
 code { background: var(--feld); padding: 0 .25rem; border-radius: 4px; }
+.knoepfe { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; } .knoepfe form { margin: 0; }
+table input.pos:not([type=checkbox]) { width: 3.2rem; }
+.punkt { display: inline-block; width: .6rem; height: .9rem; margin-right: 2px; border-radius: 2px; } .punkt.gut { background: var(--ok); } .punkt.schlecht { background: var(--gefahr); }

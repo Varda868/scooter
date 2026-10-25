@@ -3,7 +3,7 @@
 // Weitere Bereiche (Push-Abos, Kurzlinks …) liegen als lib/admin-*.php daneben und tragen sich in $BEREICHE ein.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
-sw_html_koepfe();
+sw_html_koepfe(true);
 
 if (!sw_eingerichtet()) { header('Location: setup.php', true, 303); exit; }
 sw_sitzung();
@@ -59,6 +59,9 @@ function bereich_start(): void {
   $db = sw_db();
   $zahlen = '<li>Fehlerberichte: ' . (int)$db->query('SELECT COUNT(*) FROM sw_fehler')->fetchColumn() . '</li>';
   foreach ($BEREICHE as $b) if (isset($b['zahl'])) $zahlen .= '<li>' . h($b['titel']) . ': ' . (int)($b['zahl'])() . '</li>';
+  require_once __DIR__ . '/lib/relays.php';
+  $ip = sw_ip_test();
+  $zahlen .= '<li>Ausgehend IPv6: ' . ($ip['ipv6']['ok'] ? '✅ ' . (int)$ip['ipv6']['ms'] . ' ms' : '❌ ' . h((string)$ip['ipv6']['fehler'])) . '</li>';
   admin_seite('Übersicht', admin_hinweis($OK) . '<ul>' . $zahlen . '</ul><p class="leise">PHP ' . h(PHP_VERSION) . ' · Datenbank ' .
     (sw_mysql() ? 'MySQL' : 'SQLite') . ' · eingerichtet ' . h(sw_config()['erstellt'] ?? '?') . '</p>');
 }

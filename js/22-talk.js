@@ -3,6 +3,7 @@
 // der Ablauf hier ist eine schlanke Fassung von bcon-app app.js (talk/APP_AUSZUG.js). Geladen wird erst, wenn Talk an ist.
 // Jede Durchsage geht als Ganzes (signiert, Kompaktform, Art 4420) an die Relays: Verzögerung etwa die Sprechdauer.
 // Halbduplex wie Sprechfunk: VOX ist nur ein anderer Auslöser der Taste und sperrt, solange etwas abgespielt wird.
+// Startwert für den ersten Start und ohne Server; ist der eigene Server erreichbar, gilt seine Liste (Admin-Bereich „Relays“)
 const TALK_RELAYS = ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom'];
 // Übers Netz Opus (WebCodecs, Breitband) mit Kennung 0x20 wie bcon-core talk.h: Rahmen variabler Länge, im Sprachpaket
 // je Rahmen Länge (1 Byte) + Bytes, höchstens 239 B je Paket und 250 Pakete. 12 kbit/s mit 20-ms-Rahmen passt für 30 s.
@@ -446,6 +447,18 @@ $('talkOn').onchange = () => { talkPrefs.on = $('talkOn').checked; saveTalk(); t
 $('talkName').onchange = () => { talkPrefs.name = $('talkName').value; talkPrefs.name = $('talkName').value = talkName(); saveTalk(); talkZeigen(); };
 for (const [id, key] of [['talkPlz', 'plz'], ['talkPw', 'pw'], ['talkRelays', 'relays']])
   $(id).onchange = () => { talkPrefs[key] = $(id).value.trim(); saveTalk(); if (talkPrefs.on) talkStart(); };
+// Serverliste übernehmen (auch über eine eigene Liste hinweg); das Feld zeigt sie dann nur an
+function talkRelaysVomServer() {
+  const liste = typeof serverAn === 'function' && serverAn() && Array.isArray(serverKonfig?.relays) && serverKonfig.relays.filter(u => /^wss:\/\/\S+$/.test(u));
+  $('talkRelays').readOnly = !!liste?.length;
+  $('talkRelaysHint').hidden = !liste?.length;
+  if (!liste?.length) return;
+  const neu = liste.join(' ');
+  if (neu === talkPrefs.relays) return;
+  talkPrefs.relays = $('talkRelays').value = neu; saveTalk();
+  if (talkPrefs.on && talk.netz) talkStart();
+}
+document.addEventListener('serverkonfig', talkRelaysVomServer);
 $('talkMode').onchange = () => { talkPrefs.mode = $('talkMode').value; saveTalk(); talkLoslassen(); talkVoxEinstellen(); talkZeigen(); };
 $('talkEmpf').oninput = () => { talkPrefs.empf = +$('talkEmpf').value; $('talkEmpfVal').textContent = talkPrefs.empf + ' dB'; saveTalk(); if (talk.vox) talk.vox.empf = talkPrefs.empf; };
 $('talkHalt').onchange = () => { talkPrefs.halt = +$('talkHalt').value; saveTalk(); if (talk.vox) talk.vox.halt_ms = talkPrefs.halt; };
