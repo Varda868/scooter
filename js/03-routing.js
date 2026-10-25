@@ -88,11 +88,19 @@ function chunkLocations(locs) {
   const chunks = [];
   let cur = [pts[0]], sum = 0;
   for (let i = 1; i < pts.length; i++) {
+    // Fähre aus der Grobroute als eigener Abschnitt (faehrTrip), egal wie lang: der Roller-Anfrage bleibt sonst
+    // überlassen, ob sie die Fähre findet, und gerade OSM-Linien fallen dabei oft durch
+    if (hafenAb(pts[i - 1]) && hafenAn(pts[i]) && pts[i].faehre) {
+      if (cur.length > 1) chunks.push(cur);
+      chunks.push([pts[i - 1], pts[i]]);
+      cur = [pts[i]]; sum = 0;
+      continue;
+    }
     const d = pts[i - 1].latlng.distanceTo(pts[i].latlng) / 1000;
     if (sum + d > MAX_REQUEST_KM && cur.length > 1) { chunks.push(cur); cur = [pts[i - 1]]; sum = 0; }
     cur.push(pts[i]); sum += d;
   }
-  chunks.push(cur);
+  if (cur.length > 1) chunks.push(cur);
   return chunks;
 }
 
@@ -192,7 +200,7 @@ async function planRoute(locs, exclude = []) {
   const trips = [];
   for (const chunk of chunks) {
     const fa = chunk.length === 2 && hafenAb(chunk[0]) && chunk[1].faehre;
-    if (fa && chunk[0].latlng.distanceTo(chunk[1].latlng) / 1000 > MAX_REQUEST_KM * 0.9) { trips.push(faehrTrip(fa)); continue; }
+    if (fa) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
