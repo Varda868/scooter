@@ -9,6 +9,8 @@ sw_json([
   'php' => PHP_VERSION,
   'phpOk' => PHP_VERSION_ID >= 70400,
   'erweiterungen' => array_map('extension_loaded', ['pdo_sqlite' => 'pdo_sqlite', 'pdo_mysql' => 'pdo_mysql', 'openssl' => 'openssl', 'curl' => 'curl', 'mbstring' => 'mbstring']),
+  // Rechenweg für Nostr-Signaturen (Adresswechsel des eigenen Relays): gmp, bcmath oder null
+  'schnorr' => schnorr_rechenweg(),
   'datenordner' => sw_daten(true) !== null,
   'eingerichtet' => sw_eingerichtet(),
   // Ausgehende Verbindungen (10 min zwischengespeichert), ohne die eigene Adresse
