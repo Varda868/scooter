@@ -242,7 +242,7 @@ async function treffVorschlagen() {
     .sort((a, b) => rang(a.t) - rang(b.t) || Math.abs(a.km - mitte) - Math.abs(b.km - mitte))
     .map(v => ({ la: +v.la.toFixed(5), lo: +v.lo.toFixed(5), n: v.t.name || (rang(v.t) === 0 ? 'Rastplatz' : rang(v.t) === 1 ? 'Parkplatz' : v.t.brand || 'Tankstelle') }));
   const p = pointAtKm(mitte), pl = Array.isArray(p) ? p : [p.lat, p.lng];
-  gruppe.vorschlaege.push({ la: +pl[0].toFixed(5), lo: +pl[1].toFixed(5), n: `Route km ${mitte.toFixed(0)}` });
+  gruppe.vorschlaege.push({ la: +pl[0].toFixed(5), lo: +pl[1].toFixed(5), n: 'Punkt an der Route' });
   gruppe.i = 0;
   treffZeigenVorschlag();
 }

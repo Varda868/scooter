@@ -66,7 +66,7 @@ function fitRoute() {
   const bounds = routeLayer ? routeLayer.getBounds() : pts.length ? L.latLngBounds(pts) : null;
   if (!bounds) return false;
   if (me.follow) setFollow(false);
-  map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+  fitFein(bounds, { maxZoom: 16 });
   return true;
 }
 $('fitBtn').onclick = e => {
