@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 4;
+const SW_SCHEMA = 5;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -52,6 +52,12 @@ const SW_STANDARD = [
   'tomtom_key' => '',
   'proxy_an' => true,
   'origins' => ['https://scooter.thai-klasse.de'],
+  // Talk-Relays in dieser Reihenfolge; eigen = selbst betriebenes Relay (im Dashboard hervorgehoben, Zertifikat genauer beobachtet)
+  'relays' => [
+    ['url' => 'wss://nos.lol', 'an' => true, 'eigen' => false],
+    ['url' => 'wss://relay.primal.net', 'an' => true, 'eigen' => false],
+    ['url' => 'wss://nostr.mom', 'an' => true, 'eigen' => false],
+  ],
 ];
 function sw_config(): array {
   static $c = null;
@@ -119,6 +125,12 @@ function sw_schema(PDO $db): void {
     $db->exec('ALTER TABLE sw_push ADD COLUMN geraet VARCHAR(64)');
     $db->exec("ALTER TABLE sw_push ADD COLUMN art VARCHAR(8) NOT NULL DEFAULT 'gruppe'");
     $db->exec('UPDATE sw_push SET geraet = ep');
+  }
+  // v5: Verlauf der Relay-Prüfungen (Server per Cron/Knopf, Browser des Admins)
+  if ($v < 5) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_relay (id $id, t INTEGER NOT NULL, url VARCHAR(255) NOT NULL, quelle VARCHAR(8) NOT NULL, ok INTEGER NOT NULL, " .
+      "ms_verb INTEGER, ms_eose INTEGER, schreiben INTEGER, ip VARCHAR(64), cert_bis INTEGER, nip11 $txt, fehler VARCHAR(255))");
+    $db->exec('CREATE INDEX ' . (sw_mysql() ? '' : 'IF NOT EXISTS ') . 'sw_relay_url ON sw_relay (url, t)');
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);
@@ -217,10 +229,12 @@ function sw_anmelden(string $pw): bool {
 }
 
 // Strenge Kopfzeilen für die HTML-Seiten (Setup, Admin)
-function sw_html_koepfe(): void {
+// $skript: eigene Skripte (admin.js) und WebSocket/https-Verbindungen erlauben, nur für den angemeldeten Admin-Bereich
+function sw_html_koepfe(bool $skript = false): void {
   header('Content-Type: text/html; charset=utf-8');
   header('Cache-Control: no-store');
-  header("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  header("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" .
+    ($skript ? "; script-src 'self'; connect-src 'self' wss: https:" : ''));
   header('X-Frame-Options: DENY');
   header('X-Content-Type-Options: nosniff');
   header('Referrer-Policy: no-referrer');
