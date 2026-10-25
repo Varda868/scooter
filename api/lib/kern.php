@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 2;
+const SW_SCHEMA = 3;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -108,6 +108,11 @@ function sw_schema(PDO $db): void {
   }
   if ($v < 2) {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_kurz (id VARCHAR(16) PRIMARY KEY, t INTEGER NOT NULL, bis INTEGER NOT NULL, loesch VARCHAR(64) NOT NULL, abrufe INTEGER NOT NULL DEFAULT 0, ip VARCHAR(64), daten $txt)");
+  }
+  if ($v < 3) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_push (id $id, ep VARCHAR(64) NOT NULL UNIQUE, gruppe VARCHAR(64) NOT NULL, endpoint TEXT NOT NULL, p256dh VARCHAR(128) NOT NULL, auth VARCHAR(64) NOT NULL, name VARCHAR(16), t INTEGER NOT NULL, zuletzt INTEGER, fehler INTEGER NOT NULL DEFAULT 0" .
+      (sw_mysql() ? ', INDEX sw_push_gruppe (gruppe))' : ')'));
+    if (!sw_mysql()) $db->exec('CREATE INDEX IF NOT EXISTS sw_push_gruppe ON sw_push (gruppe)');
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);

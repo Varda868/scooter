@@ -180,6 +180,7 @@ function haltMelden(grund, seit = Date.now()) {
   if (!halt.gemeldet) halt.seit = seit;
   halt.grund = grund; halt.gemeldet = true; pos.sofort = true;
   haltLeiste();
+  pushHalt(grund);
 }
 function haltWeiter() {
   halt.gemeldet = false; halt.grund = ''; halt.seit = 0; pos.sofort = true;
@@ -256,6 +257,7 @@ function treffZeigenVorschlag() {
     gruppe.eigen = { ...v, bis: Math.floor((Date.now() + TREFF_MS) / 1000) };
     treffEmpfangen(gruppe.eigen, talkName() || 'ich');
     pos.sofort = true;
+    pushTreff(gruppe.eigen);
   }, 'senden'));
   L.popup({ minWidth: 200 }).setLatLng([v.la, v.lo]).setContent(box).openOn(map);
   $('gruppeInfo').innerHTML = '';

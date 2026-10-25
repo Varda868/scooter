@@ -2,6 +2,7 @@
 // Öffentliche Einstellungen für die App (Endpunkte aus dem Admin-Bereich). Schlüssel stehen hier nie drin.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+require __DIR__ . '/lib/webpush.php';
 if (!sw_eingerichtet()) sw_json(['eingerichtet' => false]);
 $w = sw_config()['werte'];
 sw_json([
@@ -11,5 +12,6 @@ sw_json([
   'overpass' => $w['overpass_urls'],
   'openMeteo' => $w['open_meteo_url'],
   'proxy' => (bool)$w['proxy_an'],
+  'vapid' => extension_loaded('openssl') ? push_vapid()['pub'] : null,
   'tomtomAmServer' => $w['proxy_an'] && $w['tomtom_key'] !== '',
 ]);

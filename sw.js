@@ -1,13 +1,13 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v30';
+const VERSION = 'v31';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
 const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
 const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
-const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-opencaching.js', 'js/16-sonden.js', 'js/17-entdecker.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js'];
+const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-opencaching.js', 'js/16-sonden.js', 'js/17-entdecker.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js'];
 const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', ...APP_FILES];
 const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
 
@@ -93,4 +93,46 @@ self.addEventListener('fetch', e => {
       return hit || net;
     }));
   }
+});
+
+// --- Push an die Talk-Gruppe (js/29-push.js): Inhalt ist mit dem Gruppenschlüssel aus IndexedDB verschlüsselt
+const PUSH_HALT = { panne: '🔧 hat eine Panne', tanken: '⛽ hält zum Tanken', pause: '☕ macht Pause' };
+function pushSchluessel(g) {
+  return new Promise(ok => {
+    const r = indexedDB.open('scooterways-push', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('k', { keyPath: 'g' });
+    r.onerror = () => ok(null);
+    r.onsuccess = () => {
+      const q = r.result.transaction('k').objectStore('k').get(g);
+      q.onsuccess = () => { ok(q.result?.key || null); r.result.close(); }; q.onerror = () => ok(null);
+    };
+  });
+}
+const pushBytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function pushLesen(e) {
+  const p = e.data?.json();
+  const key = p?.g && await pushSchluessel(p.g);
+  if (!key) return null;
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: pushBytes(p.iv) }, key, pushBytes(p.ct))));
+}
+self.addEventListener('push', e => e.waitUntil((async () => {
+  let n = null;
+  try { n = await pushLesen(e); } catch {}
+  const name = String(n?.n || '').slice(0, 9);
+  const zeit = n?.bis ? new Date(n.bis * 1000).toTimeString().slice(0, 5) : '';
+  const [titel, text] = !n ? ['🛵 Scooterways', 'Neue Nachricht aus der Gruppe'] :
+    n.a === 'halt' ? [`${name} ${PUSH_HALT[n.g] || 'steht'}`, n.la != null ? 'Tippen zeigt den Ort' : ''] :
+    n.a === 'treff' ? [`🤝 Treffpunkt von ${name}`, String(n.t || '').slice(0, 80) + (zeit ? ` · bis ${zeit}` : '')] :
+    [`💬 ${name}`, String(n.t || '').slice(0, 200)];
+  await self.registration.showNotification(titel, { body: text, icon: 'icon-192.png', badge: 'icon-192.png', tag: n ? `${n.a}-${name}` : 'gruppe',
+    renotify: true, requireInteraction: n?.g === 'panne', data: n && Number.isFinite(n.la) && Number.isFinite(n.lo) ? { ort: [n.la, n.lo] } : {} });
+})()));
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const ort = e.notification.data?.ort;
+  e.waitUntil((async () => {
+    const fenster = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (fenster[0]) { await fenster[0].focus(); if (ort) fenster[0].postMessage({ ort }); return; }
+    await clients.openWindow(ort ? `./?ort=${ort.join(',')}` : './');
+  })());
 });
