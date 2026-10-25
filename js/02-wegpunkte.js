@@ -234,7 +234,7 @@ async function photonSuchen(q, um, nurStaedte = false) {
     const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
     // Größe aus place=*: Photon nennt Städte und Dörfer gleichermaßen type „city“
     const gr = p.osm_key === 'place' ? ({ city: 0, town: 1, village: 2 }[p.osm_value] ?? 3) : 3;
-    return name && { icon: gr === 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
+    return name && { icon: gr <= 1 ? '🏙' : gr === 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
       info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
   }).filter(Boolean);
 }
@@ -252,8 +252,11 @@ function showSuggestions(input) {
   const q = input.value.trim(), req = ++ortReq;
   clearTimeout(ortTimer);
   if (q.length >= 3 && !isCoordText(q)) ortTimer = setTimeout(async () => {
-    const um = map.getCenter(), lokal = suggestionsFor(input.value), namen = new Set(lokal.map(x => x.name.toLowerCase()));
-    const dazu = it => { if (namen.has(it.name.toLowerCase())) return false; namen.add(it.name.toLowerCase()); return true; };
+    // Doppelte nur weglassen, wenn Name und Ort (auf ~10 km) gleich sind: sonst verdrängt das Dorf Bastia aus dem
+    // Ortsindex das gleichnamige Bastia auf Korsika aus Photon
+    const um = map.getCenter(), lokal = suggestionsFor(input.value), schl = x => `${x.name.toLowerCase()}|${x.lat != null ? `${Math.round(x.lat * 10)},${Math.round(x.lon * 10)}` : ''}`;
+    const namen = new Set(lokal.map(schl));
+    const dazu = it => { if (namen.has(schl(it))) return false; namen.add(schl(it)); return true; };
     const orte = (await orteSuchen(q, um).catch(() => [])).filter(dazu);
     if (req !== ortReq || document.activeElement !== input) return;
     zeigeVorschlaege(input, [...lokal, ...orte], true);
@@ -261,9 +264,9 @@ function showSuggestions(input) {
     // Nur Dörfer dieses Namens, keine Stadt? Einmal nur nach Städten fragen: bei „Bastia“ füllen sonst italienische
     // Dörfer alle Plätze, und das korsische Bastia kommt gar nicht erst mit
     const gleich = it => it.gr != null && ortNorm(it.name.split(',')[0].trim()) === ortNorm(q), alle = [...orte, ...web];
-    if (alle.some(it => gleich(it) && it.gr >= 2) && !alle.some(it => gleich(it) && it.gr <= 1)) web = [...(await photonSuchen(q, um, true).catch(() => [])), ...web];
+    if (!/\d/.test(q) && alle.some(it => gleich(it) && it.gr === 2) && !alle.some(it => gleich(it) && it.gr <= 1)) web = [...(await photonSuchen(q, um, true).catch(() => [])), ...web];
     if (req !== ortReq || document.activeElement !== input) return;
-    web = web.filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 1500 && o.name === it.name));
+    web = web.filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 5000 && o.name.split(',')[0] === it.name.split(',')[0]));
     if (req !== ortReq || document.activeElement !== input) return;
     zeigeVorschlaege(input, [...lokal, ...ortRang(q, [...orte, ...web])], false);
   }, 300);
