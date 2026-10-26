@@ -423,16 +423,8 @@ async function route() {
         }
       } catch (err) { summaryNote += ` · ⚠️ Verkehr: ${err.message}`; }
     }
-    let trip = data.trip, alts = (data.alternates || []).map(a => a.trip);
-    // Obere Streckenstufen (kurvig, sehr kurvig): die kurvigste Alternative nehmen, wenn sie höchstens 15 % länger ist
-    if (rideStyleOf() >= 2 && alts.length) {
-      const kurv = t => kurvigkeit(tripCoords(t)), alle = [trip, ...alts].map(t => ({ t, k: kurv(t) }));
-      const top = alle.filter(x => x.t.summary.length <= trip.summary.length * 1.15).sort((a, b) => b.k - a.k)[0];
-      if (top.t !== trip && top.k > alle[0].k) {
-        summaryNote += ` · 〰 kurvigere Variante (${top.k} statt ${alle[0].k}°/km)`;
-        alts = [trip, ...alts.filter(t => t !== top.t)]; trip = top.t;
-      }
-    }
+    // Immer Valhallas Hauptroute; Alternativen nur grau zum Antippen (keine eigene Auswahl, kein Springen beim Neuberechnen)
+    const trip = data.trip, alts = (data.alternates || []).map(a => a.trip);
     if (lauf !== routeLauf) return;
     showTrip(trip, alts);
     renderIncidents(incidents);
