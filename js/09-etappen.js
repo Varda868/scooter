@@ -34,7 +34,7 @@ const fuelText = km => {
 };
 const climbText = () => tripClimb ? ` · ↑ ${tripClimb.up} m ↓ ${tripClimb.down} m` : '';
 const stageTripText = s => (routeStages.length
-  ? `${s.length.toFixed(1)} km · ${durText(tripTime(s))} Fahrzeit · ${tourDays()} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`
+  ? (r => `${r ? r.km : s.length.toFixed(1) + ' km'} · ${durText(r ? r.fahrt : tripTime(s))} Fahrzeit${r ? ` · ⛴ ${durText(r.see)}` : ''} · ${tourDays()} Tage · an ${etaText(etaAtKm(routeKm.at(-1)))}`)(reiseTeile(s))
   : tripText(s)) + fuelText(routeKm?.at(-1) ? s.length * fahrKm(routeKm.at(-1)) / routeKm.at(-1) : s.length) + climbText();
 
 // Feste Übernachtungen (🌙 am Zwischenziel) als Routen-km. Über die Abschnittslängen statt locateOnRoute,
