@@ -74,7 +74,7 @@ function labelPoint(own, others) {
 async function compareRoutes(trips, pick) {
   const req = ++compareRequest;
   const coords = trips.map(tripCoords);
-  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, kurv: kurvigkeit(coords[i]) }));
+  const rows = trips.map((t, i) => ({ km: t.summary.length, sec: tripTime(t.summary), up: null, kurv: kurvigkeit(coords[i]), haupt: null, faehren: null }));
   // Etikett zur Seite weg von den anderen Routen; Hauptroute darüber
   const tips = coords.map((c, i) => {
     const others = coords.filter((_, j) => j !== i), at = labelPoint(c, others);
@@ -89,11 +89,35 @@ async function compareRoutes(trips, pick) {
     const best = { km: min(r => r.km), sec: min(r => r.sec), up: min(r => r.up), kurv: -min(r => -r.kurv) };
     // Mehr ist besser bei Kurven, sonst weniger
     const val = (r, f, text) => r[f] == null ? '' : (rows.length > 1 && (f === 'kurv' ? r[f] >= best[f] && r[f] > 0 : r[f] <= best[f] + (f === 'km' ? 0.05 : f === 'sec' ? 30 : 0)) ? `<b>${text}</b>` : text);
-    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`), val(r, 'kurv', `〰${r.kurv}°/km`)].filter(Boolean).join(' · ')));
+    const best2 = { ...best, haupt: min(r => r.haupt) };
+    const hauptVal = r => r.haupt == null ? '' : rows.length > 1 && r.haupt <= best2.haupt + 0.5 ? `<b>🛣${Math.round(r.haupt)} km</b>` : `🛣${Math.round(r.haupt)} km`;
+    rows.forEach((r, i) => tips[i].setContent([val(r, 'km', `${r.km.toFixed(1)} km`), val(r, 'sec', durText(r.sec)), r.up == null ? '' : val(r, 'up', `↑${r.up} m`), val(r, 'kurv', `〰${r.kurv}°/km`), hauptVal(r)].filter(Boolean).join(' · ') +
+      (i ? `<div class="route-cmp-diff">${vergleichText(r, rows[0])}</div>` : '')));
   };
   render();
   await Promise.all(coords.map((c, i) => routeClimb(c, trips[i]).then(up => { rows[i].up = up; }).catch(() => {})));
-  if (req === compareRequest && altLayer.hasLayer(tips[0])) render();
+  if (req !== compareRequest || !altLayer.hasLayer(tips[0])) return;
+  render();
+  // Straßenarten nacheinander, die Hauptroute zuerst (die braucht der Balken unter dem Profil ohnehin)
+  for (const [i, c] of coords.entries()) {
+    try { const km = strassenKm(await strassenArten(c)); rows[i].haupt = km.schnell + km.haupt; rows[i].faehren = km.faehre; } catch { continue; }
+    if (req !== compareRequest || !altLayer.hasLayer(tips[0])) return;
+    render();
+  }
+}
+
+// Kurztext einer Alternative gegenüber der Hauptroute, z. B. „+12 min · 340 hm weniger · 25 km weniger Hauptstraße“.
+// Was im Fahrprofil stärker gemieden wird (Steigung oder Hauptstraße), steht vorn.
+function vergleichText(r, h) {
+  const teile = [], dSec = r.sec - h.sec, dKm = r.km - h.km;
+  teile.push(Math.abs(dSec) < 60 ? 'gleich lang' : `${dSec > 0 ? '+' : '−'}${durText(Math.abs(dSec))}`);
+  if (Math.abs(dKm) >= 1) teile.push(`${dKm > 0 ? '+' : '−'}${Math.round(Math.abs(dKm))} km`);
+  const hm = r.up != null && h.up != null && Math.abs(r.up - h.up) >= 30 ? `${Math.abs(r.up - h.up)} hm ${r.up < h.up ? 'weniger' : 'mehr'}` : '';
+  const hs = r.haupt != null && h.haupt != null && Math.abs(r.haupt - h.haupt) >= 2 ? `${Math.round(Math.abs(r.haupt - h.haupt))} km ${r.haupt < h.haupt ? 'weniger' : 'mehr'} Hauptstraße` : '';
+  const fa = r.faehren != null && h.faehren != null && (r.faehren > 0.1) !== (h.faehren > 0.1) ? (r.faehren > 0.1 ? 'mit Fähre' : 'ohne Fähre') : '';
+  const wichtig = +$('hills').value <= +$('primary').value ? [hm, hs] : [hs, hm];
+  if (wichtig[0]) wichtig[0] = `<b>${wichtig[0]}</b>`;
+  return [...teile, ...wichtig, fa].filter(Boolean).join(' · ');
 }
 
 // --- Höhenprofil: Valhalla /height liefert [Distanz m, Höhe m] entlang der Linie (Höhenmodell, nicht GPS) ---
@@ -171,9 +195,11 @@ function renderElevation(pts, lenM) {
       <g class="ele-etappen"></g>
       <line class="ele-cursor" y1="${T0}" y2="${H - B0}" visibility="hidden"/>
       <text class="ele-axis ele-label" y="${T0 + 8}" visibility="hidden"></text>
-    </svg>`;
+    </svg>
+    <div class="ele-strassen"></div>`;
   eleGeo = { X, top: T0, bottom: H - B0, totalKm, pts: xs.map((x, i) => [x, hs[i]]) };
   eleEtappenZeichnen();
+  strassenBalken();
   const svg = $('elevation').querySelector('svg');
   const cursor = svg.querySelector('.ele-cursor'), label = svg.querySelector('.ele-label');
   const show = ev => {
