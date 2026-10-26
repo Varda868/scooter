@@ -137,7 +137,7 @@ function posPopup(pk) {
   if (!x) return box;
   const ich = pos.fix && posGps() ? L.latLng(pos.fix.lat, pos.fix.lon) : me.dot._map ? me.dot.getLatLng() : null;
   const m = ich ? ich.distanceTo([x.lat, x.lon]) : null;
-  box.innerHTML = `<b>${x.privat ? '🔒 ' : ''}${escapeHtml(x.name)}</b>${x.sp?.length ? ` <span class="hint">spricht ${x.sp.join(' ')}</span>` : ''}<br>${posAlter(x.fix)}${x.v != null ? ` · ${x.v} km/h` : ''}` +
+  box.innerHTML = `<b>${x.privat ? '🔒 ' : ''}${escapeHtml(x.name)}</b>${x.sp?.length ? ' ' + spFlaggen(x.sp) : ''}<br>${posAlter(x.fix)}${x.v != null ? ` · ${x.v} km/h` : ''}` +
     (x.halt ? `<br>${haltText(x)}` : '') +
     (m != null ? `<br>${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1).replace('.', ',') + ' km'} Luftlinie von dir` : '');
   box.append(menuBox([['via', 'Als Zwischenziel'], ['end', 'Hinfahren (Ziel)']], act => {
@@ -296,7 +296,7 @@ function gruppeZeigen() {
     if (gruppe.tp.bis * 1000 < Date.now()) { gruppe.tp = null; gruppe.layer.clearLayers(); }
   }
   const zeilen = [...pos.leute].filter(([, x]) => x.halt && !x.haltZu)
-    .map(([pk, x]) => `<span class="halt-${x.halt.g || 'steht'}" data-pk="${pk}"><b>${escapeHtml(x.name)}</b>${x.sp?.length ? ` <small>${x.sp.join(' ')}</small>` : ''} ${haltText(x)}${x.halt.g === 'panne' ? `<button data-panne="${pk}" title="Werkstätten am Pannenort">🔧</button>` : ''}<button data-zu="${pk}" title="Ausblenden">✕</button></span>`);
+    .map(([pk, x]) => `<span class="halt-${x.halt.g || 'steht'}" data-pk="${pk}"><b>${escapeHtml(x.name)}</b>${x.sp?.length ? ' ' + spFlaggen(x.sp) : ''} ${haltText(x)}${x.halt.g === 'panne' ? `<button data-panne="${pk}" title="Werkstätten am Pannenort">🔧</button>` : ''}<button data-zu="${pk}" title="Ausblenden">✕</button></span>`);
   if (gruppe.tp) zeilen.push(`<span data-treff>🤝 ${escapeHtml(gruppe.tp.n)}${treffWann(gruppe.tp)}</span>`);
   $('gruppeInfo').innerHTML = zeilen.join('');
 }

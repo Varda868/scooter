@@ -408,14 +408,17 @@ function talkKontaktMerken(pk, name, sp) {
   store.set('talkKontakte', talkKontakte);
   talkAnZeigen();
 }
-// Sprachkürzel am Rufnamen, z. B. „SIMA (de en)“
-const talkSpText = pk => { const sp = talkKontakte.find(k => k.pk === pk)?.sp; return sp?.length ? ` (${sp.join(' ')})` : ''; };
+// Sprachen als Flagge am Rufnamen, z. B. „SIMA 🇩🇪🇬🇧“; ohne passende Flagge das Kürzel
+const SP_FLAGGE = { de: 'DE', en: 'GB', fr: 'FR', it: 'IT', es: 'ES', nl: 'NL', pl: 'PL', cs: 'CZ', sk: 'SK', hr: 'HR', sl: 'SI', hu: 'HU', da: 'DK',
+  sv: 'SE', no: 'NO', nb: 'NO', fi: 'FI', pt: 'PT', el: 'GR', tr: 'TR', ro: 'RO', bg: 'BG', sr: 'RS', uk: 'UA', ru: 'RU', th: 'TH', et: 'EE', lv: 'LV', lt: 'LT' };
+const spFlaggen = sp => (sp || []).map(s => SP_FLAGGE[s] ? String.fromCodePoint(...[...SP_FLAGGE[s]].map(c => 0x1F1A5 + c.charCodeAt(0))) : s).join('');
+const talkSpText = pk => { const sp = talkKontakte.find(k => k.pk === pk)?.sp; return sp?.length ? ' ' + spFlaggen(sp) : ''; };
 function talkAnZeigen() {
   const k = talkKontakte.find(x => x.pk === talkAn);
   $('talkAn').textContent = k ? `🔒 an ${k.name} ▾` : 'an alle ▾';
   $('talkAn').classList.toggle('privat', !!k);
   $('talkAn').hidden = !talkKontakte.length;
-  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}${k.sp?.length ? ` <small>${k.sp.join(' ')}</small>` : ''}</button>`)].join('');
+  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}${k.sp?.length ? ' ' + spFlaggen(k.sp) : ''}</button>`)].join('');
   $('talkAnMenu').querySelector(`[data-pk="${talkAn || ''}"]`)?.classList.add('on');
 }
 $('talkAn').onclick = () => { $('talkAnMenu').hidden = !$('talkAnMenu').hidden; };
@@ -452,7 +455,9 @@ setInterval(() => { if (talkPrefs.on && talk.mod) { talkZeigen(); talkMikro(); i
 
 $('talkOn').checked = talkPrefs.on;
 $('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkSprachen').value = talkSprachen().join(' ');
-$('talkSprachen').onchange = () => { talkPrefs.sprachen = $('talkSprachen').value; $('talkSprachen').value = talkSprachen().join(' '); saveTalk(); }; $('talkPw').value = talkPrefs.pw;
+$('talkSprachen').onchange = () => { talkPrefs.sprachen = $('talkSprachen').value; $('talkSprachen').value = talkSprachen().join(' '); saveTalk(); talkSpZeigen(); };
+const talkSpZeigen = () => { $('talkSprachenHint').textContent = talkSprachen().length ? `Andere sehen ${spFlaggen(talkSprachen())} an deinem Namen.` : ''; };
+talkSpZeigen(); $('talkPw').value = talkPrefs.pw;
 $('talkMode').value = talkPrefs.mode; $('talkEmpf').value = talkPrefs.empf; $('talkEmpfVal').textContent = talkPrefs.empf + ' dB';
 $('talkHalt').value = String(talkPrefs.halt); $('talkRelays').value = talkPrefs.relays;
 $('talkOn').onchange = () => { talkPrefs.on = $('talkOn').checked; saveTalk(); talkStart(); };
