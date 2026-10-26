@@ -29,6 +29,11 @@ function faehr_se_datensatz(): string {
 }
 // Merker für einen abgelehnten Schlüssel; gilt nur für dieselbe Kombination aus Datensatz und Schlüssel
 function faehr_se_sperre(string $key): string { return hash('sha256', faehr_se_datensatz() . "\n" . $key); }
+// Gesperrt nur für FAEHR_SE_SPERRE_H Stunden: frische Trafiklab-Schlüssel melden anfangs 403 „Key does not exist“
+const FAEHR_SE_SPERRE_H = 2;
+function faehr_se_gesperrt(array $st, string $key): bool {
+  return ($st['abgelehnt'] ?? '') === faehr_se_sperre($key) && time() - (int)($st['abgelehnt_t'] ?? 0) < FAEHR_SE_SPERRE_H * 3600;
+}
 const FAEHR_SE_MAX = 1536 * 1048576, FAEHR_HAFEN_M = 5000, FAEHR_TAGE = 28;
 
 // Wichtige Linien je Meer: [Hafen A, lat, lon, Hafen B, lat, lon]. Abdeckung = Anteil, für den es in den Kacheln
@@ -300,8 +305,8 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $key = (string)sw_wert('trafiklab_key');
   if ($key === '') { $i[] = 'Kein Trafiklab-Schlüssel eingetragen, übersprungen'; return null; }
   $st = faehr_se_stand(); $n = count($st['abrufe']);
-  if (($st['abgelehnt'] ?? '') === faehr_se_sperre($key)) {
-    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf, damit kein Kontingent verbraucht wird. Unter „Schlüssel & Konten“ einen passenden Schlüssel eintragen oder den Datensatz umstellen.';
+  if (faehr_se_gesperrt($st, $key)) {
+    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf bis ' . date('H:i', (int)$st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . ', damit kein Kontingent verbraucht wird. Frisch angelegte Schlüssel brauchen manchmal etwas; unter „Schlüssel & Konten“ lässt sich die Sperre auch sofort aufheben.';
     return null;
   }
   if ($n >= ($manuell ? FAEHR_SE_SPERRE : FAEHR_SE_LIMIT - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . FAEHR_SE_LIMIT . ')'; return null; }
@@ -335,7 +340,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   if (!$ok || $code !== 200) {
     @unlink("$zip.tmp");
     $st['fehl']++;
-    if ($code === 401 || $code === 403) $st['abgelehnt'] = faehr_se_sperre($key);
+    if ($code === 401 || $code === 403) { $st['abgelehnt'] = faehr_se_sperre($key); $st['abgelehnt_t'] = time(); }
     faehr_se_stand($st);
     // Den Schlüssel nie in Meldungen: nur Status
     $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): Schlüssel passt nicht zum Datensatz „" . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . "“ oder ist nicht aktiv (neue Schlüssel brauchen ggf. einige Minuten). Weitere Abrufe erst mit anderem Schlüssel oder Datensatz." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :

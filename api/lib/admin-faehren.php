@@ -45,6 +45,9 @@ function bereich_faehren(): void {
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
       admin_zurueck('faehren', FAEHR_QUELLEN[$q][0] . ($p ? ': Fehler, siehe Verlauf' : ': fertig'));
+    } elseif ($aktion === 'sperre_weg') {
+      $st = faehr_se_stand(); unset($st['abgelehnt'], $st['abgelehnt_t']); $st['fehl'] = 0; faehr_se_stand($st);
+      admin_zurueck('faehren', 'Sperre aufgehoben – „Schweden jetzt“ versucht es erneut (zählt als ein Abruf).');
     } elseif ($aktion === 'testmail') {
       $e = faehr_einstellungen();
       if ($e['mail'] === '') $fehler = 'Erst eine Mail-Adresse speichern.';
@@ -97,7 +100,7 @@ function bereich_faehren(): void {
       '<h3>' . ['voll' => '✅', 'teil' => '⚠️', 'leer' => '○'][$st] . ' ' . h($d['name']) . '</h3>' .
       '<div class="leise">' . h($d['wofuer']) . ' · Limit: ' . h($d['limit']) .
       ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' .
-        (($st === 'voll' && (faehr_se_stand()['abgelehnt'] ?? '') === faehr_se_sperre((string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ abgelehnt: Schlüssel passt nicht zum Datensatz oder ist nicht aktiv</b>' : '') : '') .
+        (($st === 'voll' && faehr_se_gesperrt($se_st = faehr_se_stand(), (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ abgelehnt (passt nicht zum Datensatz oder noch nicht aktiv) – gesperrt bis ' . date('H:i', (int)$se_st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . '</b>' : '') : '') .
       ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
       '<div>' . sw_schluessel_link($z) . '</div>';
     foreach ($d['felder'] as $f => $label) {
@@ -111,6 +114,7 @@ function bereich_faehren(): void {
       $html .= '</select></label>';
     }
     $html .= '<div class="knoepfe"><button class="klein">Speichern</button>' .
+      ($z === 'trafiklab' && $st === 'voll' && faehr_se_gesperrt(faehr_se_stand(), (string)sw_wert('trafiklab_key')) ? '<button class="klein" name="aktion" value="sperre_weg">Sperre aufheben</button>' : '') .
       ($st !== 'leer' ? '<button class="klein" name="weg" value="1">Löschen</button>' : '') . '</div></form>';
   }
 
