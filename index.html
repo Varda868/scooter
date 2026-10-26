@@ -308,6 +308,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <!-- Fällt cdnjs aus, hängt sonst die ganze App („L is not defined“): dann Leaflet von unpkg -->
 <script>window.L || document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>')</script>
+<!-- Auch unpkg weg: klare Meldung statt hängender App, bei wiederkehrendem Netz selbst neu laden -->
+<script>window.L || (document.body.insertAdjacentHTML('afterbegin', '<div id="leafletFehlt" role="alert" style="position:fixed;inset:0;z-index:9999;display:grid;place-content:center;gap:12px;padding:24px;text-align:center;background:#fff;color:#14213d;font:16px system-ui,sans-serif">' +
+  '<b>🗺 Die Kartenbibliothek konnte nicht geladen werden.</b><span>Bitte Internetverbindung prüfen. Die App lädt neu, sobald das Netz wieder da ist.</span>' +
+  '<button onclick="location.reload()" style="justify-self:center;padding:10px 18px;font:inherit">Neu laden</button></div>'), addEventListener('online', () => location.reload()))</script>
 <script src="js/01-grundlagen.js"></script>
 <script src="js/02-wegpunkte.js"></script>
 <script src="js/03-routing.js"></script>
