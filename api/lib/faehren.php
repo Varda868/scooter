@@ -8,8 +8,8 @@ defined('SW_API') || exit;
 const FAEHR_QUELLEN = [
   'osm' => ['OSM-Fährkacheln (poi/f/)', 'lauf', '15 6 * * *', 30,
     'Die Linien selbst baut die monatliche POI-Action aus OpenStreetMap (Wege und route=ferry-Relationen). Dieser Lauf wertet die Kacheln aus: Linien, Abdeckung je Meer, verdächtige Linien, Vergleich mit Fahrplänen.'],
-  'se' => ['Schweden: Trafiklab GTFS Sverige 2', 'lauf', '20 4 * * *', 24 * 33,
-    'Amtlicher Gesamtfahrplan Schwedens, nur Fährlinien (GTFS route_type 4 und 1000–1299): Abfahrten je Tag, Dauer, Häfen. Braucht einen kostenlosen Schlüssel von trafiklab.se (50 Abrufe in 30 Tagen). Der Lauf darf täglich angestoßen werden: geladen wird nur alle 27 Tage, nach einem Fehler einmal am nächsten Tag erneut.'],
+  'se' => ['Schweden: Trafiklab GTFS Sweden 3 Static data', 'lauf', '20 6 3,4 * *', 24 * 33,
+    'Amtlicher Gesamtfahrplan Schwedens, nur Fährlinien: Abfahrten je Tag, Dauer, Häfen. Braucht einen kostenlosen Trafiklab-Schlüssel (60 Abrufe in 30 Tagen). Monatlich am 3. nach 06:00 (vorher liefert Trafiklab noch den Vortagsstand aus dem Cache), der 4. dient als Wiederholung; geladen wird höchstens alle 27 Tage und nur, wenn die Datei neu ist (ETag).'],
   'no' => ['Norwegen: Entur GTFS', 'probe', '30 4 4 * *', 0, 'Mit Fjordfähren. Wird gerade auf dem Lifebook erprobt.'],
   'dk' => ['Dänemark: Rejseplanen GTFS', 'probe', '40 4 4 * *', 0, 'Gesamtfahrplan mit Fährlinien. Wird gerade erprobt.'],
   'fi' => ['Finnland: Fintraffic GTFS', 'probe', '50 4 4 * *', 0, 'Schären- und Ålandfähren (CC BY 4.0). Wird gerade erprobt.'],
@@ -20,15 +20,22 @@ const FAEHR_QUELLEN = [
 ];
 // Trafiklab-Schlüssel gelten je API: der Datensatz im Admin muss zu dem Schlüssel passen
 const FAEHR_SE_DATENSAETZE = [
-  'sverige2' => ['GTFS Sverige 2', 'https://opendata.samtrafiken.se/gtfs-sverige-2/sweden.zip?key='],
-  'sweden3' => ['GTFS Sweden 3 Static data', 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key='],
+  // [Name, URL, Abrufe je 30 Tage mit Bronze-Schlüssel]; der Server kennt kein Range, jeder Abruf lädt die ganze Datei
+  // [Name, URL, Abrufe/30 Tage, alt]; Sweden 3 ist Standard
+  'sweden3' => ['GTFS Sweden 3 Static data', 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key=', 60, false],
+  'sverige2' => ['GTFS Sverige 2', 'https://opendata.samtrafiken.se/gtfs-sverige-2/sweden.zip?key=', 50, true],
 ];
 function faehr_se_datensatz(): string {
-  $d = (string)(sw_config()['faehren']['se_datensatz'] ?? 'sverige2');
-  return isset(FAEHR_SE_DATENSAETZE[$d]) ? $d : 'sverige2';
+  $d = (string)(sw_config()['faehren']['se_datensatz'] ?? 'sweden3');
+  return isset(FAEHR_SE_DATENSAETZE[$d]) ? $d : 'sweden3';
 }
 // Merker für einen abgelehnten Schlüssel; gilt nur für dieselbe Kombination aus Datensatz und Schlüssel
 function faehr_se_sperre(string $key): string { return hash('sha256', faehr_se_datensatz() . "\n" . $key); }
+// Gesperrt nur für FAEHR_SE_SPERRE_H Stunden: frische Trafiklab-Schlüssel melden anfangs 403 „Key does not exist“
+const FAEHR_SE_SPERRE_H = 2;
+function faehr_se_gesperrt(array $st, string $key): bool {
+  return ($st['abgelehnt'] ?? '') === faehr_se_sperre($key) && time() - (int)($st['abgelehnt_t'] ?? 0) < FAEHR_SE_SPERRE_H * 3600;
+}
 const FAEHR_SE_MAX = 1536 * 1048576, FAEHR_HAFEN_M = 5000, FAEHR_TAGE = 28;
 
 // Wichtige Linien je Meer: [Hafen A, lat, lon, Hafen B, lat, lon]. Abdeckung = Anteil, für den es in den Kacheln
@@ -92,7 +99,7 @@ const FAEHR_REFERENZ = [
 function faehr_einstellungen(): array {
   $e = sw_config()['faehren'] ?? [];
   $q = [];
-  foreach (FAEHR_QUELLEN as $id => [, $art, $cron]) $q[$id] = ['an' => $art === 'lauf' && ($e['quellen'][$id]['an'] ?? true), 'cron' => $e['quellen'][$id]['cron'] ?? $cron];
+  foreach (FAEHR_QUELLEN as $id => [, $art, $cron]) $q[$id] = ['an' => $art === 'lauf' && ($e['quellen'][$id]['an'] ?? true), 'cron' => ($id === 'se' && ($e['quellen'][$id]['cron'] ?? '') === '20 4 * * *') ? $cron : ($e['quellen'][$id]['cron'] ?? $cron)];  // alter Schweden-Standard → monatlich
   return ['quellen' => $q, 'mail' => (string)($e['mail'] ?? ''), 'mail_art' => ($e['mail_art'] ?? 'fehler') === 'immer' ? 'immer' : 'fehler'];
 }
 
@@ -281,13 +288,24 @@ function faehr_finde(array $linien, float $la1, float $lo1, float $la2, float $l
 // Trafiklab erlaubt mit dem Gratis-Schlüssel nur 50 Abrufe in 30 Tagen. Deshalb: höchstens ein Download in
 // FAEHR_SE_ABSTAND_T Tagen, nach einem Fehler höchstens eine Wiederholung am nächsten Tag, ETag/If-Modified-Since,
 // Zähler aller Abrufe (auch fehlgeschlagener) und die ZIP-Datei bleibt liegen, damit sich neu auswerten lässt.
-const FAEHR_SE_LIMIT = 50, FAEHR_SE_SPERRE = 40, FAEHR_SE_ABSTAND_T = 27;
+const FAEHR_SE_ABSTAND_T = 27;
+// Kontingent je Datensatz (jeder Trafiklab-Schlüssel zählt für sich); „jetzt“ 10 vor der Grenze gesperrt, Zeitplan 5 davor
+function faehr_se_limit(): int { return FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][2]; }
+function faehr_se_sperre_ab(): int { return faehr_se_limit() - 10; }
 function faehr_se_stand(?array $neu = null): array {
-  $datei = sw_daten(true) . '/gtfs-se.json';
-  if ($neu !== null) { @file_put_contents($datei, json_encode($neu)); return $neu; }
-  $s = json_decode((string)@file_get_contents($datei), true) ?: [];
-  $s['abrufe'] = array_values(array_filter((array)($s['abrufe'] ?? []), fn($t) => $t > time() - 30 * 86400));
-  return $s + ['etag' => '', 'lastmod' => '', 'ok_t' => 0, 'fehl' => 0, 'versuch_t' => 0];
+  // Abrufe je Datensatz (abrufe_ds); 'abrufe' ist die Sicht auf den eingestellten Datensatz
+  $datei = sw_daten(true) . '/gtfs-se.json'; $ds = faehr_se_datensatz();
+  $roh = json_decode((string)@file_get_contents($datei), true) ?: [];
+  if (!isset($roh['abrufe_ds'])) $roh['abrufe_ds'] = ['sverige2' => (array)($roh['abrufe'] ?? [])];  // alter Stand: alles war Sverige 2
+  if ($neu !== null) {
+    $neu['abrufe_ds'] = $roh['abrufe_ds']; $neu['abrufe_ds'][$ds] = array_values((array)($neu['abrufe'] ?? []));
+    unset($neu['abrufe']);
+    @file_put_contents($datei, json_encode($neu));
+    return faehr_se_stand();
+  }
+  foreach ($roh['abrufe_ds'] as $k => $l) $roh['abrufe_ds'][$k] = array_values(array_filter((array)$l, fn($t) => $t > time() - 30 * 86400));
+  $roh['abrufe'] = $roh['abrufe_ds'][$ds] ?? [];
+  return $roh + ['etag' => '', 'lastmod' => '', 'ok_t' => 0, 'fehl' => 0, 'versuch_t' => 0];
 }
 function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_auswerten = false): ?int {
   $zip = sw_daten(true) . '/gtfs-se.zip';
@@ -300,11 +318,11 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $key = (string)sw_wert('trafiklab_key');
   if ($key === '') { $i[] = 'Kein Trafiklab-Schlüssel eingetragen, übersprungen'; return null; }
   $st = faehr_se_stand(); $n = count($st['abrufe']);
-  if (($st['abgelehnt'] ?? '') === faehr_se_sperre($key)) {
-    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf, damit kein Kontingent verbraucht wird. Unter „Schlüssel & Konten“ einen passenden Schlüssel eintragen oder den Datensatz umstellen.';
+  if (faehr_se_gesperrt($st, $key)) {
+    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf bis ' . date('H:i', (int)$st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . ', damit kein Kontingent verbraucht wird. Frisch angelegte Schlüssel brauchen manchmal etwas; unter „Schlüssel & Konten“ lässt sich die Sperre auch sofort aufheben.';
     return null;
   }
-  if ($n >= ($manuell ? FAEHR_SE_SPERRE : FAEHR_SE_LIMIT - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . FAEHR_SE_LIMIT . ')'; return null; }
+  if ($n >= ($manuell ? faehr_se_sperre_ab() : faehr_se_limit() - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . faehr_se_limit() . ')'; return null; }
   if (!$manuell) {
     // Planmäßig: Daten noch frisch → nichts tun; nach Fehlern höchstens einmal am nächsten Tag wiederholen
     if ($st['ok_t'] && time() - $st['ok_t'] < FAEHR_SE_ABSTAND_T * 86400) { $i[] = 'Letzter Abruf vom ' . date('d.m.Y', $st['ok_t']) . ', noch aktuell'; return null; }
@@ -325,7 +343,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $err = curl_error($c);
   curl_close($c); fclose($fh);
   $st['abrufe'][] = time(); $st['versuch_t'] = time();
-  $i[] = 'Abrufe in den letzten 30 Tagen: ' . count($st['abrufe']) . ' von ' . FAEHR_SE_LIMIT . ' (dieser mitgezählt)';
+  $i[] = 'Abrufe in den letzten 30 Tagen: ' . count($st['abrufe']) . ' von ' . faehr_se_limit() . ' (dieser mitgezählt)';
   if ($ok && $code === 304) {
     @unlink("$zip.tmp");
     $st['ok_t'] = time(); $st['fehl'] = 0; faehr_se_stand($st);
@@ -335,10 +353,10 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   if (!$ok || $code !== 200) {
     @unlink("$zip.tmp");
     $st['fehl']++;
-    if ($code === 401 || $code === 403) $st['abgelehnt'] = faehr_se_sperre($key);
+    if ($code === 401 || $code === 403) { $st['abgelehnt'] = faehr_se_sperre($key); $st['abgelehnt_t'] = time(); }
     faehr_se_stand($st);
     // Den Schlüssel nie in Meldungen: nur Status
-    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): Schlüssel passt nicht zum Datensatz „" . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . "“ oder ist nicht aktiv (neue Schlüssel brauchen ggf. einige Minuten). Weitere Abrufe erst mit anderem Schlüssel oder Datensatz." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
+    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): Schlüssel passt nicht zum Datensatz „" . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . "“ oder ist nicht aktiv (neue Schlüssel brauchen ggf. einige Minuten). Neuer Versuch frühestens in " . FAEHR_SE_SPERRE_H . " Stunden oder nach „Sperre aufheben“." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
       "Download fehlgeschlagen (HTTP $code" . ($err ? ', ' . preg_replace('/key=[^&\s]+/', 'key=…', $err) : '') . ')');
     return null;
   }
