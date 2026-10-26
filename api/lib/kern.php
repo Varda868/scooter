@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 6;
+const SW_SCHEMA = 7;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -50,6 +50,7 @@ const SW_STANDARD = [
   'overpass_urls' => ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'],
   'open_meteo_url' => 'https://api.open-meteo.com/v1/forecast',
   'tomtom_key' => '',
+  'trafiklab_key' => '', // Schweden-Fahrplan (Admin → Fährdaten), nur für Server-Läufe
   'proxy_an' => true,
   'origins' => ['https://scooter.thai-klasse.de'],
   // Talk-Relays in dieser Reihenfolge; eigen = selbst betriebenes Relay (im Dashboard hervorgehoben, Zertifikat genauer beobachtet)
@@ -135,6 +136,10 @@ function sw_schema(PDO $db): void {
   // v6: verschlüsselte Profile für den Abgleich zwischen eigenen Geräten (Schlüssel und Fach-Kennung kennt nur die App)
   if ($v < 6) {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_profil (id VARCHAR(64) PRIMARY KEY, t INTEGER NOT NULL, abruf INTEGER, groesse INTEGER NOT NULL, ip VARCHAR(64), daten " . (sw_mysql() ? 'LONGTEXT' : 'TEXT') . ")");
+  }
+  // v7: Verlauf der Fährdaten-Läufe (Admin → Fährdaten)
+  if ($v < 7) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_faehrlauf (id $id, t INTEGER NOT NULL, quelle VARCHAR(16) NOT NULL, ms INTEGER, ok INTEGER NOT NULL, linien INTEGER, text $txt)");
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);
