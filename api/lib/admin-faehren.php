@@ -42,6 +42,8 @@ function bereich_faehren(): void {
         faehr_se_stand($st);
       }
       if (!$fehler) { sw_config_speichern($c); admin_zurueck('faehren', SW_SCHLUESSEL[$z]['name'] . (!empty($_POST['weg']) ? ': gelöscht' : ': gespeichert')); }
+    } elseif ($aktion === 'lauf' && ($_POST['q'] ?? '') === 'se' && empty($_POST['ok'])) {
+      $fehler = 'Schweden „jetzt“: bitte das Häkchen setzen (lädt die ganze Datei und zählt einen Abruf).';
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
       admin_zurueck('faehren', FAEHR_QUELLEN[$q][0] . ($p ? ': Fehler, siehe Verlauf' : ': fertig'));
@@ -83,12 +85,14 @@ function bereich_faehren(): void {
   $se = faehr_se_stand(); $n = count($se['abrufe']);
   foreach (FAEHR_QUELLEN as $id => [$name, $art]) if ($art === 'lauf')
     $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="lauf"><input type="hidden" name="q" value="' . $id . '"><button class="klein"' .
-      ($id === 'se' && $n >= faehr_se_sperre_ab() ? ' disabled title="Schon ' . $n . ' Abrufe in 30 Tagen"' : '') . '>↻ ' . h($name) . ' jetzt</button></form>';
+      ($id === 'se' && $n >= faehr_se_sperre_ab() ? ' disabled title="Schon ' . $n . ' Abrufe in 30 Tagen"' : '') . '>↻ ' . h($name) . ' jetzt</button>' .
+      // ohne JavaScript (CSP): Pflicht-Häkchen als Bestätigung
+      ($id === 'se' ? '<label class="zeile leise"><input type="checkbox" name="ok" value="1" required> lädt die ganze Datei (~200 MB) und zählt ' . ($n + 1) . ' von ' . faehr_se_limit() . '</label>' : '') . '</form>';
   $html .= is_file(sw_daten() . '/gtfs-se.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="se"><button class="klein">⟳ Schweden neu auswerten (ohne Abruf)</button></form>' : '';
   $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="testmail"><button class="klein">✉ Testmail</button></form></div>' .
     '<p class="leise">In Plesk unter <b>Geplante Aufgaben</b> je Quelle eine Aufgabe „URL abrufen“ mit der Adresse und dem Zeitplan von oben anlegen. ' .
     'Bei einem Fehler antwortet die Adresse mit HTTP 500. Wer hier eine Mail-Adresse einträgt, kann Plesk auf „Nicht benachrichtigen“ stellen, sonst kommen Fehler doppelt. ' .
-    'Der Schweden-Lauf lädt einige hundert MB und kann mehrere Minuten dauern; „jetzt“ wartet so lange. „Neu auswerten“ nimmt die Datei auf dem Server und verbraucht keinen Abruf.</p>';
+    'Der Schweden-Lauf lädt rund 200 MB und kann mehrere Minuten dauern; „jetzt“ wartet so lange. „Neu auswerten“ nimmt die Datei auf dem Server und verbraucht keinen Abruf.</p>';
 
   // Qualitätsbericht aus dem letzten OSM-Lauf
   $b = json_decode((string)@file_get_contents(sw_daten() . '/faehren-bericht.json'), true);
@@ -103,6 +107,7 @@ function bereich_faehren(): void {
         (($st === 'voll' && faehr_se_gesperrt($se_st = faehr_se_stand(), (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ abgelehnt (passt nicht zum Datensatz oder noch nicht aktiv) – gesperrt bis ' . date('H:i', (int)$se_st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . '</b>' : '') : '') .
       ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
       '<div>' . sw_schluessel_link($z) . '</div>';
+    if (!empty($d['hinweis'])) $html .= '<p class="leise">' . h($d['hinweis']) . '</p>';
     foreach ($d['felder'] as $f => $label) {
       $w = (string)sw_wert($f);
       $html .= '<label>' . h($label) . ' <span class="leise">' . ($w !== '' ? 'gesetzt (…' . h(substr($w, -4)) . ')' : 'nicht gesetzt') . '</span>' .
@@ -110,7 +115,7 @@ function bereich_faehren(): void {
     }
     if ($z === 'trafiklab') {
       $html .= '<label>Datensatz (muss zum Schlüssel passen)<select name="se_datensatz">';
-      foreach (FAEHR_SE_DATENSAETZE as $ds => [$dn]) $html .= '<option value="' . $ds . '"' . ($ds === faehr_se_datensatz() ? ' selected' : '') . '>' . h($dn) . '</option>';
+      foreach (FAEHR_SE_DATENSAETZE as $ds => [$dn, , $lim, $alt]) $html .= '<option value="' . $ds . '"' . ($ds === faehr_se_datensatz() ? ' selected' : '') . '>' . h($dn) . " ($lim/30 Tage" . ($alt ? ', alt' : '') . ')</option>';
       $html .= '</select></label>';
     }
     $html .= '<div class="knoepfe"><button class="klein">Speichern</button>' .
