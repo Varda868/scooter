@@ -447,10 +447,24 @@ const etaText = ts => {
 };
 // Fahrzeit plus Pausen (je volle 2 h Fahrt eine Pause aus dem Fahrprofil)
 const withBreaks = sec => sec + Math.floor(sec / 7200) * +$('breakMin').value * 60;
+// Mit Fähren: km getrennt nach Roller und Fähre, Fahrzeit nur Roller, Fährzeit extra; null ohne Fähre
+function reiseTeile(s) {
+  if (!routeFaehren.length || !routeKm?.at(-1)) return null;
+  const bike = s.length * fahrKm(routeKm.at(-1)) / routeKm.at(-1), see = routeFaehren.reduce((t, f) => t + f.s, 0);
+  return { km: `${s.length.toFixed(0)} km (🛵 ${bike.toFixed(0)} km · ⛴ ${(s.length - bike).toFixed(0)} km)`,
+    fahrt: tripTime({ length: bike, time: Math.max(60, s.time - see) }), see };
+}
 const tripText = s => {
-  const t = tripTime(s), min = Math.round(t / 60);
-  return `${s.length.toFixed(1)} km · ${Math.floor(min / 60)} h ${min % 60} min · an ca. ${etaText(Date.now() + withBreaks(t) * 1000)}`;
+  const r = reiseTeile(s), t = r ? r.fahrt : tripTime(s), min = Math.round(t / 60);
+  return `${r ? r.km : s.length.toFixed(1) + ' km'} · ${Math.floor(min / 60)} h ${min % 60} min${r ? ` Fahrzeit · ⛴ ${durText(r.see)}` : ''} · an ca. ${etaText(Date.now() + (withBreaks(t) + (r?.see || 0)) * 1000)}`;
 };
+// Abbiegehinweis an Fähren: Ein- und Ausschiffen mit Name, Dauer, Länge und Ankunft
+function faehrSchritt(m, km) {
+  const i = m.type === 28 ? routeFaehren.findIndex(f => Math.abs(f.km - km) < 0.6) : m.type === 29 ? routeFaehren.findIndex(f => Math.abs(f.bisKm - km) < 0.6) : -1;
+  if (i < 0) return null;
+  return { fi: i, text: m.type === 28 ? faehrStartText(routeFaehren[i]) : `⛴ Von Bord · an ca. ${etaText(etaAtKm(routeFaehren[i].bisKm))}` };
+}
+const faehrStartText = f => `⛴ Fähre ${f.name || ''} · ${durText(f.s)} · ${Math.round(f.bisKm - f.km)} km`.replace('Fähre  ·', 'Fähre ·');
 
 // Uhr im Header, auf die volle Minute synchronisiert
 function tick() {
@@ -483,7 +497,8 @@ function showTrip(trip, alternates = []) {
   // begin_shape_index zählt je Abschnitt; tripCoords lässt den ersten Punkt jedes weiteren Abschnitts weg
   let off = 0;
   for (const l of trip.legs) {
-    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, text: m.instruction, type: m.type, exits: m.roundabout_exit_count,
+    for (const m of l.maneuvers) routeManeuvers.push({ km: routeKm[off + m.begin_shape_index] ?? 0, type: m.type, exits: m.roundabout_exit_count,
+      text: faehrSchritt(m, routeKm[off + m.begin_shape_index] ?? 0)?.text || m.instruction,
       verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }
@@ -495,7 +510,9 @@ function showTrip(trip, alternates = []) {
   const rough = trip.legs.some(l => l.maneuvers.some(m => m.rough)) ? ' · ⚠ unbefestigte Stücke' : '';
   $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + rough + summaryNote;
   summaryNote = '';
-  $('steps').innerHTML = trip.legs.flatMap(l => l.maneuvers).map(m => `<li>${escapeHtml(m.instruction)}</li>`).join('');
+  // Fähren mit ⛴, Name (später aus OSM nachgetragen), Dauer und Ankunft
+  $('steps').innerHTML = routeManeuvers.map(m => { const fs = faehrSchritt(m, m.km);
+    return `<li${fs && m.type === 28 ? ` data-fi="${fs.fi}"` : ''}${fs ? ' class="faehr-schritt"' : ''}>${escapeHtml(m.text)}</li>`; }).join('');
   loadElevation(trip);
   loadPois();
   renderMyPois();

@@ -155,7 +155,13 @@ async function faehrenZeigen(trip) {
   // Den OSM-Namen auch an Strich, Anlegern und Schiffchen zeigen
   let neu = false;
   fs.forEach((f, i) => { const n = tags[i]?.name; if (n && n !== f.name) { f.name = n; neu = true; } });
-  if (neu) faehrStrichZeichnen(fs);
+  if (neu) {
+    faehrStrichZeichnen(fs);
+    // Abbiegehinweise und Navi-Liste: Fährname aus OSM statt aus Valhalla
+    fs.forEach((f, i) => { if (routeFaehren[i]) routeFaehren[i].name = f.name; });
+    $('steps').querySelectorAll('[data-fi]').forEach(li => { const f = routeFaehren[+li.dataset.fi]; if (f) li.textContent = faehrStartText(f); });
+    for (const m of routeManeuvers) if (m.type === 28) { const s = faehrSchritt(m, m.km); if (s) m.text = s.text; }
+  }
   box.innerHTML = fs.map((f, i) => `<div>${faehreText(f, tags[i])}</div>`).join('');
 }
 
