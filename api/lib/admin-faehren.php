@@ -21,15 +21,21 @@ function bereich_faehren(): void {
         if (!preg_match('~^[0-9*/,-]+( [0-9*/,-]+){4}$~', $cron)) { $fehler = 'Zeitplan bitte im Cron-Stil mit fünf Feldern, z. B. 15 6 * * *'; break; }
         $e['quellen'][$id] = ['an' => !empty($_POST["an_$id"]), 'cron' => $cron];
       }
-      if (!empty($_POST['trafiklab_weg'])) $c['werte']['trafiklab_key'] = '';
-      elseif (($neu = trim((string)($_POST['trafiklab_key'] ?? ''))) !== '') {
-        if (preg_match('/^[\x21-\x7e]{8,200}$/', $neu)) $c['werte']['trafiklab_key'] = $neu; else $fehler = 'Trafiklab-Schlüssel: Zeichen ungültig.';
-      }
       if (!$fehler) {
         $e['mail'] = $mail; $e['mail_art'] = ($_POST['mail_art'] ?? '') === 'immer' ? 'immer' : 'fehler';
         $c['faehren'] = $e; sw_config_speichern($c);
         admin_zurueck('faehren', 'Gespeichert.');
       }
+    } elseif ($aktion === 'schluessel' && isset(SW_SCHLUESSEL[$z = (string)($_POST['z'] ?? '')])) {
+      // leeres Feld = unverändert; „löschen“ leert alle Felder dieses Zugangs
+      $c = sw_config();
+      foreach (SW_SCHLUESSEL[$z]['felder'] as $f => $label) {
+        if (!empty($_POST['weg'])) { $c['werte'][$f] = ''; continue; }
+        if (($neu = trim((string)($_POST[$f] ?? ''))) === '') continue;
+        if (preg_match('/^[\x21-\x7e]{3,300}$/', $neu)) $c['werte'][$f] = $neu; else { $fehler = "$label: Zeichen ungültig (keine Leerzeichen/Umlaute)."; break; }
+      }
+      if (!$fehler && $z === 'trafiklab') { $st = faehr_se_stand(); $st['fehl'] = 0; faehr_se_stand($st); }  // neuer Schlüssel: Fehlversuche zurücksetzen
+      if (!$fehler) { sw_config_speichern($c); admin_zurueck('faehren', SW_SCHLUESSEL[$z]['name'] . (!empty($_POST['weg']) ? ': gelöscht' : ': gespeichert')); }
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
       admin_zurueck('faehren', FAEHR_QUELLEN[$q][0] . ($p ? ': Fehler, siehe Verlauf' : ': fertig'));
@@ -57,10 +63,7 @@ function bereich_faehren(): void {
       ($l ? admin_zeit((int)$l['t']) . '<br>' . ($l['ok'] ? '✅' : '❌') . ($l['linien'] !== null ? ' ' . (int)$l['linien'] . ' Linien' : '') . ' · ' . round($l['ms'] / 1000) . ' s'
         : '<span class="leise">' . ($art === 'lauf' ? 'noch nie' : 'Platzhalter') . '</span>') . '</td></tr>';
   }
-  $gesetzt = (string)sw_wert('trafiklab_key') !== '';
-  $html .= '</table><label>Trafiklab-Schlüssel für „GTFS Sverige 2“ <span class="leise">' . ($gesetzt ? 'gesetzt (…' . h(substr((string)sw_wert('trafiklab_key'), -4)) . ')' : 'nicht gesetzt – kostenlos auf trafiklab.se anlegen') . '</span>' .
-    '<input type="password" name="trafiklab_key" autocomplete="off" placeholder="' . ($gesetzt ? 'leer lassen = unverändert' : 'Schlüssel eingeben') . '"></label>' .
-    ($gesetzt ? '<label class="zeile"><input type="checkbox" name="trafiklab_weg" value="1"> Schlüssel löschen</label>' : '') .
+  $html .= '</table>' .
     '<p class="leise">Trafiklab-Abrufe in den letzten 30 Tagen: <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> · „jetzt“ ab ' . FAEHR_SE_SPERRE . ' gesperrt' .
     (($t = faehr_se_stand()['ok_t']) ? ' · letzter erfolgreicher Abruf ' . admin_zeit((int)$t) : '') . '</p>' .
     '<label>Mail an <input type="email" name="mail" value="' . h($e['mail']) . '" placeholder="leer = keine eigene Mail (Plesk meldet Fehler trotzdem)"></label>' .
@@ -80,6 +83,26 @@ function bereich_faehren(): void {
 
   // Qualitätsbericht aus dem letzten OSM-Lauf
   $b = json_decode((string)@file_get_contents(sw_daten() . '/faehren-bericht.json'), true);
+  // Schlüssel & Konten: ein Formular je Zugang; Werte nie zurückzeigen
+  $html .= '<h2>Schlüssel &amp; Konten</h2><p class="leise">Gespeichert in der Server-Konfiguration (private/scooterways/config.php), nie im Repo. Leere Zugänge = Quelle wird übersprungen.</p>';
+  foreach (SW_SCHLUESSEL as $z => $d) {
+    $st = sw_schluessel_status($z);
+    $html .= '<form method="post" class="schluessel">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="schluessel"><input type="hidden" name="z" value="' . h($z) . '">' .
+      '<h3>' . ['voll' => '✅', 'teil' => '⚠️', 'leer' => '○'][$st] . ' ' . h($d['name']) . '</h3>' .
+      '<div class="leise">' . h($d['wofuer']) . ' · Limit: ' . h($d['limit']) .
+      ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' .
+        (($st === 'voll' && (faehr_se_stand()['abgelehnt'] ?? '') === hash('sha256', (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ von Trafiklab abgelehnt – Schlüssel für „GTFS Sverige 2“ eintragen</b>' : '') : '') .
+      ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
+      '<div>' . sw_schluessel_link($z) . '</div>';
+    foreach ($d['felder'] as $f => $label) {
+      $w = (string)sw_wert($f);
+      $html .= '<label>' . h($label) . ' <span class="leise">' . ($w !== '' ? 'gesetzt (…' . h(substr($w, -4)) . ')' : 'nicht gesetzt') . '</span>' .
+        '<input type="password" name="' . h($f) . '" autocomplete="off" placeholder="' . ($w !== '' ? 'leer lassen = unverändert' : h($label) . ' eingeben') . '"></label>';
+    }
+    $html .= '<div class="knoepfe"><button class="klein">Speichern</button>' .
+      ($st !== 'leer' ? '<button class="klein" name="weg" value="1">Löschen</button>' : '') . '</div></form>';
+  }
+
   $html .= '<h2>Qualität der Fährlinien</h2>';
   if (!$b) $html .= '<p class="leise">Noch kein Bericht. „OSM-Fährkacheln jetzt“ erzeugt ihn.</p>';
   else {
