@@ -27,12 +27,12 @@ function routeBody(locs) {
     costing: 'motor_scooter',
     costing_options: { motor_scooter: {
       top_speed: +$('speed').value,
-      use_primary: +$('primary').value,
-      use_hills: +$('hills').value,
+      use_primary: einfach() ? EINFACH_STRECKE.use_primary : +$('primary').value,
+      use_hills: einfach() ? EINFACH_STRECKE.use_hills : +$('hills').value,
       // Schotter, Feld- und Waldwege: ausschließen (außer direkt an Start und Ziel)
-      ...($('unpaved').checked ? { exclude_unpaved: true, use_tracks: 0 } : {}),
+      ...(einfach() || $('unpaved').checked ? { exclude_unpaved: true, use_tracks: 0 } : {}),
       // Valhalla-Standard 0,5 meidet Fähren leicht; 1 = nimmt sie gern
-      ...($('ferry').checked ? { use_ferry: 1 } : {})
+      ...(!einfach() && $('ferry').checked ? { use_ferry: 1 } : {})
     } },
     directions_options: { language: 'de-DE', units: 'kilometers' },
     // Höhen alle 30 m je Abschnitt gleich mit der Route (spart /height), Spuren je Manöver fürs Navi
@@ -285,7 +285,7 @@ async function planRoute(locs, exclude = []) {
     if (chunk.some(w => w.grob)) body.costing_options.motor_scooter.use_ferry = 0;
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
-    if (chunks.length === 1 && locs.length === 2) body.alternates = 2;
+    if (chunks.length === 1 && locs.length === 2 && !einfach()) body.alternates = 2;
     const data = await fetchRoute(body, signal);
     // Fähre im Roller-Abschnitt, obwohl die Grobroute dort keine hat: meist ist der Hafen für 50er nur über eine
     // Kraftfahrstraße erreichbar (Europoort), dann sucht Valhalla einen Umweg übers Wasser
@@ -393,7 +393,7 @@ async function route() {
     const locs = waypoints.filter(w => w.latlng);
     if (locs.length < 2) throw new Error('Bitte Start und Ziel angeben.');
     // Offline: zuletzt berechnete Route nehmen, wenn Wegpunkte und Fahrprofil gleich sind
-    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value), $('unpaved').checked, $('ferry').checked]);
+    const tripKey = JSON.stringify([locs.map(w => [w.latlng.lat.toFixed(5), w.latlng.lng.toFixed(5), !!w.shaping]), excluded, $('backDiff').checked, backOfMatch(locs), ...['speed', 'primary', 'hills'].map(id => $(id).value), $('unpaved').checked, $('ferry').checked, einfach()]);
     let data;
     try {
       data = await planTrip(locs);
@@ -438,7 +438,7 @@ async function route() {
 const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ? 1 : 0));
 const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 // Fahrzeit in s: eigener Schnitt aus dem Fahrprofil, sonst Valhalla (gilt für Abschnitte und ganze Route)
-const tripTime = s => +$('avgSpeed').value > 0 ? s.length / +$('avgSpeed').value * 3600 : s.time;
+const tripTime = s => !einfach() && +$('avgSpeed').value > 0 ? s.length / +$('avgSpeed').value * 3600 : s.time;
 const durText = sec => { const m = Math.round(sec / 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} h`; };
 // Uhrzeit, an anderen Tagen mit Wochentag (Mehrtagestour)
 const etaText = ts => {
@@ -488,7 +488,8 @@ function showTrip(trip, alternates = []) {
     off += decode(l.shape).length - 1;
   }
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
-  enableRouteEditing(routeLayer);
+  // Route ziehen (Formpunkt, Straße meiden) nur im Touren-Modus
+  if (!einfach()) enableRouteEditing(routeLayer);
   if (!map.getBounds().contains(routeLayer.getBounds())) fitFein(routeLayer.getBounds());
 
   const rough = trip.legs.some(l => l.maneuvers.some(m => m.rough)) ? ' · ⚠ unbefestigte Stücke' : '';

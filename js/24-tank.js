@@ -95,7 +95,8 @@ async function tankPlan() {
   tank.layer.clearLayers(); tank.stops = [];
   $('tankInfo').textContent = '';
   const st = tankStand(), rate = tankRate();
-  if (!routeCoords || !st || !rate) return;
+  // Einfacher Modus: keine Tankplanung und -warnung; Tankstellen an der Strecke zeigen die POIs
+  if (einfach() || !routeCoords || !st || !rate) return;
   // Gerechnet in gefahrenen km (fahrKm), angezeigt und verglichen mit Tankstellen in Routen-km
   const total = routeKm.at(-1), reserve = Math.min(+roller.reserve || 0, +roller.tank * 0.9);
   const reserveKm = beiFahrKm((st.l - reserve) / rate), leerKm = beiFahrKm(st.l / rate);

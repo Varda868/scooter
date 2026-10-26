@@ -184,6 +184,11 @@ const settings = store.get('settings', {});
 if (settings.dayAuto == null) { settings.dayAuto = 1; if (!+settings.dayMax) settings.dayMax = '6'; }
 if (settings.dayMax === '2') settings.dayMax = '3'; // 2 h gibt es nicht mehr
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
+// Bedienmodus: „einfach“ = nur Start, Ziel, los mit festen ruhigen Streckenwerten; sonst (auch ohne Wahl) alles
+const einfach = () => settings.modus === 'einfach';
+// Feste Werte im einfachen Modus: Hauptstraßen meiden, Steigungen eher meiden, nichts Unbefestigtes
+const EINFACH_STRECKE = { use_primary: 0.2, use_hills: 0.3 };
+document.body.classList.toggle('modus-einfach', einfach());
 ['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
   $(id).open = !!settings[id];
   $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
@@ -192,9 +197,9 @@ function updateFoldSummaries() {
   SETTING_IDS.forEach(id => { settings[id] = $(id).value; });
   store.set('settings', settings);
   $('profileSummary').textContent = `${$('speed').value} km/h${+$('avgSpeed').value > 0 ? ` (Ø ${$('avgSpeed').value})` : ''} · Hauptstr. ${$('primaryVal').textContent} · Steigung ${$('hillsVal').textContent}` +
-    (+$('gradeWarn').value ? ` · ⚠ ab ${$('gradeWarn').value} %` : '') + (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '') + ($('unpaved').checked ? ' · nur befestigt' : '') + ($('ferry').checked ? ' · ⛴ Fähren gern' : '');
+    (+$('dayMax').value ? ` · 🌙 ${$('dayMax').value} h/Tag` : '') + (+$('breakMin').value ? ` · ☕ ${$('breakMin').value} min/2 h` : '') + ($('unpaved').checked ? ' · nur befestigt' : '') + ($('ferry').checked ? ' · ⛴ Fähren gern' : '');
   const on = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked).map(t => t.icon).join('');
-  $('poiBoxSummary').textContent = `${on || 'aus'} · ${$('radius').value} m`;
+  $('poiBoxSummary').textContent = `${on || 'aus'}${+$('gradeWarn').value ? ` · ⚠ ${$('gradeWarn').value} %` : ''} · ${$('radius').value} m`;
 }
 $('panel').addEventListener('input', e => { if (e.target.closest('details.fold') || SETTING_IDS.includes(e.target.id)) updateFoldSummaries(); });
 $('panel').addEventListener('change', e => { if (e.target.closest('details.fold') || SETTING_IDS.includes(e.target.id)) updateFoldSummaries(); });
