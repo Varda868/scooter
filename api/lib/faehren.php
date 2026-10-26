@@ -390,13 +390,14 @@ function faehr_gtfs_auswerten(string $zip, string $ziel_name, string $quelle, ar
   $routen = []; $extra = 0;
   $lies('routes.txt', function ($r, $s) use (&$routen, &$extra, $betreiber, $boot) {
     $typ = (int)$r[$s['route_type']]; $ag = $r[$s['agency_id']] ?? '';
-    $name = trim($r[$s['route_long_name']] ?? '') ?: trim($r[$s['route_short_name']] ?? '');
+    $lang = trim($r[$s['route_long_name']] ?? ''); $kurz = trim($r[$s['route_short_name']] ?? '');
+    $name = $lang ?: $kurz;
     $wasser = $typ === 4 || ($typ >= 1000 && $typ <= 1299);
     // Bus, Reisebus, Tram, Seilbahn, Taxi u. Ä. nie als Fähre (Reedereien fahren auch Zubringerbusse)
     $landweg = in_array($typ, [0, 3, 5, 6, 7, 11, 12], true) || ($typ >= 200 && $typ <= 299) || ($typ >= 700 && $typ <= 999) || $typ >= 1300;
     if (!$wasser && ($landweg || !preg_match($boot, ($betreiber[$ag] ?? '') . ' ' . $name . ' ' . ($r[$s['route_desc'] ?? -1] ?? '')))) return;
     if (!$wasser) $extra++;
-    $routen[$r[$s['route_id']]] = ['name' => $name, 'agency' => $ag];
+    $routen[$r[$s['route_id']]] = ['name' => $name, 'kurz' => $kurz, 'lang' => $lang, 'agency' => $ag];
   });
   if ($extra) $i[] = "$extra Fährrouten nur über Betreiber/Namen erkannt (route_type kein Wasser-Typ)";
   $fahrten = [];
@@ -425,19 +426,23 @@ function faehr_gtfs_auswerten(string $zip, string $ziel_name, string $quelle, ar
     $g = &$gruppen["$rid|$von|$nach"];
     $g['route'] = $rid; $g['von'] = $von; $g['nach'] = $nach;
     $g['dauer'][] = ($b - $a) / 60;
-    $g['abfahrten'] = ($g['abfahrten'] ?? 0) + ($tage[$f[1]] ?? 0);
-    if (($tage[$f[1]] ?? 0) > 0) $g['zeiten'][substr($ab, 0, 5)] = 1;
+    // je Abfahrtszeit die Fahrtage vereinen: doppelte Fahrten (Fahrtvarianten, mehrfach geführte Feeds) zählen einmal
+    if (!empty($tage[$f[1]])) $g['slots'][substr($ab, 0, 5)] = ($g['slots'][substr($ab, 0, 5)] ?? []) + $tage[$f[1]];
     unset($g);
   }
   $aus = [];
   foreach ($gruppen as $g) {
-    if (empty($g['abfahrten'])) continue;
+    if (empty($g['slots'])) continue;
     sort($g['dauer']);
-    $zeiten = array_keys($g['zeiten'] ?? []); sort($zeiten);
+    $zeiten = array_keys($g['slots']); sort($zeiten);
+    $abfahrten = array_sum(array_map('count', $g['slots']));
     [$vn, $vla, $vlo] = $halte[$g['von']]; [$nn, $nla, $nlo] = $halte[$g['nach']];
-    $aus[] = ['name' => $routen[$g['route']]['name'], 'betreiber' => $betreiber[$routen[$g['route']]['agency']] ?? '',
+    $ro = $routen[$g['route']];
+    // Nur Liniennummer („DG“, „22“) → Nummer + von – nach, wie bei UK
+    $name = $ro['lang'] && $ro['lang'] !== $ro['kurz'] ? trim($ro['kurz'] . ' ' . $ro['lang']) : trim($ro['kurz'] . ' ' . $vn . ' – ' . $nn);
+    $aus[] = ['name' => $name, 'betreiber' => $betreiber[$routen[$g['route']]['agency']] ?? '',
       'von' => ['name' => $vn, 'lat' => round($vla, 5), 'lon' => round($vlo, 5)], 'nach' => ['name' => $nn, 'lat' => round($nla, 5), 'lon' => round($nlo, 5)],
-      'dauer_min' => round($g['dauer'][intdiv(count($g['dauer']), 2)]), 'abfahrten_tag' => round($g['abfahrten'] / FAEHR_TAGE, 1),
+      'dauer_min' => round($g['dauer'][intdiv(count($g['dauer']), 2)]), 'abfahrten_tag' => round($abfahrten / FAEHR_TAGE, 1),
       'zeiten' => array_slice($zeiten, 0, 40)];
   }
   usort($aus, fn($x, $y) => strcmp($x['von']['name'] . $x['nach']['name'], $y['von']['name'] . $y['nach']['name']));
@@ -449,7 +454,7 @@ function faehr_gtfs_auswerten(string $zip, string $ziel_name, string $quelle, ar
   if (!$aus) $p[] = 'Keine Fährverbindungen im GTFS gefunden – Format geändert?';
   return count($aus);
 }
-// Wie viele der nächsten FAEHR_TAGE Tage jede service_id fährt (calendar.txt und calendar_dates.txt, beide optional)
+// An welchen der nächsten FAEHR_TAGE Tage jede service_id fährt, als [Ymd => 1] (calendar.txt und calendar_dates.txt, beide optional)
 function faehr_gtfs_tage(ZipArchive $z, callable $lies, array $dienste): array {
   $brauche = array_flip($dienste); $heute = new DateTimeImmutable('today'); $tage = [];
   $daten = [];
@@ -466,7 +471,7 @@ function faehr_gtfs_tage(ZipArchive $z, callable $lies, array $dienste): array {
     if (!isset($brauche[$id], $daten[$tag])) return;
     if ($r[$s['exception_type']] === '1') $aktiv[$id][$tag] = 1; else unset($aktiv[$id][$tag]);
   });
-  foreach ($dienste as $id) $tage[$id] = count($aktiv[$id] ?? []);
+  foreach ($dienste as $id) $tage[$id] = $aktiv[$id] ?? [];
   return $tage;
 }
 
