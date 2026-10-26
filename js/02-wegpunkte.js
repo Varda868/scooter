@@ -252,8 +252,12 @@ async function photonEinmal(q, um, nurStaedte) {
 // de Cervelló, „Höchstädt“ → Höchstädt an der Donau vor dem Dorf Hochstadt (ortNorm macht beide gleich)
 function ortRang(q, items) {
   const n = ortNorm(q), kopf = it => it.name.split(',')[0].trim();
-  const schluessel = it => [ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3, kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1];
-  return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]).map(x => x[5]);
+  // Großstadt aus der Städte-Nachfrage zuerst: „Milano“ meint Mailand, nicht Milanówek (Photon nennt Mailand auf Deutsch)
+  // Bei sonst Gleichem entscheidet die Nähe zur Kartenmitte (Neustadt an der Donau vor Neustadt in Holstein)
+  const c = map.getCenter(), weit = it => it.lat == null ? 0 : Math.round(c.distanceTo([it.lat, it.lon]) / 10000);
+  const schluessel = it => [it.stadtFrage && it.gr === 0 ? 0 : 1, ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3,
+    kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1, weit(it)];
+  return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => { for (let i = 0; i < 7; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }).map(x => x[7]);
 }
 let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
@@ -273,7 +277,10 @@ function showSuggestions(input) {
     // Nur Dörfer dieses Namens, keine Stadt? Einmal nur nach Städten fragen: bei „Bastia“ füllen sonst italienische
     // Dörfer alle Plätze, und das korsische Bastia kommt gar nicht erst mit
     const gleich = it => it.gr != null && ortNorm(it.name.split(',')[0].trim()) === ortNorm(q), alle = [...orte, ...web];
-    if (!/\d/.test(q) && alle.some(it => gleich(it) && it.gr === 2) && !alle.some(it => gleich(it) && it.gr <= 1)) web = [...(await photonSuchen(q, um, true).catch(() => [])), ...web];
+    // Ebenso, wenn keine Großstadt dabei ist: „Milano“, „Vienna“, „Kraków“ heißen bei Photon (lang=de) Mailand, Wien, Krakau
+    // und gehen sonst unter Milanówek, Viennay, Krakow am See unter
+    if (!/\d/.test(q) && (alle.some(it => gleich(it) && it.gr === 2) && !alle.some(it => gleich(it) && it.gr <= 1) || !alle.some(it => it.gr === 0)))
+      web = [...(await photonSuchen(q, um, true).catch(() => [])).map(it => ({ ...it, stadtFrage: true })), ...web];
     if (req !== ortReq || document.activeElement !== input) return;
     web = web.filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 5000 && o.name.split(',')[0] === it.name.split(',')[0]));
     if (req !== ortReq || document.activeElement !== input) return;
