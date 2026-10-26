@@ -5,7 +5,9 @@ Die Filter kommen aus POI_TYPES in js/01-grundlagen.js, damit App und Kacheln ni
   python3 tools/poi-kacheln.py --osmium        → Ausdrücke für `osmium tags-filter`
   ... | python3 tools/poi-kacheln.py AUSGABE   → AUSGABE/t/{lat}_{lon}.json (1°×1°) und AUSGABE/index.json
 Kachel = Liste [ "n123", lat, lon, {tags} ]; nur die Tags, die die App anzeigt oder zum Zuordnen braucht.
-Fährlinien (Wege mit route=ferry) zusätzlich als AUSGABE/f/{lat}_{lon}.json = [ "w123", [[lat, lon], …], {tags} ],
+Fährlinien (Wege und Relationen mit route=ferry, Relationen über tools/faehr-relationen.py) zusätzlich als
+AUSGABE/f/{lat}_{lon}.json = [ "w123" oder "r123", [[lat, lon], …], {tags} ] (eine Relation mit mehreren Teilen
+steht je Teil einmal drin),
 vereinfacht auf etwa 50 m; eine Linie steht in jeder Kachel, die ihr Rahmen berührt.
 Orte (place=city|town|village|hamlet, für Vorschläge beim Tippen, auch offline) als AUSGABE/o/{lat}_{lon}.json
 = [ [name, lat, lon, art, name:de oder "", bei], … ] mit art c/t/v/h; bei = nächste größere Stadt (Dorf/Weiler: Stadt
@@ -82,6 +84,26 @@ def ferry_lines(geom):
     return [c] if t == 'LineString' else c if t == 'MultiLineString' else []
 
 
+def join_lines(parts):
+    """Mitgliedswege einer Relation zu möglichst wenigen Linien verketten (gemeinsame Endpunkte, auch umgedreht)."""
+    rest, out = [list(p) for p in parts if len(p) >= 2], []
+    while rest:
+        line = rest.pop(0)
+        weiter = True
+        while weiter:
+            weiter = False
+            for i, q in enumerate(rest):
+                if q[0] == line[-1]: line += q[1:]
+                elif q[-1] == line[-1]: line += q[::-1][1:]
+                elif q[-1] == line[0]: line = q[:-1] + line
+                elif q[0] == line[0]: line = q[::-1][:-1] + line
+                else: continue
+                rest.pop(i); weiter = True
+                break
+        out.append(line)
+    return out
+
+
 def nearby_bigger(places):
     """Hängt an jeden Ort den Namen der nächsten größeren Stadt (Gitter 0,5°, flach gerechnet)."""
     grid = {}
@@ -111,6 +133,7 @@ def main(out):
     for conds in fs:
         keys.update(k for k, _, _ in conds)
     tiles, seen, ferries, fseen, places, pseen = {}, set(), {}, set(), {}, set()
+    frel, fwege = {}, {}  # Fähr-Relationen (aus tools/faehr-relationen.py) und einzelne Fährwege
     for line in sys.stdin:
         line = line.strip().lstrip('\x1e')
         if not line:
@@ -128,15 +151,16 @@ def main(out):
                 [tags['name'], round(lat, 4), round(lon, 4), art, de if de != tags['name'] else ''])
             if not any(matches(tags, c) for c in fs):
                 continue
-        if tags.get('route') == 'ferry' and f.get('geometry') and oid not in fseen:
-            fseen.add(oid)
-            keep = {k: v for k, v in tags.items() if k in FERRY_KEEP}
-            for line in ferry_lines(f['geometry']):
-                pts = [[round(la, 4), round(lo, 4)] for la, lo in simplify([[c[1], c[0]] for c in line], 0.0005)]
-                las, los = [q[0] for q in pts], [q[1] for q in pts]
-                for a in range(int(min(las) // 1), int(max(las) // 1) + 1):
-                    for o in range(int(min(los) // 1), int(max(los) // 1) + 1):
-                        ferries.setdefault(f'{a}_{o}', []).append([oid, pts, keep])
+        if tags.get('route') == 'ferry' and f.get('geometry'):
+            if p.get('@type') == 'relation':
+                # Länderauszüge liefern dieselbe Relation mehrfach, jeweils mit den Wegen im Land: Teile vereinen
+                r = frel.setdefault(oid, {'teile': {}, 'tags': {}})
+                r['teile'].update(p.get('@teile') or {})
+                for k, v in tags.items():
+                    if k != '@teile':
+                        r['tags'].setdefault(k, v)
+            elif oid not in fwege:
+                fwege[oid] = (f['geometry'], tags)
             continue
         if oid in seen or not f.get('geometry') or not any(matches(tags, c) for c in fs):
             continue
@@ -146,6 +170,21 @@ def main(out):
                 (re.match(r'^(motorcycle|scooter|service:vehicle):', k) and v == 'yes') or
                 (re.match(r'^payment:(cash|coins|notes|credit_cards|debit_cards|girocard|maestro|visa|mastercard)$', k) and v in ('yes', 'no'))}
         tiles.setdefault(f'{int(lat // 1)}_{int(lon // 1)}', []).append([oid, round(lat, 5), round(lon, 5), keep])
+    # Fährlinien: Relationen zuerst (Name, Betreiber, Dauer der ganzen Linie); ihre Mitgliedswege nicht noch einmal
+    in_rel = {'w' + w for r in frel.values() for w in r['teile']}
+    linien = [(oid, join_lines(r['teile'].values()), r['tags']) for oid, r in frel.items()]
+    linien += [(oid, ferry_lines(g), t) for oid, (g, t) in fwege.items() if oid not in in_rel]
+    for oid, teile, tags in linien:
+        fseen.add(oid)
+        keep = {k: v for k, v in tags.items() if k in FERRY_KEEP}
+        for n, line in enumerate(teile):
+            # Weitere Teile derselben Linie als "r123.1", "r123.2" …: die App zeichnet je ID eine Linie
+            pid = oid if not n else f'{oid}.{n}'
+            pts = [[round(la, 4), round(lo, 4)] for la, lo in simplify([[c[1], c[0]] for c in line], 0.0005)]
+            las, los = [q[0] for q in pts], [q[1] for q in pts]
+            for a in range(int(min(las) // 1), int(max(las) // 1) + 1):
+                for o in range(int(min(los) // 1), int(max(los) // 1) + 1):
+                    ferries.setdefault(f'{a}_{o}', []).append([pid, pts, keep])
     os.makedirs(os.path.join(out, 't'), exist_ok=True)
     for k, items in tiles.items():
         with open(os.path.join(out, 't', k + '.json'), 'w', encoding='utf-8') as fh:

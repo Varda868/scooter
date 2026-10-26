@@ -48,7 +48,10 @@ jobs:
             osmium tags-filter -O -o land-pois.osm.pbf land.osm.pbf $expr
             osmium export -O -f geojsonseq -a type,id -o land.geojsonseq land-pois.osm.pbf
             cat land.geojsonseq >> pois.geojsonseq
-            rm -f land.osm.pbf land-pois.osm.pbf land.geojsonseq
+            # Fährlinien, die in OSM nur als route=ferry-Relation stehen (osmium export baut daraus keine Linie)
+            osmium tags-filter -O -o land-faehren.osm.pbf land.osm.pbf r/route=ferry
+            osmium cat -f opl land-faehren.osm.pbf | python3 tools/faehr-relationen.py >> pois.geojsonseq
+            rm -f land.osm.pbf land-pois.osm.pbf land-faehren.osm.pbf land.geojsonseq
             echo "::endgroup::"
           done < urls.txt
 

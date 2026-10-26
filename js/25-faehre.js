@@ -48,8 +48,10 @@ async function faehreAusKacheln(f) {
   // Sonst die Linie, die auch am Zielhafen vorbeikommt (Liverpool hat Linien zur Isle of Man und nach Dublin)
   const el = nah.find(([, , t]) => n && (t.name || '').toLowerCase() === n)
     || (f.zLat != null && nah.find(([, pts]) => faehreAbstand(f.zLat, f.zLon, pts) <= 2000)) || nah[0];
-  return el ? { ...el[2], '@osm': `way/${el[0].slice(1)}` } : null;
+  return el ? { ...el[2], '@osm': faehrOsm(el[0]) } : null;
 }
+// Kachel-ID → OSM-Objekt: "w123" Weg, "r123" bzw. "r123.2" (weiterer Teil) Relation
+const faehrOsm = id => (id[0] === 'r' ? 'relation/' : 'way/') + id.slice(1).split('.')[0];
 // Kürzester Abstand in m vom Punkt zur Linie (flach gerechnet, reicht für ein paar hundert Meter)
 function faehreAbstand(lat, lon, pts) {
   const ky = 110540, kx = 111320 * Math.cos(lat * Math.PI / 180);
@@ -189,7 +191,7 @@ function faehrLinie(id, pts, t) {
   const hell = an => { linie.setStyle(an ? stark : zart); if (an) { linie.bringToFront(); anleger.addTo(g); } else if (!offen) g.removeLayer(anleger); };
   const popup = () => {
     const box = document.createElement('div');
-    box.innerHTML = `⛴ ${faehreDetails({ ...t, '@osm': `way/${id.slice(1)}` })}`;
+    box.innerHTML = `⛴ ${faehreDetails({ ...t, '@osm': faehrOsm(id) })}`;
     if (waypoints[0].latlng && waypoints.at(-1).latlng)
       box.append(menuBox([['faehre', '⛴ Diese Fähre in die Route']], () => faehreInRoute(pts, t)));
     else box.insertAdjacentHTML('beforeend', '<div class="hint">Erst Start und Ziel setzen, dann lässt sich die Fähre einbauen.</div>');
