@@ -34,7 +34,7 @@ async function posSenden(daten, ziel = posZiel()) {
   const tags = [...(g ? [['L', POS_NS], ...Array.from({ length: rg.length - 1 }, (_, i) => ['l', rg.slice(0, i + 2), POS_NS]), ['gruppe', g.kennung]] : [['p', ziel]]),
     ['alt', 'Scooterways-Standort'], ['expiration', String(Math.floor(Date.now() / 1000) + POS_ABLAUF_S)]];
   const ck = g ? g.ck : await talk.mod.unterhaltung(n.sk, ziel);
-  const e = await posSignieren(tags, await talk.mod.versiegeln(ck, posEnc.encode(JSON.stringify({ ...daten, n: talkName() }))));
+  const e = await posSignieren(tags, await talk.mod.versiegeln(ck, posEnc.encode(JSON.stringify({ ...daten, n: talkName(), sp: talkSprachen() }))));
   pos.ids.add(e.id);
   return n.raus([e]);
 }
@@ -115,6 +115,7 @@ async function posEmpfangen(e) {
   const x = alt || { marker: L.marker([d.la, d.lo], { zIndexOffset: 900 }).bindPopup(() => posPopup(e.pubkey), { minWidth: 180 }).addTo(pos.layer) };
   const h = Number.isFinite(d.h?.s) ? { s: d.h.s, g: HALT_GRUENDE[d.h.g] ? d.h.g : '' } : null;
   Object.assign(x, { lat: d.la, lon: d.lo, v: Number.isFinite(d.v) ? d.v : null, k: Number.isFinite(d.k) ? d.k : null, name, privat: !!p,
+    sp: Array.isArray(d.sp) ? d.sp.filter(s => /^[a-z]{2}$/.test(s)).slice(0, 4) : [],
     zeit: e.created_at, fix: Number.isFinite(d.t) ? d.t : e.created_at, haltAlt: x.halt, halt: h });
   x.marker.setLatLng([d.la, d.lo]);
   pos.leute.set(e.pubkey, x);
@@ -136,7 +137,7 @@ function posPopup(pk) {
   if (!x) return box;
   const ich = pos.fix && posGps() ? L.latLng(pos.fix.lat, pos.fix.lon) : me.dot._map ? me.dot.getLatLng() : null;
   const m = ich ? ich.distanceTo([x.lat, x.lon]) : null;
-  box.innerHTML = `<b>${x.privat ? '🔒 ' : ''}${escapeHtml(x.name)}</b><br>${posAlter(x.fix)}${x.v != null ? ` · ${x.v} km/h` : ''}` +
+  box.innerHTML = `<b>${x.privat ? '🔒 ' : ''}${escapeHtml(x.name)}</b>${x.sp?.length ? ` <span class="hint">spricht ${x.sp.join(' ')}</span>` : ''}<br>${posAlter(x.fix)}${x.v != null ? ` · ${x.v} km/h` : ''}` +
     (x.halt ? `<br>${haltText(x)}` : '') +
     (m != null ? `<br>${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1).replace('.', ',') + ' km'} Luftlinie von dir` : '');
   box.append(menuBox([['via', 'Als Zwischenziel'], ['end', 'Hinfahren (Ziel)']], act => {
@@ -200,6 +201,7 @@ function haltLeiste() {
 $('haltBar').onclick = e => {
   const k = e.target.closest('[data-halt]')?.dataset.halt;
   if (k === 'weiter') haltWeiter(); else if (k === 'treff') treffVorschlagen(); else if (k in HALT_GRUENDE) haltMelden(k);
+  if (k === 'panne') panneOeffnen();
 };
 const haltText = x => {
   const [i, t] = HALT_GRUENDE[x.halt.g], min = Math.max(1, Math.round((Date.now() / 1000 - x.halt.s) / 60));
@@ -294,13 +296,15 @@ function gruppeZeigen() {
     if (gruppe.tp.bis * 1000 < Date.now()) { gruppe.tp = null; gruppe.layer.clearLayers(); }
   }
   const zeilen = [...pos.leute].filter(([, x]) => x.halt && !x.haltZu)
-    .map(([pk, x]) => `<span class="halt-${x.halt.g || 'steht'}" data-pk="${pk}"><b>${escapeHtml(x.name)}</b> ${haltText(x)}<button data-zu="${pk}" title="Ausblenden">✕</button></span>`);
+    .map(([pk, x]) => `<span class="halt-${x.halt.g || 'steht'}" data-pk="${pk}"><b>${escapeHtml(x.name)}</b>${x.sp?.length ? ` <small>${x.sp.join(' ')}</small>` : ''} ${haltText(x)}${x.halt.g === 'panne' ? `<button data-panne="${pk}" title="Werkstätten am Pannenort">🔧</button>` : ''}<button data-zu="${pk}" title="Ausblenden">✕</button></span>`);
   if (gruppe.tp) zeilen.push(`<span data-treff>🤝 ${escapeHtml(gruppe.tp.n)}${treffWann(gruppe.tp)}</span>`);
   $('gruppeInfo').innerHTML = zeilen.join('');
 }
 $('gruppeInfo').onclick = e => {
   const zu = e.target.closest('[data-zu]')?.dataset.zu;
   if (zu) { const x = pos.leute.get(zu); if (x) x.haltZu = true; gruppeZeigen(); return; }
+  const pa = pos.leute.get(e.target.closest('[data-panne]')?.dataset.panne);
+  if (pa) { panneOeffnen([pa.lat, pa.lon, ''], pa.name); return; }
   const pk = e.target.closest('[data-pk]')?.dataset.pk, x = pk && pos.leute.get(pk);
   if (x) { map.setView([x.lat, x.lon], Math.max(map.getZoom(), 14)); x.marker.openPopup(); return; }
   if (e.target.closest('[data-treff]') && gruppe.tp) { map.setView([gruppe.tp.la, gruppe.tp.lo], Math.max(map.getZoom(), 14)); gruppe.layer.eachLayer(m => m.openPopup()); }

@@ -16,6 +16,9 @@ const talkPrefs = Object.assign({ on: false, name: '', plz: '', pw: '', mode: 'p
 const talk = { mod: null, netz: null, lauf: 0, mic: null, empf: null, vox: null, tx: null, warte: [], spielt: false, slot: 0,
   sperreBis: 0, fenster: false, fensterFrei: null, voxLetzt: null, micFehler: '', hoert: '', opus: false, leser: null, spieltBis: 0 };
 const saveTalk = () => store.set('talk', talkPrefs);
+// Eigene Sprachen als Kürzel (de en it); vorbelegt aus der Browsersprache. Andere in der Gruppe sehen sie am Namen.
+const talkSprachen = () => [...new Set((talkPrefs.sprachen ?? navigator.languages.map(l => l.slice(0, 2)).join(' ')).toLowerCase().split(/[\s,;]+/)
+  .filter(s => /^[a-z]{2}$/.test(s)))].slice(0, 4);
 const talkName = () => { const n = talkPrefs.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9); return n.length >= 3 ? n : ''; };
 const talkBereit = () => !!talk.netz && talk.netz.verbunden > 0;
 // Schon gehörte Durchsagen (Kennung -> Zeit), auch über ein Neuladen hinweg: Relays liefern nach dem Verbinden
@@ -443,7 +446,8 @@ document.addEventListener('pointerdown', () => {
 setInterval(() => { if (talkPrefs.on && talk.mod) { talkZeigen(); talkMikro(); if (talk.opus && talkPrefs.mode === 'vox' && Sprechfunk.tonBereit()) talkOpusBereit().then(talkLeser); } }, 1000);
 
 $('talkOn').checked = talkPrefs.on;
-$('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkPw').value = talkPrefs.pw;
+$('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkSprachen').value = talkSprachen().join(' ');
+$('talkSprachen').onchange = () => { talkPrefs.sprachen = $('talkSprachen').value; $('talkSprachen').value = talkSprachen().join(' '); saveTalk(); }; $('talkPw').value = talkPrefs.pw;
 $('talkMode').value = talkPrefs.mode; $('talkEmpf').value = talkPrefs.empf; $('talkEmpfVal').textContent = talkPrefs.empf + ' dB';
 $('talkHalt').value = String(talkPrefs.halt); $('talkRelays').value = talkPrefs.relays;
 $('talkOn').onchange = () => { talkPrefs.on = $('talkOn').checked; saveTalk(); talkStart(); };
