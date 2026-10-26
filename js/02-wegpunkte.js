@@ -110,11 +110,11 @@ map.on('click', e => {
   const items = [
     ['start', hasStart ? 'Start hierher verlegen' : 'Start hier'],
     ['end', hasEnd ? 'Ziel hierher verlegen' : 'Ziel hier'],
-    ...(hasStart && hasEnd ? [['via', 'Zwischenziel hier']] : []),
+    ...(hasStart && hasEnd && !einfach() ? [['via', 'Zwischenziel hier']] : []),
     ['mypoi', '⭐ Eigenen POI hier']
   ];
   // Der wahrscheinlichste nächste Schritt steht oben und ist hervorgehoben.
-  const primary = !hasStart ? 'start' : !hasEnd ? 'end' : 'via';
+  const primary = !hasStart ? 'start' : !hasEnd || einfach() ? 'end' : 'via';
   items.sort((a, b) => (b[0] === primary) - (a[0] === primary));
   const box = menuBox(items, act => act === 'mypoi' ? openPoiForm(ll) :
     changeWaypoints(() => act === 'start' ? setEnd(0, ll) : act === 'end' ? setEnd(waypoints.length - 1, ll) : insertVia(ll)), primary);

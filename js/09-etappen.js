@@ -59,7 +59,7 @@ function planStages() {
   stageLayer.clearLayers();
   $('stageSummary').textContent = '';
   eleEtappenZeichnen();
-  const hours = +$('dayMax').value, routeTotal = routeKm?.at(-1);
+  const hours = einfach() ? 0 : +$('dayMax').value, routeTotal = routeKm?.at(-1);
   if (!routeTotal) return;
   // Geteilt wird nach gefahrenen km: Fährstrecken zählen nicht, ein Etappenende fällt nie aufs Wasser
   const total = fahrKm(routeTotal);

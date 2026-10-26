@@ -184,6 +184,11 @@ const settings = store.get('settings', {});
 if (settings.dayAuto == null) { settings.dayAuto = 1; if (!+settings.dayMax) settings.dayMax = '6'; }
 if (settings.dayMax === '2') settings.dayMax = '3'; // 2 h gibt es nicht mehr
 SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]; });
+// Bedienmodus: „einfach“ = nur Start, Ziel, los mit festen ruhigen Streckenwerten; sonst (auch ohne Wahl) alles
+const einfach = () => settings.modus === 'einfach';
+// Feste Werte im einfachen Modus: Hauptstraßen meiden, Steigungen eher meiden, nichts Unbefestigtes
+const EINFACH_STRECKE = { use_primary: 0.2, use_hills: 0.3 };
+document.body.classList.toggle('modus-einfach', einfach());
 ['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
   $(id).open = !!settings[id];
   $(id).addEventListener('toggle', () => { settings[id] = $(id).open; store.set('settings', settings); });
