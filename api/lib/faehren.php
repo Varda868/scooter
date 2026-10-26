@@ -10,6 +10,8 @@ const FAEHR_QUELLEN = [
     'Die Linien selbst baut die monatliche POI-Action aus OpenStreetMap (Wege und route=ferry-Relationen). Dieser Lauf wertet die Kacheln aus: Linien, Abdeckung je Meer, verdächtige Linien, Vergleich mit Fahrplänen.'],
   'se' => ['Schweden: Trafiklab GTFS Sweden 3 Static data', 'lauf', '20 6 3,4 * *', 24 * 33,
     'Amtlicher Gesamtfahrplan Schwedens, nur Fährlinien: Abfahrten je Tag, Dauer, Häfen. Braucht einen kostenlosen Trafiklab-Schlüssel (60 Abrufe in 30 Tagen). Monatlich am 3. nach 06:00 (vorher liefert Trafiklab noch den Vortagsstand aus dem Cache), der 4. dient als Wiederholung; geladen wird höchstens alle 27 Tage und nur, wenn die Datei neu ist (ETag).'],
+  'uk' => ['Großbritannien: Traveline TNDS (Schottland)', 'lauf', '35 6 * * 2', 24 * 9,
+    'TransXChange-Fahrpläne per FTP, zunächst nur S.zip (Schottland: CalMac, NorthLink, Orkney, Shetland …); nur Services mit Mode ferry. Anleger-Koordinaten aus NaPTAN. Wöchentlich; geladen wird nur, wenn die Datei neu ist. Lizenz OGL.'],
   'no' => ['Norwegen: Entur GTFS', 'probe', '30 4 4 * *', 0, 'Mit Fjordfähren. Wird gerade auf dem Lifebook erprobt.'],
   'dk' => ['Dänemark: Rejseplanen GTFS', 'probe', '40 4 4 * *', 0, 'Gesamtfahrplan mit Fährlinien. Wird gerade erprobt.'],
   'fi' => ['Finnland: Fintraffic GTFS', 'probe', '50 4 4 * *', 0, 'Schären- und Ålandfähren (CC BY 4.0). Wird gerade erprobt.'],
@@ -145,6 +147,7 @@ function faehr_warnungen(): array {
   foreach (FAEHR_QUELLEN as $id => [$name, $art, , $max]) {
     if ($art !== 'lauf' || !$e['quellen'][$id]['an']) continue;
     if ($id === 'se' && (string)sw_wert('trafiklab_key') === '') continue;
+    if ($id === 'uk' && ((string)sw_wert('tnds_user') === '' || (string)sw_wert('tnds_pass') === '')) continue;
     $l = faehr_verlauf($id, 1)[0] ?? null;
     if (!$l) $w[] = "$name: noch nie gelaufen";
     elseif (!$l['ok']) $w[] = "$name: letzter Lauf fehlgeschlagen (" . admin_zeit_kurz((int)$l['t']) . ')';
@@ -465,4 +468,200 @@ function faehr_gtfs_tage(ZipArchive $z, callable $lies, array $dienste): array {
   });
   foreach ($dienste as $id) $tage[$id] = count($aktiv[$id] ?? []);
   return $tage;
+}
+
+// --- Großbritannien: Traveline National Dataset (TNDS), TransXChange per FTP. Zunächst nur S.zip (Schottland:
+// CalMac, NorthLink, Orkney, Shetland, Western Ferries …). Gelesen wird Datei für Datei aus dem ZIP; geparst werden
+// nur XMLs mit <Mode>ferry</Mode>. Zugangsdaten (tnds_user/tnds_pass) nie in Meldungen, Logs oder JSON.
+const FAEHR_UK_HOST = 'ftp.tnds.basemap.co.uk', FAEHR_UK_DATEIEN = ['S'], FAEHR_UK_MAX = 1024 * 1048576;
+const FAEHR_UK_NAPTAN = 'https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=';
+function faehr_uk_klartext(): bool { return !empty(sw_config()['faehren']['uk_klartext']); }
+
+function faehr_lauf_uk(array &$p, array &$i, bool $manuell = false, bool $nur_auswerten = false): ?int {
+  if (!class_exists('ZipArchive')) { $p[] = 'PHP-Erweiterung zip fehlt (in Plesk unter PHP-Einstellungen einschalten)'; return null; }
+  $user = (string)sw_wert('tnds_user'); $pass = (string)sw_wert('tnds_pass');
+  $zips = [];
+  foreach (FAEHR_UK_DATEIEN as $d) {
+    $zip = sw_daten(true) . "/tnds-$d.zip";
+    if (!$nur_auswerten) {
+      if ($user === '' || $pass === '') { $i[] = 'Kein TNDS-Zugang eingetragen, übersprungen'; return null; }
+      if (!faehr_uk_laden("$d.zip", $zip, $user, $pass, $p, $i)) return null;
+    }
+    if (!is_file($zip)) { $p[] = "Noch keine $d.zip auf dem Server"; return null; }
+    $zips[] = $zip;
+  }
+  return faehr_txc_auswerten($zips, 'uk', 'Traveline National Dataset (TNDS), OGL', $p, $i);
+}
+
+// Laden nur, wenn neuer als die vorhandene Datei (MDTM). Erst FTPS; Klartext nur, wenn im Admin ausdrücklich erlaubt.
+function faehr_uk_laden(string $name, string $zip, string $user, string $pass, array &$p, array &$i): bool {
+  $versuche = [[CURLUSESSL_ALL, 'FTPS']];
+  if (faehr_uk_klartext()) $versuche[] = [CURLUSESSL_NONE, 'FTP unverschlüsselt'];
+  $meldung = '';
+  foreach ($versuche as [$ssl, $art]) {
+    $fh = fopen("$zip.tmp", 'wb');
+    $c = curl_init('ftp://' . FAEHR_UK_HOST . '/' . $name);
+    curl_setopt_array($c, [CURLOPT_FILE => $fh, CURLOPT_USERPWD => "$user:$pass", CURLOPT_USE_SSL => $ssl,
+      CURLOPT_PROTOCOLS => CURLPROTO_FTP | CURLPROTO_FTPS, CURLOPT_FTP_USE_EPSV => true, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_TIMEOUT => 900,
+      CURLOPT_FILETIME => true, CURLOPT_NOPROGRESS => false, CURLOPT_PROGRESSFUNCTION => fn($c, $dl, $da) => $da > FAEHR_UK_MAX ? 1 : 0]
+      + (is_file($zip) ? [CURLOPT_TIMECONDITION => CURL_TIMECOND_IFMODSINCE, CURLOPT_TIMEVALUE => filemtime($zip)] : []));
+    $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $unmet = (int)curl_getinfo($c, CURLINFO_CONDITION_UNMET);
+    $zeit = (int)curl_getinfo($c, CURLINFO_FILETIME); $err = curl_error($c); $nr = curl_errno($c);
+    curl_close($c); fclose($fh);
+    if ($ok && $unmet) { @unlink("$zip.tmp"); $i[] = "$name unverändert seit " . date('d.m.Y', filemtime($zip)) . " ($art), vorhandene Datei ausgewertet"; return true; }
+    if ($ok && filesize("$zip.tmp") > 0) {
+      rename("$zip.tmp", $zip);
+      if ($zeit > 0) @touch($zip, $zeit);
+      $i[] = "$name geladen ($art): " . round(filesize($zip) / 1048576) . ' MB, Stand ' . date('d.m.Y', $zeit > 0 ? $zeit : time());
+      return true;
+    }
+    @unlink("$zip.tmp");
+    // nie Zugangsdaten ausgeben: curl nennt sie zwar nicht, sicherheitshalber trotzdem entfernen
+    $meldung = str_replace([$user, $pass], '…', "$art: " . ($code === 530 ? 'Anmeldung abgelehnt (530) – Benutzer/Passwort prüfen' : ($err ?: "Fehler $nr, Antwort $code")));
+    if ($code === 530) break;
+  }
+  $p[] = "TNDS $name nicht geladen – $meldung" . (!faehr_uk_klartext() ? ' (unverschlüsseltes FTP ist aus; im Admin unter Schlüssel & Konten → TNDS erlaubbar)' : '');
+  return false;
+}
+
+// Tage je Woche aus <DaysOfWeek>
+function faehr_txc_tage(?SimpleXMLElement $dow): int {
+  if (!$dow) return 0;
+  $n = 0;
+  foreach ($dow->children() as $k => $_) $n += ['Monday' => 1, 'Tuesday' => 1, 'Wednesday' => 1, 'Thursday' => 1, 'Friday' => 1, 'Saturday' => 1, 'Sunday' => 1,
+    'MondayToFriday' => 5, 'MondayToSaturday' => 6, 'MondayToSunday' => 7, 'Weekend' => 2, 'NotMonday' => 6, 'NotTuesday' => 6, 'NotWednesday' => 6,
+    'NotThursday' => 6, 'NotFriday' => 6, 'NotSaturday' => 6, 'NotSunday' => 6][$k] ?? 0;
+  return min(7, $n);
+}
+
+// TransXChange-ZIPs → poi/fahrplan/{ziel}.json (gleiches Format wie GTFS, aber abfahrten_woche)
+function faehr_txc_auswerten(array $zips, string $ziel_name, string $quelle, array &$p, array &$i): ?int {
+  $heute = date('Y-m-d'); $gruppen = []; $halte = []; $dateien = 0; $faehren = 0;
+  foreach ($zips as $zip) {
+    $z = new ZipArchive();
+    if ($z->open($zip) !== true) { $p[] = basename($zip) . ' nicht lesbar'; return null; }
+    for ($k = 0; $k < $z->numFiles; $k++) {
+      $st = $z->statIndex($k);
+      if (!preg_match('/\.xml$/i', $st['name']) || $st['size'] > 64 * 1048576) continue;
+      $dateien++;
+      $xml = $z->getFromIndex($k);
+      if ($xml === false || !preg_match('~<Mode>\s*ferry\s*</Mode>~i', $xml)) continue;
+      $x = @simplexml_load_string(preg_replace('/\sxmlns="[^"]*"/', '', $xml, 1), 'SimpleXMLElement', LIBXML_NONET | LIBXML_COMPACT);
+      unset($xml);
+      if (!$x) continue;
+      // Haltestellen (mit Koordinaten, falls die Datei sie mitbringt)
+      foreach ($x->xpath('//StopPoints/AnnotatedStopPointRef') ?: [] as $s) {
+        $ref = trim((string)$s->StopPointRef);
+        $la = (string)($s->Location->Latitude ?? $s->Location->Translation->Latitude ?? ''); $lo = (string)($s->Location->Longitude ?? $s->Location->Translation->Longitude ?? '');
+        $halte[$ref] = ['name' => trim((string)$s->CommonName) ?: $ref, 'lat' => $la !== '' ? (float)$la : ($halte[$ref]['lat'] ?? null), 'lon' => $lo !== '' ? (float)$lo : ($halte[$ref]['lon'] ?? null)];
+      }
+      foreach ($x->xpath('//StopPoints/StopPoint') ?: [] as $s) {
+        $ref = trim((string)($s->AtcoCode ?? $s->StopPointRef));
+        $loc = $s->Place->Location ?? null;
+        $la = (string)($loc->Translation->Latitude ?? $loc->Latitude ?? ''); $lo = (string)($loc->Translation->Longitude ?? $loc->Longitude ?? '');
+        $halte[$ref] = ['name' => trim((string)$s->Descriptor->CommonName) ?: $ref, 'lat' => $la !== '' ? (float)$la : null, 'lon' => $lo !== '' ? (float)$lo : null];
+      }
+      $betreiber = [];
+      foreach ($x->xpath('//Operators/Operator') ?: [] as $o) $betreiber[(string)$o['id']] = trim((string)($o->TradingName ?: $o->OperatorNameOnLicence ?: $o->OperatorShortName));
+      // Abschnitte: [erster Halt, letzter Halt, Minuten]
+      $abschnitte = [];
+      foreach ($x->xpath('//JourneyPatternSections/JourneyPatternSection') ?: [] as $sec) {
+        $von = $nach = null; $min = 0;
+        foreach ($sec->JourneyPatternTimingLink as $l) {
+          $von ??= trim((string)$l->From->StopPointRef);
+          $nach = trim((string)$l->To->StopPointRef);
+          $min += (faehr_dauer_min((string)$l->RunTime) ?? 0) + (faehr_dauer_min((string)$l->To->WaitTime) ?? 0);
+        }
+        $abschnitte[(string)$sec['id']] = [$von, $nach, $min];
+      }
+      foreach ($x->xpath('//Services/Service') ?: [] as $sv) {
+        if (strtolower(trim((string)$sv->Mode)) !== 'ferry') continue;
+        $ende = (string)($sv->OperatingPeriod->EndDate ?? '');
+        if ($ende !== '' && $ende < $heute) continue;
+        $faehren++;
+        $linie = trim((string)$sv->Lines->Line->LineName);
+        $text = trim((string)$sv->Description) ?: trim((string)$sv->StandardService->Origin . ' – ' . $sv->StandardService->Destination, ' –');
+        $op = $betreiber[(string)$sv->RegisteredOperatorRef] ?? (reset($betreiber) ?: '');
+        $sv_tage = faehr_txc_tage($sv->OperatingProfile->RegularDayType->DaysOfWeek ?? null) ?: 7;
+        $muster = [];
+        foreach ($sv->StandardService->JourneyPattern as $jp) {
+          $von = $nach = null; $min = 0;
+          foreach ($jp->JourneyPatternSectionRefs as $r) {
+            [$a, $b, $m] = $abschnitte[trim((string)$r)] ?? [null, null, 0];
+            $von ??= $a; $nach = $b ?? $nach; $min += $m;
+          }
+          $muster[(string)$jp['id']] = [$von, $nach, $min];
+        }
+        foreach ($x->xpath('//VehicleJourneys/VehicleJourney[ServiceRef="' . addslashes((string)$sv->ServiceCode) . '"]') ?: [] as $vj) {
+          [$von, $nach, $min] = $muster[trim((string)$vj->JourneyPatternRef)] ?? [null, null, 0];
+          if (!$von || !$nach || $von === $nach) continue;
+          $prof = $vj->OperatingProfile->RegularDayType ?? null;
+          $tage = $prof ? (isset($prof->HolidaysOnly) ? 0 : faehr_txc_tage($prof->DaysOfWeek ?? null)) : $sv_tage;
+          $g = &$gruppen["$von|$nach|$op"];
+          $g ??= ['linie' => $linie, 'text' => $text, 'op' => $op, 'von' => $von, 'nach' => $nach, 'dauer' => [], 'woche' => 0, 'zeiten' => []];
+          if ($min > 0) $g['dauer'][] = $min;
+          $g['woche'] += $tage;
+          if ($tage > 0) $g['zeiten'][substr((string)$vj->DepartureTime, 0, 5)] = 1;
+          unset($g);
+        }
+      }
+      unset($x);
+    }
+    $z->close();
+  }
+  // fehlende Koordinaten aus NaPTAN nachladen (nur die nötigen Gebiete, ATCO-Präfix)
+  $fehlt = [];
+  foreach ($gruppen as $g) foreach ([$g['von'], $g['nach']] as $r) if (($halte[$r]['lat'] ?? null) === null) $fehlt[$r] = 1;
+  if ($fehlt) faehr_naptan($fehlt, $halte, $p, $i);
+  $aus = []; $ohne = 0;
+  foreach ($gruppen as $g) {
+    $v = $halte[$g['von']] ?? null; $n = $halte[$g['nach']] ?? null;
+    if (!$g['woche']) continue;
+    if (($v['lat'] ?? null) === null || ($n['lat'] ?? null) === null) { $ohne++; continue; }
+    sort($g['dauer']); $zeiten = array_keys($g['zeiten']); sort($zeiten);
+    $aus[] = ['name' => trim($g['linie'] . ' ' . $g['text']), 'betreiber' => $g['op'],
+      'von' => ['name' => $v['name'], 'lat' => round($v['lat'], 5), 'lon' => round($v['lon'], 5)], 'nach' => ['name' => $n['name'], 'lat' => round($n['lat'], 5), 'lon' => round($n['lon'], 5)],
+      'dauer_min' => $g['dauer'] ? round($g['dauer'][intdiv(count($g['dauer']), 2)]) : null, 'abfahrten_woche' => $g['woche'], 'abfahrten_tag' => round($g['woche'] / 7, 1),
+      'zeiten' => array_slice($zeiten, 0, 40)];
+  }
+  usort($aus, fn($x, $y) => strcmp($x['von']['name'] . $x['nach']['name'], $y['von']['name'] . $y['nach']['name']));
+  $ziel = sw_docroot() . '/poi/fahrplan';
+  @mkdir($ziel, 0755, true);
+  $json = json_encode(['quelle' => $quelle, 'stand' => date('Y-m-d'), 'linien' => $aus], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  if (@file_put_contents("$ziel/$ziel_name.json.tmp", $json) === false || !@rename("$ziel/$ziel_name.json.tmp", "$ziel/$ziel_name.json")) { $p[] = "poi/fahrplan/$ziel_name.json nicht schreibbar"; return count($aus); }
+  $i[] = "$dateien TransXChange-Dateien, $faehren Fähr-Services → " . count($aus) . " Verbindungen in poi/fahrplan/$ziel_name.json (" . round(strlen($json) / 1024) . ' kB)' .
+    ($ohne ? ", $ohne ohne Koordinaten ausgelassen" : '');
+  if (!$aus) $p[] = 'Keine Fährverbindungen in TNDS gefunden – Format geändert?';
+  return count($aus);
+}
+
+// NaPTAN (DfT, OGL): Koordinaten für ATCO-Codes; abgerufen nur die Gebiete (erste 3 Zeichen), Ergebnis zwischengespeichert
+function faehr_naptan(array $refs, array &$halte, array &$p, array &$i): void {
+  $cache_datei = sw_daten(true) . '/naptan-faehre.json';
+  $cache = json_decode((string)@file_get_contents($cache_datei), true) ?: [];
+  $gebiete = [];
+  foreach (array_keys($refs) as $r) if (!isset($cache[$r])) $gebiete[substr($r, 0, 3)] = 1;
+  if ($gebiete) {
+    $c = curl_init(FAEHR_UK_NAPTAN . rawurlencode(implode(',', array_keys($gebiete))));
+    $fh = fopen('php://temp', 'w+');
+    curl_setopt_array($c, [CURLOPT_FILE => $fh, CURLOPT_TIMEOUT => 300, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_ENCODING => '',
+      CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooterways.dns.navy)']);
+    $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); curl_close($c);
+    if ($ok && $code === 200) {
+      rewind($fh);
+      $kopf = array_flip(array_map(fn($s) => preg_replace('/^\xEF\xBB\xBF/', '', $s), fgetcsv($fh, 0, ',', '"', '') ?: []));
+      if (isset($kopf['ATCOCode'], $kopf['Latitude'], $kopf['Longitude'])) {
+        while (($r = fgetcsv($fh, 0, ',', '"', '')) !== false)
+          if (isset($refs[$r[$kopf['ATCOCode']] ?? '']) && $r[$kopf['Latitude']] !== '')
+            $cache[$r[$kopf['ATCOCode']]] = [$r[$kopf['CommonName']] ?? '', (float)$r[$kopf['Latitude']], (float)$r[$kopf['Longitude']]];
+        @file_put_contents($cache_datei, json_encode($cache));
+      } else $p[] = 'NaPTAN: unerwartetes Format';
+    } else $i[] = "NaPTAN nicht erreichbar (HTTP $code), Halte ohne Koordinaten bleiben aus";
+    fclose($fh);
+  }
+  $n = 0;
+  foreach (array_keys($refs) as $r) if (isset($cache[$r])) {
+    $halte[$r]['lat'] = $cache[$r][1]; $halte[$r]['lon'] = $cache[$r][2]; $halte[$r]['name'] ??= $cache[$r][0]; $n++;
+  }
+  $i[] = "Koordinaten aus NaPTAN: $n von " . count($refs) . ' Anlegern';
 }
