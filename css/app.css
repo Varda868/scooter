@@ -178,6 +178,7 @@
   body.map-full #panel { display:none; }
   .map-btn { font-size:18px; line-height:30px; text-align:center; cursor:pointer; }
   .map-btn.active { background:#2e86e4 !important; color:#fff !important; }
+  #poiBtn:not(.active) { opacity:.45; text-decoration:line-through; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
   /* Reiter der Leiste */
   .tabs { display:flex; gap:2px; margin:0 -6px 6px; position:sticky; top:-16px; z-index:5; background:var(--bg); padding-top:4px; border-bottom:1px solid var(--line); }
