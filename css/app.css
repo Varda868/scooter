@@ -178,6 +178,7 @@
   body.map-full #panel { display:none; }
   .map-btn { font-size:18px; line-height:30px; text-align:center; cursor:pointer; }
   .map-btn.active { background:#2e86e4 !important; color:#fff !important; }
+  #poiBtn:not(.active) { opacity:.45; text-decoration:line-through; }
   @media (max-width:700px) { #app { flex-direction:column; } #panel { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
   /* Reiter der Leiste */
   .tabs { display:flex; gap:2px; margin:0 -6px 6px; position:sticky; top:-16px; z-index:5; background:var(--bg); padding-top:4px; border-bottom:1px solid var(--line); }
@@ -269,6 +270,7 @@
 .faehr-mitte { cursor: pointer; line-height: 0; }
 .faehr-mitte svg { display: block; filter: drop-shadow(0 0 1px rgba(0,0,0,.4)); }
 .faehr-weit .faehr-mitte { display: none; }
+.steig-weit .grade-icon, .steig-mittel .grade-icon:not(.grade-stark) { display: none; }
 /* Ortsvorschläge: Art, nächste Stadt, Entfernung klein dahinter */
 .suggest .hint { font-size:12px; margin-left:4px; }
 .suggest .suggest-laedt { padding:4px 8px; }

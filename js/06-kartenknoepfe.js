@@ -7,12 +7,23 @@ const MapButtons = L.Control.extend({
     const bar = L.DomUtil.create('div', 'leaflet-bar');
     bar.innerHTML = '<a href="#" id="fullBtn" class="map-btn" title="Vollbild" role="button">⛶</a>' +
       '<a href="#" id="centerBtn" class="map-btn" title="Auf meinen Standort zentrieren und mitführen" role="button">◎</a>' +
-      '<a href="#" id="fitBtn" class="map-btn" title="Ganze Strecke zeigen" role="button">⤢</a>';
+      '<a href="#" id="fitBtn" class="map-btn" title="Ganze Strecke zeigen" role="button">⤢</a>' +
+      '<a href="#" id="poiBtn" class="map-btn" title="POIs und Steigungsschilder ein-/ausblenden" role="button">📍</a>';
     L.DomEvent.disableClickPropagation(bar);
     return bar;
   }
 });
 map.addControl(new MapButtons());
+
+// POIs und Steigungsschilder auf der Karte schnell weg und wieder da, ohne die Auswahl im POI-Kasten zu ändern
+function poiKarteZeigen() {
+  const an = !settings.poiAus;
+  for (const l of [poiLayer, gradeSignLayer]) an ? l.addTo(map) : l.remove();
+  $('poiBtn').classList.toggle('active', an);
+  $('poiBtn').title = an ? 'POIs und Steigungsschilder ausblenden' : 'POIs und Steigungsschilder einblenden';
+}
+$('poiBtn').onclick = e => { e.preventDefault(); settings.poiAus = !settings.poiAus; store.set('settings', settings); poiKarteZeigen(); };
+poiKarteZeigen();
 
 function setFull(on) {
   document.body.classList.toggle('map-full', on);
