@@ -138,7 +138,7 @@ function setRouteCoords(coords) {
   eleData = null;
   gradeSignLayer.clearLayers();
   wxRouteLayer.clearLayers();
-  $('wxRouteSummary').textContent = '';
+  $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];
   // nach showTrip, das routeKmh erst danach setzt
   queueMicrotask(loadRouteWeather);
   routeStages = []; routeStageNights = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';

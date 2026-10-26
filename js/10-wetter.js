@@ -1,6 +1,6 @@
 // --- Wetter entlang der Strecke: alle paar km die 15-min-Vorhersage zur geschätzten Durchfahrt (± Fenster) prüfen ---
 const wxRouteLayer = L.layerGroup().addTo(map);
-let wxRouteRequest = 0;
+let wxRouteRequest = 0, wxQuelle = '';
 const SHELTER_HAZARDS = ['storm', 'rain', 'snow'];
 function setWxShelter(on) {
   if (on === wxShelter) return;
@@ -28,6 +28,7 @@ async function loadRouteWeather() {
     const k = Math.min(km, total);
     samples.push({ km: k, ll: pointAtKm(k), at: etaAtKm(k) });
   }
+  warnungenLaden(samples, req, win);
   try {
     const qs = new URLSearchParams({
       latitude: samples.map(p => p.ll[0].toFixed(3)).join(','), longitude: samples.map(p => p.ll[1].toFixed(3)).join(','),
@@ -39,6 +40,7 @@ async function loadRouteWeather() {
     let data = await res.json();
     if (req !== wxRouteRequest) return;
     if (!Array.isArray(data)) data = [data];
+    wxQuelle = data[0]?.quelle || '';  // Ersatzquelle des Servers (MET Norway, CC BY 4.0) nennen
     // Je Punkt das schlimmste Ereignis im Fenster um die Durchfahrt
     samples.forEach((p, k) => {
       const m = data[k]?.minutely_15;
@@ -69,10 +71,55 @@ async function loadRouteWeather() {
   setWxShelter(sections.some(sec => SHELTER_HAZARDS.includes(sec.hazard.id)));
   $('wxRouteSummary').textContent = sections.length
     ? '⚠️ Wetter unterwegs: ' + sections.slice(0, 4).map(s => `${s.hazard.icon} ${s.hazard.name} ab km ${s.from.toFixed(0)} (ca. ${etaText(s.points[0].at)})`).join(' · ')
-      + (sections.length > 4 ? ` · +${sections.length - 4}` : '')
+      + (sections.length > 4 ? ` · +${sections.length - 4}` : '') + (wxQuelle ? ` · Daten: ${wxQuelle}` : '')
     : '';
 }
 $('wxWindow').addEventListener('change', loadRouteWeather);
+
+// --- Amtliche Warnungen (DWD über Bright Sky, MeteoAlarm) über den eigenen Server; ohne Server nur die Ableitung oben ---
+const WARN_FARBE = ['', '#e9c400', '#f08a00', '#d7263d', '#8e3fbf'], WARN_NAME = ['', 'gelb', 'orange', 'rot', 'extrem'];
+const WARN_ICON = { gewitter: '⛈️', glaette: '🧊', schnee: '🌨️', wind: '💨', regen: '🌧️', nebel: '🌫️', hitze: '🌡️', kaelte: '🥶',
+  feuer: '🔥', lawine: '🏔️', kueste: '🌊', sonst: '⚠️' };
+// Für Roller zählen vor allem diese; Hitze, Nebel usw. nur als Hinweis (ab Orange)
+const WARN_WICHTIG = ['gewitter', 'glaette', 'schnee', 'wind', 'regen'];
+async function warnungenLaden(samples, req, win) {
+  $('wxWarnSummary').textContent = '';
+  if (!serverAn() || !serverKonfig.warnungen) return;
+  const p = samples.map(s => s.ll[0].toFixed(2) + ',' + s.ll[1].toFixed(2)).join(';');
+  let liste;
+  try {
+    const res = await direktFetch(`${API_URL}warnungen.php?p=${p}`, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok || req !== wxRouteRequest) return;
+    liste = (await res.json()).warnungen || [];
+  } catch { return; }
+  if (req !== wxRouteRequest) return;
+  // Nur, was zur geschätzten Durchfahrt (± Fenster) gilt
+  const treffer = [];
+  for (const w of liste) {
+    if (!WARN_WICHTIG.includes(w.art) && w.stufe < 2) continue;
+    const pk = w.punkte.map(i => samples[i]).filter(s => s && (!w.von || s.at >= w.von * 1000 - win * 60000) && (!w.bis || s.at <= w.bis * 1000 + win * 60000));
+    if (pk.length) treffer.push({ w, von: pk[0], bis: pk.at(-1) });
+  }
+  for (const { w, von, bis } of treffer) {
+    const zeit = [w.von && 'ab ' + etaText(w.von * 1000), w.bis && 'bis ' + etaText(w.bis * 1000)].filter(Boolean).join(' ');
+    L.marker(von.ll, { keyboard: false, zIndexOffset: 500 + w.stufe, icon: L.divIcon({ className: 'wx-pin warn-pin',
+      html: `<span style="border-color:${WARN_FARBE[w.stufe]};background:${WARN_FARBE[w.stufe]}33">${WARN_ICON[w.art] || '⚠️'}</span>`, iconSize: [30, 30] }) })
+      .bindPopup(`<b>${escapeHtml(w.ereignis)}</b> (${WARN_NAME[w.stufe]})<br>${escapeHtml(w.titel)}<br><small>km ${von.km.toFixed(0)}${bis.km > von.km ? '–' + bis.km.toFixed(0) : ''}`
+        + `${w.gebiet ? ' · ' + escapeHtml(w.gebiet) : ''} · ${zeit}</small>${w.text ? '<br><small>' + escapeHtml(w.text) + '</small>' : ''}`
+        + `<br><small>Amtliche Warnung: ${w.quelle === 'DWD' ? 'Deutscher Wetterdienst (DWD)' : escapeHtml(w.quelle.replace('MeteoAlarm', 'MeteoAlarm/EUMETNET'))}</small>`)
+      .addTo(wxRouteLayer);
+  }
+  if (!treffer.length) return;
+  const roteste = Math.max(...treffer.map(t => t.w.stufe));
+  $('wxWarnSummary').textContent = `${roteste >= 3 ? '🟥' : roteste === 2 ? '🟧' : '🟨'} Amtliche Warnung: `
+    + treffer.slice(0, 3).map(({ w, von }) => `${warnTag(von.km)}${WARN_ICON[w.art] || '⚠️'} ${w.ereignis} ab km ${von.km.toFixed(0)}${w.gebiet ? ' (' + w.gebiet + ')' : ''}`).join(' · ')
+    + (treffer.length > 3 ? ` · +${treffer.length - 3}` : '');
+  routeWarnungen = treffer;
+  document.dispatchEvent(new Event('warnungen'));
+}
+let routeWarnungen = [];
+// Bei Mehrtagestour den Etappentag nennen
+const warnTag = km => routeStages.length ? `Tag ${1 + nightsBefore(routeStages.filter(s => s < km).length)}: ` : '';
 
 // --- Wetter je Halt zur voraussichtlichen Ankunft (Open-Meteo, stündlich, bis 3 Tage) ---
 const WMO = [
@@ -124,6 +171,7 @@ async function loadWeather(trip) {
       w.wx = {
         icon, temp: Math.round(h.temperature_2m[idx]),
         title: `${etaText(w.eta)}: ${text}, ${Math.round(h.temperature_2m[idx])} °C, Regen ${h.precipitation_probability[idx] ?? '–'} %, Wind ${Math.round(h.wind_speed_10m[idx])} km/h`
+          + (data[k].quelle ? ` (Daten: ${data[k].quelle})` : '')
       };
     });
     renderWaypoints();

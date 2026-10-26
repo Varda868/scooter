@@ -28,6 +28,10 @@ window.fetch = function (input, init) {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : null;
   const ziel = url && proxyZiel(url, init);
   if (!ziel) return direktFetch(input, init);
+  // Wetter zuerst direkt: Open-Meteo zählt je IP, so hat jedes Gerät sein eigenes Kontingent. Der Server
+  // (mit Zwischenspeicher und MET Norway als Ersatz) springt nur bei Überlast oder Störung ein.
+  if (url.startsWith(WEATHER_URL + '?')) return direktFetch(input, init).then(res => res.status === 429 || res.status >= 500 ? direktFetch(...ziel).catch(() => res) : res,
+    err => { if (init?.signal?.aborted) throw err; return direktFetch(...ziel); });
   // Server nicht erreichbar, gedrosselt oder Dienst dahinter gestört: einmal direkt versuchen
   return direktFetch(...ziel).then(res => res.status === 429 || res.status >= 500 ? direktFetch(input, init).catch(() => res) : res,
     err => { if (init?.signal?.aborted) throw err; return direktFetch(input, init); });
