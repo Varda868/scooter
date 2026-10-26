@@ -288,6 +288,15 @@ function sw_anmelden(string $pw): bool {
   return true;
 }
 
+// Admin und Einrichtung nur auf der Stammadresse: andere Hosts mit demselben Stand (scooterways.dns.navy) leiten dorthin,
+// damit dort nie eine zweite, leere Einrichtung entsteht. Lokale Tests (localhost/127.0.0.1) bleiben, wie sie sind.
+const SW_STAMM_HOST = 'scooter.thai-klasse.de';
+function sw_nur_stammadresse(string $datei): void {
+  $host = strtolower(preg_replace('/:\d+$/', '', (string)($_SERVER['HTTP_HOST'] ?? '')));
+  if ($host === '' || $host === SW_STAMM_HOST || in_array($host, ['localhost', '127.0.0.1'], true)) return;
+  header('Location: https://' . SW_STAMM_HOST . '/api/' . $datei, true, 302);
+  exit;
+}
 // Strenge Kopfzeilen für die HTML-Seiten (Setup, Admin)
 // $skript: eigene Skripte (admin.js) und WebSocket/https-Verbindungen erlauben, nur für den angemeldeten Admin-Bereich
 function sw_html_koepfe(bool $skript = false): void {

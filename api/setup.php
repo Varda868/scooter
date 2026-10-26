@@ -3,6 +3,7 @@
 // Schutz bis dahin: Einmalcode in setup-code.txt im Datenordner, lesbar nur mit Zugang zum Hosting (Plesk-Dateimanager, FTP).
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_nur_stammadresse('setup.php');
 sw_html_koepfe();
 
 $d = sw_daten(true);

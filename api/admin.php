@@ -3,6 +3,7 @@
 // Weitere Bereiche (Push-Abos, Kurzlinks …) liegen als lib/admin-*.php daneben und tragen sich in $BEREICHE ein.
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
+sw_nur_stammadresse('admin.php');
 sw_html_koepfe(true);
 
 if (!sw_eingerichtet()) { header('Location: setup.php', true, 303); exit; }
