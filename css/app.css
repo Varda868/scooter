@@ -329,3 +329,33 @@ body.nav-pfeil .talk-ptt { z-index:1002; }
 .post-box li.neu { font-weight:600; }
 .post-box li.jetzt { outline:2px solid #e8562a; border-radius:6px; }
 .post-box button { padding:2px 10px; }
+/* Panne: Hilfe in der Nähe */
+#panneKnopf { margin-bottom: .5rem; }
+.panne-dlg { width: min(92vw, 440px); }
+.panne-fest, .panne-talk { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .6rem; }
+.panne-dlg a.knopf { display: block; padding: .5rem .7rem; border-radius: 8px; background: var(--accent, #16254f); color: #fff; text-decoration: none; text-align: center; }
+.panne-liste { list-style: none; padding: 0; margin: .4rem 0 0; max-height: 50vh; overflow-y: auto; }
+.panne-liste li { padding: .5rem 0; border-top: 1px solid var(--line, #ddd); }
+.panne-liste li.panne-not { font-size: .85em; color: var(--muted, #666); border-top: 0; padding-bottom: 0; }
+.panne-knoepfe { display: flex; gap: .4rem; margin-top: .35rem; flex-wrap: wrap; }
+.panne-knoepfe a.knopf, .panne-knoepfe button { flex: 1; width: auto; margin: 0; padding: .4rem .5rem; font-size: .9em; }
+.panne-saetze-box { margin-top: .6rem; }
+.panne-saetze-box summary { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.panne-saetze-box select { width: auto; margin: 0; }
+.panne-saetze { list-style: none; padding: 0; margin: .4rem 0 0; max-height: 40vh; overflow-y: auto; }
+.panne-saetze li { padding: .45rem .2rem; border-top: 1px solid var(--line); cursor: pointer; }
+.panne-gross { position: fixed; inset: 0; z-index: 3000; background: var(--bg); color: var(--fg); display: flex; flex-direction: column;
+  justify-content: center; gap: 1rem; padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); text-align: center; }
+.panne-gross[hidden] { display: none; }
+#panneGross { font-size: clamp(1.8rem, 8vw, 3rem); font-weight: 700; line-height: 1.2; }
+#panneGrossKlein { color: var(--muted); }
+.panne-akku { font-size: 13px; margin: .5rem 0; }
+.panne-akku button { width: auto; margin: 0 .3rem; padding: .25rem .6rem; }
+.panne-notiz { font-size: 13px; }
+.panne-notiz-form { margin-top: .4rem; }
+.panne-notiz-form input { width: 100%; box-sizing: border-box; }
+.panne-notiz-form button.on { outline: 2px solid var(--fg); }
+.panne-karte { display: grid; grid-template-columns: auto 1fr; gap: .5rem 1rem; text-align: left; font-size: clamp(1rem, 4.5vw, 1.4rem); max-width: 40rem; margin: 0 auto; }
+.panne-karte span { color: var(--muted); }
+.panne-karte small { display: block; font-size: .7em; }
+.panne-karte b { overflow-wrap: anywhere; }

@@ -66,6 +66,7 @@
       </details>
     </section>
     <section id="tab-unterwegs" class="tab" role="tabpanel" hidden>
+      <button id="panneKnopf" class="secondary" title="Werkstätten, Pannenhilfe und Hilferuf vom aktuellen Standort aus">🔧 Panne – Hilfe in der Nähe</button>
       <div id="poiSummary"></div>
       <ul id="pois"></ul>
       <details id="poiBox" class="fold">
@@ -75,10 +76,6 @@
       </fieldset>
       <label><input id="fuelThin" type="checkbox" checked> ⛽ Tankstellen nur direkt an der Strecke, etwa alle 100 km eine</label>
       <label><input id="ferryLines" type="checkbox"> ⛴ Fährlinien auf der Karte <span id="ferryLinesHint" class="hint"></span></label>
-      <fieldset id="brands">
-        <legend>🔧 Werkstätten: Marken (keine = alle)</legend>
-      </fieldset>
-      <input id="brand" type="text" placeholder="weitere Marken, z. B. Sherco, Motron">
       <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
       <input id="radius" type="range" min="100" max="2000" step="100" value="500">
       </details>
@@ -106,6 +103,7 @@
       <label for="rl_shop">Heimatwerkstatt</label><input id="rl_shop" type="text" autocomplete="off" spellcheck="false">
       <label for="rl_shopTel">Telefon Werkstatt</label><input id="rl_shopTel" type="text" autocomplete="off" spellcheck="false">
       <label for="rl_shopAddr">Adresse Werkstatt</label><input id="rl_shopAddr" type="text" autocomplete="off" spellcheck="false" placeholder="Straße, Ort">
+      <div id="rollerTechnik" class="roller-technik"><div class="section-title">🪪 Datenkarte für die Werkstatt</div></div>
       <label for="rl_fuel">Verbrauch (l/100 km)</label><input id="rl_fuel" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 2,5">
       <label for="rl_price">Benzinpreis (€/l)</label><input id="rl_price" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 1,85">
       <div class="talk-row"><label>Tankinhalt (l)<input id="rl_tank" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 7"></label>
@@ -180,8 +178,10 @@
       <div class="talk-row">
         <label>Rufname <input id="talkName" type="text" maxlength="9" autocomplete="off" placeholder="3–9 Zeichen"></label>
         <label>PLZ-Region <input id="talkPlz" type="text" maxlength="6" inputmode="numeric" placeholder="z. B. 86"></label>
+        <label>Ich spreche <input id="talkSprachen" type="text" maxlength="14" autocomplete="off" spellcheck="false" placeholder="de en it"></label>
       </div>
       <div id="talkNameHint" class="hint"></div>
+      <div id="talkSprachenHint" class="hint"></div>
       <label for="talkPw">Gruppen-Passwort (nur wer es kennt, hört mit)</label>
       <input id="talkPw" type="password" autocomplete="off" spellcheck="false">
       <label for="talkMode">Sprechen</label>
@@ -243,7 +243,7 @@
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
     <div id="navLanes" class="nav-lanes"></div>
     <div class="nav-stats"><span id="navSpeed"></span><span id="navRest"></span>
-      <button id="navPfeil" title="Pfeil-Modus: schwarzer Bildschirm ohne Karte, spart Akku">⬛</button><button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
+      <button id="navPanne" title="Panne – Hilfe in der Nähe">🔧</button><button id="navPfeil" title="Pfeil-Modus: schwarzer Bildschirm ohne Karte, spart Akku">⬛</button><button id="navVoice" title="Sprachansage ein/aus">🔊</button><button id="navStop" title="Navigation beenden">✕</button></div>
     <div id="navNote" class="nav-note"></div>
   </div>
   <button id="posChip" class="pos-chip" hidden></button><div id="gruppeInfo" class="gruppe-info"></div><div id="haltBar" class="halt-bar" hidden></div><div id="talkPtt" class="talk-ptt" hidden><div id="talkAnMenu" class="talk-an-menu" hidden></div><button id="talkAn" class="talk-an" hidden>an alle ▾</button><div id="talkChip" class="talk-chip"></div><button id="talkBtn" aria-label="Sprechen" title="Sprechen">🎙</button></div>
@@ -274,6 +274,21 @@
   </div>
 </div>
 <script src="js/00-logger.js"></script>
+<dialog id="panneDlg" class="sw-dlg panne-dlg">
+  <h3 id="panneTitel">🔧 Panne – Hilfe in der Nähe</h3>
+  <div id="panneFest" class="panne-fest"></div>
+  <div class="panne-knoepfe"><button id="panneDatenkarte" class="secondary">🪪 Datenkarte für die Werkstatt</button><button id="panneTeilen" class="secondary" title="Nur auf Tipp: Pannenort als Link per SMS, Messenger usw.">📤 Pannenort teilen</button></div>
+  <div id="panneAkku" class="panne-akku"></div>
+  <div id="panneTalk" class="panne-talk" hidden></div>
+  <div id="panneStatus" class="hint"></div>
+  <ul id="panneListe" class="panne-liste"></ul>
+  <details id="panneSaetzeBox" class="panne-saetze-box"><summary>🗣 Sätze für Werkstatt und Passanten <select id="panneSprache" aria-label="Sprache"></select></summary>
+    <ul id="panneSaetze" class="panne-saetze"></ul></details>
+  <div id="panneKarteBox" class="panne-gross panne-karte-box" hidden><div id="panneKarte" class="panne-karte"></div><div class="hint">Antippen zum Schließen</div></div>
+  <div id="panneGrossBox" class="panne-gross" hidden><div id="panneGross"></div><div id="panneGrossKlein"></div>
+    <div class="dlg-knoepfe"><button id="panneNochmal">🔊 Nochmal vorlesen</button><button class="secondary">Zurück</button></div></div>
+  <div class="dlg-knoepfe"><button id="panneZu" class="secondary">Schließen</button></div>
+</dialog>
 <dialog id="linkDlg" class="sw-dlg">
   <h3>🔗 Tour als Link</h3>
   <label>Gültig <select id="linkTage"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="90">90 Tage</option><option value="365">1 Jahr</option></select></label>
@@ -311,5 +326,6 @@
 <script src="js/27-server.js"></script>
 <script src="js/28-kurzlink.js"></script>
 <script src="js/29-push.js"></script>
+<script src="js/30-panne.js"></script>
 </body>
 </html>
