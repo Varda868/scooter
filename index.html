@@ -123,6 +123,8 @@
       </details>
     </section>
     <section id="tab-setup" class="tab" role="tabpanel" hidden>
+      <label class="style-line modus-zeile">Bedienung
+        <select id="modus"><option value="einfach">🛵 Einfach ankommen</option><option value="touren">🗺 Touren &amp; Gruppe</option></select></label>
       <details id="profileBox" class="fold">
       <summary>⚙ Fahrprofil <span id="profileSummary" class="hint"></span></summary>
       <label for="speed">Höchstgeschwindigkeit: <span id="speedVal">45</span> km/h</label>
@@ -237,7 +239,12 @@
     </ol>
     <h3>Hinweis</h3>
     <p class="hint">Privates Hobbyprojekt ohne Gewähr. Routen, Öffnungszeiten, Fähren und Sperrungen stammen aus OpenStreetMap und anderen offenen Quellen und können falsch oder veraltet sein. Es gelten immer die Verkehrsschilder und die StVO. Das Handy während der Fahrt nicht bedienen: Ziel vor der Abfahrt eingeben, unterwegs nur die Ansage nutzen. Bei Talk und Standort-Teilen laufen Daten verschlüsselt über öffentliche Nostr-Relays. Nutzung auf eigene Gefahr.</p>
-    <button id="introOk">Verstanden, los geht’s</button>
+    <h3>Wie fährst du?</h3>
+    <div class="modus-wahl">
+      <button data-modus="einfach"><b>🛵 Einfach ankommen</b><small>Start, Ziel, los. Ruhige Strecke ohne Schotter, Navi mit Ansage. Ohne Talk, Gruppe und Feineinstellungen.</small></button>
+      <button data-modus="touren"><b>🗺 Touren &amp; Gruppe</b><small>Alles: Zwischenziele, Etappen, Alternativen, Fähren, Tankplan, Talk mit der Gruppe.</small></button>
+    </div>
+    <p class="hint">Verstanden? Mit der Wahl geht’s los. Umschalten jederzeit oben unter ⚙ Einstellung.</p>
   </dialog>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>

@@ -287,6 +287,14 @@ input.feld-fehler { border-color:#b23a1e; outline:2px solid #b23a1e; }
 .intro h2 { margin:0 0 6px; font-size:20px; } .intro h3 { margin:12px 0 4px; font-size:15px; }
 .intro ol { padding-left:20px; margin:8px 0; } .intro li { margin:4px 0; }
 .intro button { width:100%; margin-top:10px; }
+.modus-wahl { display:grid; gap:8px; }
+.modus-wahl button { margin:0; text-align:left; display:flex; flex-direction:column; gap:2px; padding:10px 12px; }
+.modus-wahl small { font-weight:400; opacity:.85; }
+/* Einfach ankommen: nur Start, Ziel, los; Feinheiten, Talk und Gruppe ausgeblendet */
+.modus-einfach :is(.wp-tools, .back-tools, #tab-tour .style-line, #profileLine, #play, #gpxTour, #tourLink, #stageSummary, #tankInfo,
+  label[for=avgSpeed], #avgSpeed, label[for=primary], #primary, label[for=hills], #hills, label[for=breakMin], #breakMin,
+  label:has(#unpaved), label:has(#ferry), #trafficBox, #serverBox, #pushBox, #talkBox, #talkPtt, #gruppeInfo, #posChip, #haltBar,
+  #poiBox, label.file-btn:has(#gpx), #gpxInfo) { display:none !important; }
 /* Dev-Logger (nur mit ?dev=1) */
 .dev-knopf { position:fixed; left:8px; bottom:8px; z-index:2000; padding:4px 8px; font-size:13px; border-radius:14px; background:#444; color:#fff; border:0; opacity:.85; }
 .dev-knopf.fehler { background:#b23a1e; }

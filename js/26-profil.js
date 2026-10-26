@@ -172,6 +172,18 @@ $('syncTrennen').onclick = async () => {
 };
 
 // --- Kurzanleitung und Hinweis beim ersten Start (und jederzeit unter ⚙ Einstellung)
-$('introOk').onclick = () => { store.set('intro', 1); $('intro').close(); };
+// Dort wird auch der Bedienmodus gewählt; die Wahl schließt die Anleitung
+function modusSetzen(m) {
+  if (m === settings.modus) return;
+  settings.modus = m; store.set('settings', settings);
+  document.body.classList.toggle('modus-einfach', einfach());
+  $('modus').value = einfach() ? 'einfach' : 'touren';
+  // Talk samt Standort-Teilen läuft sonst unsichtbar weiter
+  if (einfach() && $('talkOn').checked) { $('talkOn').checked = false; $('talkOn').onchange(); }
+  if (ready()) route(); else tankPlan();
+}
+$('intro').querySelectorAll('[data-modus]').forEach(b => b.onclick = () => { store.set('intro', 1); modusSetzen(b.dataset.modus); $('intro').close(); });
+$('modus').value = einfach() ? 'einfach' : 'touren';
+$('modus').onchange = () => modusSetzen($('modus').value);
 $('introAuf').onclick = () => $('intro').showModal();
 if (!store.get('intro', 0)) $('intro').showModal();
