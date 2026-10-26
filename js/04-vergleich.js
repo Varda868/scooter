@@ -167,9 +167,12 @@ function renderElevation(pts, lenM) {
       <text class="ele-axis" x="${L0}" y="${H - 3}">0</text>
       <text class="ele-axis" x="${W - R0}" y="${H - 3}" text-anchor="end">${totalKm.toFixed(0)} km</text>
       <polygon class="ele-area" points="${X(0)},${Y(lo)} ${line} ${X(totalKm)},${Y(lo)}"/>
+      <g class="ele-etappen"></g>
       <line class="ele-cursor" y1="${T0}" y2="${H - B0}" visibility="hidden"/>
       <text class="ele-axis ele-label" y="${T0 + 8}" visibility="hidden"></text>
     </svg>`;
+  eleGeo = { X, top: T0, bottom: H - B0, totalKm };
+  eleEtappenZeichnen();
   const svg = $('elevation').querySelector('svg');
   const cursor = svg.querySelector('.ele-cursor'), label = svg.querySelector('.ele-label');
   const show = ev => {
@@ -196,7 +199,17 @@ function renderElevation(pts, lenM) {
   svg.addEventListener('pointerleave', hide);
 }
 
-let eleShowKm = null;
+let eleShowKm = null, eleGeo = null;
+// Etappenenden der Mehrtagestour im Höhenprofil (gestrichelt, 🌙 mit Tag); planStages ruft das nach jeder Neuplanung
+function eleEtappenZeichnen() {
+  const g = $('elevation').querySelector('.ele-etappen');
+  if (!g || !eleGeo) return;
+  g.innerHTML = routeStages.filter(km => km > 0 && km < eleGeo.totalKm).map((km, d) => {
+    const x = eleGeo.X(km).toFixed(1);
+    return `<line class="ele-etappe" x1="${x}" x2="${x}" y1="${eleGeo.top}" y2="${eleGeo.bottom}"/>` +
+      `<text class="ele-axis ele-etappe-tag" x="${x}" y="${eleGeo.top + 9}" text-anchor="middle">🌙${1 + nightsBefore(d)}</text>`;
+  }).join('');
+}
 
 // Position auf der Route nach Kilometern (linear zwischen Stützpunkten)
 function pointAtKm(km) {
