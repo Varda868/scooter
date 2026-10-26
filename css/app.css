@@ -172,6 +172,8 @@
   #elevation .ele-axis { fill:var(--muted); font-size:10px; }
   #elevation .ele-grid { stroke:var(--line); stroke-width:1; }
   #elevation .ele-cursor { stroke:var(--fg); stroke-width:1; }
+  #elevation .ele-etappe { stroke:var(--fg); stroke-width:1; stroke-dasharray:3 3; opacity:.6; }
+  #elevation .ele-etappe-tag { font-size:10px; }
   /* Vollbild: Panel ausblenden, Karte über die ganze Fläche */
   body.map-full #panel { display:none; }
   .map-btn { font-size:18px; line-height:30px; text-align:center; cursor:pointer; }
