@@ -564,19 +564,22 @@ function faehr_uk_laden(string $name, string $zip, string $user, string $pass, a
   return false;
 }
 
-// Tage je Woche aus <DaysOfWeek>
+// Wochentage aus <DaysOfWeek> als Bitmaske (Mo = 1 … So = 64); 0 = keine Angabe
 function faehr_txc_tage(?SimpleXMLElement $dow): int {
   if (!$dow) return 0;
-  $n = 0;
-  foreach ($dow->children() as $k => $_) $n += ['Monday' => 1, 'Tuesday' => 1, 'Wednesday' => 1, 'Thursday' => 1, 'Friday' => 1, 'Saturday' => 1, 'Sunday' => 1,
-    'MondayToFriday' => 5, 'MondayToSaturday' => 6, 'MondayToSunday' => 7, 'Weekend' => 2, 'NotMonday' => 6, 'NotTuesday' => 6, 'NotWednesday' => 6,
-    'NotThursday' => 6, 'NotFriday' => 6, 'NotSaturday' => 6, 'NotSunday' => 6][$k] ?? 0;
-  return min(7, $n);
+  $tag = ['Monday' => 1, 'Tuesday' => 2, 'Wednesday' => 4, 'Thursday' => 8, 'Friday' => 16, 'Saturday' => 32, 'Sunday' => 64];
+  $m = 0;
+  foreach ($dow->children() as $k => $_) {
+    if (isset($tag[$k])) $m |= $tag[$k];
+    elseif (str_starts_with($k, 'Not') && isset($tag[substr($k, 3)])) $m |= 127 & ~$tag[substr($k, 3)];
+    else $m |= ['MondayToFriday' => 31, 'MondayToSaturday' => 63, 'MondayToSunday' => 127, 'Weekend' => 96][$k] ?? 0;
+  }
+  return $m;
 }
 
 // TransXChange-ZIPs → poi/fahrplan/{ziel}.json (gleiches Format wie GTFS, aber abfahrten_woche)
 function faehr_txc_auswerten(array $zips, string $ziel_name, string $quelle, array &$p, array &$i): ?int {
-  $heute = date('Y-m-d'); $gruppen = []; $halte = []; $dateien = 0; $faehren = 0;
+  $heute = date('Y-m-d'); $gruppen = []; $halte = []; $dateien = 0; $fassungen = []; $verworfen = 0;
   foreach ($zips as $zip) {
     $z = new ZipArchive();
     if ($z->open($zip) !== true) { $p[] = basename($zip) . ' nicht lesbar'; return null; }
@@ -614,15 +617,17 @@ function faehr_txc_auswerten(array $zips, string $ziel_name, string $quelle, arr
         }
         $abschnitte[(string)$sec['id']] = [$von, $nach, $min];
       }
+      // TNDS legt Fahrplanwechsel (Sommer/Winter) und Neufassungen als eigene Dateien ab: erst je ServiceCode sammeln,
+      // am Ende nur die heute gültige, neueste Fassung zählen
+      $rev = (string)($x['ModificationDateTime'] ?? $x['CreationDateTime'] ?? '') . '|' . (string)($x['RevisionNumber'] ?? '');
       foreach ($x->xpath('//Services/Service') ?: [] as $sv) {
         if (strtolower(trim((string)$sv->Mode)) !== 'ferry') continue;
-        $ende = (string)($sv->OperatingPeriod->EndDate ?? '');
-        if ($ende !== '' && $ende < $heute) continue;
-        $faehren++;
+        $start = (string)($sv->OperatingPeriod->StartDate ?? ''); $ende = (string)($sv->OperatingPeriod->EndDate ?? '');
+        if (($ende !== '' && $ende < $heute) || ($start !== '' && $start > $heute)) continue;
         $linie = trim((string)$sv->Lines->Line->LineName);
         $text = trim((string)$sv->Description) ?: trim((string)$sv->StandardService->Origin . ' – ' . $sv->StandardService->Destination, ' –');
         $op = $betreiber[(string)$sv->RegisteredOperatorRef] ?? (reset($betreiber) ?: '');
-        $sv_tage = faehr_txc_tage($sv->OperatingProfile->RegularDayType->DaysOfWeek ?? null) ?: 7;
+        $sv_tage = faehr_txc_tage($sv->OperatingProfile->RegularDayType->DaysOfWeek ?? null) ?: 127;
         $muster = [];
         foreach ($sv->StandardService->JourneyPattern as $jp) {
           $von = $nach = null; $min = 0;
@@ -632,23 +637,34 @@ function faehr_txc_auswerten(array $zips, string $ziel_name, string $quelle, arr
           }
           $muster[(string)$jp['id']] = [$von, $nach, $min];
         }
+        $fahrten = [];
         foreach ($x->xpath('//VehicleJourneys/VehicleJourney[ServiceRef="' . addslashes((string)$sv->ServiceCode) . '"]') ?: [] as $vj) {
           [$von, $nach, $min] = $muster[trim((string)$vj->JourneyPatternRef)] ?? [null, null, 0];
           if (!$von || !$nach || $von === $nach) continue;
           $prof = $vj->OperatingProfile->RegularDayType ?? null;
-          $tage = $prof ? (isset($prof->HolidaysOnly) ? 0 : faehr_txc_tage($prof->DaysOfWeek ?? null)) : $sv_tage;
-          $g = &$gruppen["$von|$nach|$op"];
-          $g ??= ['linie' => $linie, 'text' => $text, 'op' => $op, 'von' => $von, 'nach' => $nach, 'dauer' => [], 'woche' => 0, 'zeiten' => []];
-          if ($min > 0) $g['dauer'][] = $min;
-          $g['woche'] += $tage;
-          if ($tage > 0) $g['zeiten'][substr((string)$vj->DepartureTime, 0, 5)] = 1;
-          unset($g);
+          $tage = $prof ? (isset($prof->HolidaysOnly) ? 0 : (faehr_txc_tage($prof->DaysOfWeek ?? null) ?: $sv_tage)) : $sv_tage;
+          $fahrten[] = [$von, $nach, $min, substr((string)$vj->DepartureTime, 0, 5), $tage];
         }
+        $code = (string)$sv->ServiceCode ?: $linie;
+        $neu = ['start' => $start, 'rev' => $rev, 'linie' => $linie, 'text' => $text, 'op' => $op, 'fahrten' => $fahrten];
+        $alt = $fassungen[$code] ?? null;
+        if (!$alt || [$start, $rev] > [$alt['start'], $alt['rev']]) { if ($alt) $verworfen++; $fassungen[$code] = $neu; } else $verworfen++;
       }
       unset($x);
     }
     $z->close();
   }
+  // Je Richtung und Abfahrtszeit die Wochentage vereinen: dieselbe Abfahrt aus zwei Mustern zählt nur einmal
+  foreach ($fassungen as $f) foreach ($f['fahrten'] as [$von, $nach, $min, $zeit, $tage]) {
+    $g = &$gruppen["$von|$nach|{$f['op']}"];
+    $g ??= ['linie' => $f['linie'], 'text' => $f['text'], 'op' => $f['op'], 'von' => $von, 'nach' => $nach, 'dauer' => [], 'slots' => []];
+    if ($min > 0) $g['dauer'][] = $min;
+    if ($tage) $g['slots'][$zeit] = ($g['slots'][$zeit] ?? 0) | $tage;
+    unset($g);
+  }
+  foreach ($gruppen as &$g) { $g['woche'] = array_sum(array_map(fn($m) => substr_count(decbin($m), '1'), $g['slots'])); $g['zeiten'] = $g['slots']; }
+  unset($g);
+  $faehren = count($fassungen);
   // fehlende Koordinaten aus NaPTAN nachladen (nur die nötigen Gebiete, ATCO-Präfix)
   $fehlt = [];
   foreach ($gruppen as $g) foreach ([$g['von'], $g['nach']] as $r) if (($halte[$r]['lat'] ?? null) === null) $fehlt[$r] = 1;
@@ -669,7 +685,7 @@ function faehr_txc_auswerten(array $zips, string $ziel_name, string $quelle, arr
   @mkdir($ziel, 0755, true);
   $json = json_encode(['quelle' => $quelle, 'stand' => date('Y-m-d'), 'linien' => $aus], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   if (@file_put_contents("$ziel/$ziel_name.json.tmp", $json) === false || !@rename("$ziel/$ziel_name.json.tmp", "$ziel/$ziel_name.json")) { $p[] = "poi/fahrplan/$ziel_name.json nicht schreibbar"; return count($aus); }
-  $i[] = "$dateien TransXChange-Dateien, $faehren Fähr-Services → " . count($aus) . " Verbindungen in poi/fahrplan/$ziel_name.json (" . round(strlen($json) / 1024) . ' kB)' .
+  $i[] = "$dateien TransXChange-Dateien, $faehren heute gültige Fähr-Services ($verworfen ältere/andere Fassungen verworfen) → " . count($aus) . " Verbindungen in poi/fahrplan/$ziel_name.json (" . round(strlen($json) / 1024) . ' kB)' .
     ($ohne ? ", $ohne ohne Koordinaten ausgelassen" : '');
   if (!$aus) $p[] = 'Keine Fährverbindungen in TNDS gefunden – Format geändert?';
   return count($aus);
