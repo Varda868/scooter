@@ -25,13 +25,15 @@ function bereich_relays(): void {
         if (!is_array($z) || !empty($z['weg']) || trim((string)($z['url'] ?? '')) === '') continue;
         $u = relay_url_norm((string)$z['url']);
         if ($u === null) { $fehler = 'Ungültige Adresse: ' . mb_substr((string)$z['url'], 0, 80) . ' (nur wss://host[:port][/pfad], IPv6 in [ ])'; break; }
-        $zeilen[] = ['pos' => (float)($z['pos'] ?? 99), 'url' => $u, 'an' => !empty($z['an']), 'eigen' => !empty($z['eigen'])];
+        $pk = strtolower(trim((string)($z['pk'] ?? '')));
+        if ($pk !== '' && !preg_match('/^[0-9a-f]{64}$/', $pk)) { $fehler = 'Schlüssel bitte als 64 Hexzeichen (wie im Feld "self" der Relay-Info) oder leer lassen.'; break; }
+        $zeilen[] = ['pos' => (float)($z['pos'] ?? 99), 'url' => $u, 'an' => !empty($z['an']), 'eigen' => !empty($z['eigen']), 'pk' => $pk];
       }
       if (!$fehler && !array_filter($zeilen, fn($z) => $z['an'])) $fehler = 'Mindestens ein Relay muss eingeschaltet sein.';
       if (!$fehler) {
         usort($zeilen, fn($a, $b) => $a['pos'] <=> $b['pos']);
         $c = sw_config();
-        $c['werte']['relays'] = array_map(fn($z) => ['url' => $z['url'], 'an' => $z['an'], 'eigen' => $z['eigen']], $zeilen);
+        $c['werte']['relays'] = array_map(fn($z) => ['url' => $z['url'], 'an' => $z['an'], 'eigen' => $z['eigen'], 'pk' => $z['pk']], $zeilen);
         sw_config_speichern($c);
         admin_zurueck('relays', 'Gespeichert. Die App übernimmt die Liste beim nächsten Start.');
       }
@@ -60,14 +62,18 @@ function bereich_relays(): void {
   $db = sw_db();
   $liste = relay_liste();
   $html = admin_hinweis($OK, $fehler) . '<form method="post" id="relayForm">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="speichern">' .
-    '<table><tr><th>#</th><th>Adresse</th><th>an</th><th>eigenes</th><th>weg</th></tr>';
-  foreach (array_merge($liste, [['url' => '', 'an' => true, 'eigen' => false]]) as $i => $r)
+    '<table><tr><th>#</th><th>Adresse</th><th>an</th><th>eigenes</th><th title="Nur beim eigenen b:con-Relay: damit findet der Server es nach einem Adresswechsel wieder">Schlüssel</th><th>weg</th></tr>';
+  foreach (array_merge($liste, [['url' => '', 'an' => true, 'eigen' => false, 'pk' => '']]) as $i => $r)
     $html .= '<tr><td><input name="r[' . $i . '][pos]" value="' . ($i + 1) . '" size="2" inputmode="numeric" class="pos"></td>' .
       '<td><input name="r[' . $i . '][url]" value="' . h($r['url']) . '" placeholder="' . ($r['url'] === '' ? 'neues Relay: wss://…' : '') . '" spellcheck="false"></td>' .
       '<td><input type="checkbox" name="r[' . $i . '][an]" value="1"' . ($r['an'] ? ' checked' : '') . '></td>' .
       '<td><input type="checkbox" name="r[' . $i . '][eigen]" value="1"' . ($r['eigen'] ? ' checked' : '') . '></td>' .
+      '<td><input name="r[' . $i . '][pk]" value="' . h($r['pk']) . '" placeholder="' . ($r['eigen'] ? 'wird beim Prüfen gemerkt' : '') . '" size="10" spellcheck="false" title="' . h($r['pk']) . '"></td>' .
       '<td>' . ($r['url'] !== '' ? '<input type="checkbox" name="r[' . $i . '][weg]" value="1">' : '') . '</td></tr>';
-  $html .= '</table><button>Liste speichern</button></form>';
+  $html .= '</table><button>Liste speichern</button></form>' .
+    '<p class="leise">🏠 Eigenes b:con-Relay: Der Server merkt sich bei der ersten erfolgreichen Prüfung den Schlüssel des Relays (Relay-Info „self“). ' .
+    'Ändert sich später die IPv6-Adresse, holt er bei der nächsten fehlgeschlagenen Prüfung das signierte Adress-Event des Relays von den anderen Relays der Liste ' .
+    'und trägt die neue Adresse ein, sobald sie die Prüfung besteht. Signaturprüfung: ' . (schnorr_rechenweg() ?? '❌ weder GMP noch bcmath vorhanden') . '.</p>';
 
   // Zustand: letzte Prüfung je Relay und Quelle, dazu ein kurzer Verlauf
   $html .= '<h2>Zustand</h2><div class="knoepfe"><form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="pruefen"><button>Jetzt vom Server prüfen</button></form>' .

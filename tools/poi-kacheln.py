@@ -143,7 +143,7 @@ def main(out):
         seen.add(oid)
         lon, lat = point(f['geometry'])
         keep = {k: v for k, v in tags.items() if k in KEEP or k in keys or
-                (re.match(r'^(motorcycle|scooter):', k) and v == 'yes') or
+                (re.match(r'^(motorcycle|scooter|service:vehicle):', k) and v == 'yes') or
                 (re.match(r'^payment:(cash|coins|notes|credit_cards|debit_cards|girocard|maestro|visa|mastercard)$', k) and v in ('yes', 'no'))}
         tiles.setdefault(f'{int(lat // 1)}_{int(lon // 1)}', []).append([oid, round(lat, 5), round(lon, 5), keep])
     os.makedirs(os.path.join(out, 't'), exist_ok=True)

@@ -58,6 +58,7 @@ function planStages() {
   const fixedAt = [];
   stageLayer.clearLayers();
   $('stageSummary').textContent = '';
+  eleEtappenZeichnen();
   const hours = +$('dayMax').value, routeTotal = routeKm?.at(-1);
   if (!routeTotal) return;
   // Geteilt wird nach gefahrenen km: Fährstrecken zählen nicht, ein Etappenende fällt nie aufs Wasser
@@ -92,6 +93,7 @@ function planStages() {
     L.marker(pointAtKm(km), { zIndexOffset: 500, icon: L.divIcon({ className: 'stage-pin' + (f ? ' fixed' : ''), html: `🌙${dayNo(d)}`, iconSize: [30, 18], iconAnchor: [15, 9] }) })
       .bindTooltip(`Ende Tag ${dayNo(d)}${rest} · km ${km.toFixed(0)}${f ? ` · fest: ${escapeHtml(f.name || 'Übernachtung')}` : ''} · an ca. ${etaText(etaAtKm(km))}`).addTo(stageLayer);
   });
+  eleEtappenZeichnen();
   // Zeltplätze nur für die automatisch gesetzten Etappenenden, die festen sind ja schon gebucht
   loadStageCamps(routeStages.filter((km, d) => !fixedAt[d]));
 }

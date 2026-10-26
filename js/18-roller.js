@@ -1,6 +1,15 @@
+// Datenkarte für die Werkstatt: [Feld, deutsch, englisch (versteht fast jede Werkstatt), Beispiel]
+const ROLLER_TECHNIK = [
+  ['tyreF', 'Reifen vorn', 'Front tyre', '110/70-12'], ['tyreR', 'Reifen hinten', 'Rear tyre', '120/70-12'],
+  ['pressF', 'Luftdruck vorn', 'Pressure front', '1,8 bar'], ['pressR', 'Luftdruck hinten', 'Pressure rear', '2,0 bar / Sozius 2,2'],
+  ['battery', 'Batterie', 'Battery', 'YTX4L-BS 12 V'], ['bulbHead', 'Scheinwerfer', 'Headlight', 'H4 12 V 35/35 W'],
+  ['bulbRear', 'Rücklicht/Blinker', 'Rear light/indicators', 'P21/5W, RY10W'], ['plug', 'Zündkerze', 'Spark plug', 'NGK CR7HSA'],
+  ['belt', 'Antriebsriemen', 'Drive belt', '743 × 20 × 30'], ['oil', 'Motoröl', 'Engine oil', '2T teilsynth. / 10W-40'],
+  ['fuelType', 'Kraftstoff', 'Fuel', 'Super E5'], ['techNote', 'Notiz', 'Note', 'Variomatik neu 09/26'],
+];
 // --- Mein Roller: Fahrzeugdaten, Werkstatt, Wartungsbuch. Nur localStorage auf diesem Gerät (persönliche Daten,
 // nie auf den Server); Sicherung als JSON-Datei. km-Stand = Tacho-Eintrag + seitdem gefahrene Navi-Fahrten.
-const ROLLER_TEXT = ['model', 'year', 'plate', 'vin', 'insurer', 'policy', 'assist', 'shop', 'shopTel', 'shopAddr'];
+const ROLLER_TEXT = ['model', 'year', 'plate', 'vin', 'insurer', 'policy', 'assist', 'shop', 'shopTel', 'shopAddr', ...ROLLER_TECHNIK.map(t => t[0])];
 const ROLLER_NUM = ['odo', 'oilEvery', 'serviceMonths'];
 const ROLLER_DEZ = ['fuel', 'price', 'tank', 'reserve']; // Verbrauch l/100 km, Benzinpreis €/l, Tank und Reserve l; Komma erlaubt
 let roller = { oilEvery: 0, serviceMonths: 12, log: [], ...store.get('roller', {}) };
@@ -42,7 +51,8 @@ function rollerRender() {
   $('rollerDue').textContent = due.join(' · ');
   // Kompakte Übersicht der eingetragenen Daten (antippen markiert den Wert zum Kopieren)
   const card = [['Modell', [roller.model, roller.year].filter(Boolean).join(', ')], ['Kennzeichen', roller.plate], ['FIN', roller.vin],
-    ['Versicherung', [roller.insurer, roller.policy].filter(Boolean).join(' · ')], ['Werkstatt', [roller.shop, roller.shopAddr].filter(Boolean).join(', ')]].filter(([, v]) => v);
+    ['Versicherung', [roller.insurer, roller.policy].filter(Boolean).join(' · ')], ['Werkstatt', [roller.shop, roller.shopAddr].filter(Boolean).join(', ')],
+    ...ROLLER_TECHNIK.map(([k, de]) => [de, roller[k]])].filter(([, v]) => v);
   $('rollerCard').innerHTML = card.map(([k, v]) => `<span>${k}</span><span>${escapeHtml(v)}</span>`).join('');
   const links = [];
   if (roller.assist) links.push(`<a href="${telHref(roller.assist)}">📞 Pannenhilfe</a>`);
@@ -60,6 +70,8 @@ function rollerRender() {
     `<li><span>${new Date(e.date).toLocaleDateString('de-DE')} · ${escapeHtml(e.what)}</span><span>${e.km != null ? e.km.toLocaleString('de-DE') + ' km' : ''}</span><button data-i="${i}" title="Eintrag löschen">✕</button></li>`).join('');
 }
 
+$('rollerTechnik').insertAdjacentHTML('beforeend', ROLLER_TECHNIK.map(([k, de, , bsp]) =>
+  `<label for="rl_${k}">${de}</label><input id="rl_${k}" type="text" autocomplete="off" spellcheck="false" placeholder="z. B. ${bsp}">`).join(''));
 function rollerFill() {
   for (const k of [...ROLLER_TEXT, ...ROLLER_NUM]) $('rl_' + k).value = roller[k] ?? '';
   for (const k of ROLLER_DEZ) $('rl_' + k).value = roller[k] ? String(roller[k]).replace('.', ',') : '';

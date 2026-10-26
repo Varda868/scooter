@@ -16,6 +16,9 @@ const talkPrefs = Object.assign({ on: false, name: '', plz: '', pw: '', mode: 'p
 const talk = { mod: null, netz: null, lauf: 0, mic: null, empf: null, vox: null, tx: null, warte: [], spielt: false, slot: 0,
   sperreBis: 0, fenster: false, fensterFrei: null, voxLetzt: null, micFehler: '', hoert: '', opus: false, leser: null, spieltBis: 0 };
 const saveTalk = () => store.set('talk', talkPrefs);
+// Eigene Sprachen als Kürzel (de en it); vorbelegt aus der Browsersprache. Andere in der Gruppe sehen sie am Namen.
+const talkSprachen = () => [...new Set((talkPrefs.sprachen ?? navigator.languages.map(l => l.slice(0, 2)).join(' ')).toLowerCase().split(/[\s,;]+/)
+  .filter(s => /^[a-z]{2}$/.test(s)))].slice(0, 4);
 const talkName = () => { const n = talkPrefs.name.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9); return n.length >= 3 ? n : ''; };
 const talkBereit = () => !!talk.netz && talk.netz.verbunden > 0;
 // Schon gehörte Durchsagen (Kennung -> Zeit), auch über ein Neuladen hinweg: Relays liefern nach dem Verbinden
@@ -300,11 +303,12 @@ async function talkHoeren(d) {
   const wer = (d.signatur || d.absender === k.schluessel) && k.name || k.schluessel.slice(0, 8);
   if (d.absender) talkKontaktMerken(d.absender, wer);
   if (d.privat && d.absender) pushLiveGehoert(d.absender);
-  talk.hoert = (d.privat ? '🔒 ' : '') + wer; talkZeigen();
+  const werSp = wer + (d.absender ? talkSpText(d.absender) : '');
+  talk.hoert = (d.privat ? '🔒 ' : '') + werSp; talkZeigen();
   if (opus) {
     const ms = await talkOpusHoeren(d.pakete).catch(() => 0);
     talk.hoert = '';
-    talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+    talkLog(`${d.privat ? '🔒 ' : ''}${werSp} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
     talkZeigen();
     return;
   }
@@ -321,7 +325,7 @@ async function talkHoeren(d) {
   await new Promise(r => setTimeout(r, ms + 300));
   talk.empf.beenden(slot);
   talk.hoert = '';
-  talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+  talkLog(`${d.privat ? '🔒 ' : ''}${werSp} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
   talkZeigen();
 }
 
@@ -394,20 +398,27 @@ function talkZeigen() {
 // die Durchsage geht dann versiegelt nur an deren Schlüssel. Nach dem Start spricht die Taste wieder an alle.
 const TALK_KONTAKTE_MAX = 8;
 let talkKontakte = store.get('talkKontakte', []), talkAn = null;
-function talkKontaktMerken(pk, name) {
+// sp = Sprachen des Kontakts (kommen mit seinem Standort-Event); ohne Angabe bleiben die zuletzt bekannten
+function talkKontaktMerken(pk, name, sp) {
   if (!/^[0-9a-f]{64}$/.test(pk)) return;
   const alt = talkKontakte.find(k => k.pk === pk);
-  if (alt?.name === name && talkKontakte[0] === alt) return;
-  talkKontakte = [{ pk, name }, ...talkKontakte.filter(k => k.pk !== pk)].slice(0, TALK_KONTAKTE_MAX);
+  sp = sp?.length ? sp : alt?.sp;
+  if (alt?.name === name && talkKontakte[0] === alt && String(alt.sp) === String(sp)) return;
+  talkKontakte = [{ pk, name, ...(sp?.length ? { sp } : {}) }, ...talkKontakte.filter(k => k.pk !== pk)].slice(0, TALK_KONTAKTE_MAX);
   store.set('talkKontakte', talkKontakte);
   talkAnZeigen();
 }
+// Sprachen als Flagge am Rufnamen, z. B. „SIMA 🇩🇪🇬🇧“; ohne passende Flagge das Kürzel
+const SP_FLAGGE = { de: 'DE', en: 'GB', fr: 'FR', it: 'IT', es: 'ES', nl: 'NL', pl: 'PL', cs: 'CZ', sk: 'SK', hr: 'HR', sl: 'SI', hu: 'HU', da: 'DK',
+  sv: 'SE', no: 'NO', nb: 'NO', fi: 'FI', pt: 'PT', el: 'GR', tr: 'TR', ro: 'RO', bg: 'BG', sr: 'RS', uk: 'UA', ru: 'RU', th: 'TH', et: 'EE', lv: 'LV', lt: 'LT' };
+const spFlaggen = sp => (sp || []).map(s => SP_FLAGGE[s] ? String.fromCodePoint(...[...SP_FLAGGE[s]].map(c => 0x1F1A5 + c.charCodeAt(0))) : s).join('');
+const talkSpText = pk => { const sp = talkKontakte.find(k => k.pk === pk)?.sp; return sp?.length ? ' ' + spFlaggen(sp) : ''; };
 function talkAnZeigen() {
   const k = talkKontakte.find(x => x.pk === talkAn);
   $('talkAn').textContent = k ? `🔒 an ${k.name} ▾` : 'an alle ▾';
   $('talkAn').classList.toggle('privat', !!k);
   $('talkAn').hidden = !talkKontakte.length;
-  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}</button>`)].join('');
+  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}${k.sp?.length ? ' ' + spFlaggen(k.sp) : ''}</button>`)].join('');
   $('talkAnMenu').querySelector(`[data-pk="${talkAn || ''}"]`)?.classList.add('on');
 }
 $('talkAn').onclick = () => { $('talkAnMenu').hidden = !$('talkAnMenu').hidden; };
@@ -443,7 +454,10 @@ document.addEventListener('pointerdown', () => {
 setInterval(() => { if (talkPrefs.on && talk.mod) { talkZeigen(); talkMikro(); if (talk.opus && talkPrefs.mode === 'vox' && Sprechfunk.tonBereit()) talkOpusBereit().then(talkLeser); } }, 1000);
 
 $('talkOn').checked = talkPrefs.on;
-$('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkPw').value = talkPrefs.pw;
+$('talkName').value = talkPrefs.name; $('talkPlz').value = talkPrefs.plz; $('talkSprachen').value = talkSprachen().join(' ');
+$('talkSprachen').onchange = () => { talkPrefs.sprachen = $('talkSprachen').value; $('talkSprachen').value = talkSprachen().join(' '); saveTalk(); talkSpZeigen(); };
+const talkSpZeigen = () => { $('talkSprachenHint').textContent = talkSprachen().length ? `Andere sehen ${spFlaggen(talkSprachen())} an deinem Namen.` : ''; };
+talkSpZeigen(); $('talkPw').value = talkPrefs.pw;
 $('talkMode').value = talkPrefs.mode; $('talkEmpf').value = talkPrefs.empf; $('talkEmpfVal').textContent = talkPrefs.empf + ' dB';
 $('talkHalt').value = String(talkPrefs.halt); $('talkRelays').value = talkPrefs.relays;
 $('talkOn').onchange = () => { talkPrefs.on = $('talkOn').checked; saveTalk(); talkStart(); };
