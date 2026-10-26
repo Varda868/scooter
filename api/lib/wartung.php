@@ -2,7 +2,7 @@
 // Gemeinsames für api/wartung.php und den Admin-Bereich „Wartung“: Aufgaben, Zustand in sw_meta
 defined('SW_API') || exit;
 
-const WARTUNG_AUFGABEN = ['relays', 'gesund', 'fehler', 'nacht', 'faehren-osm', 'faehren-se'];
+const WARTUNG_AUFGABEN = ['relays', 'gesund', 'fehler', 'nacht', 'faehren-osm', 'faehren-se', 'faehren-uk'];
 // Empfohlene Zeitpläne für Plesk (Cron-Stil) und was die Aufgabe tut
 const WARTUNG_PLAN = [
   'relays' => ['*/15 * * * *', 'Relay-Wächter: eigenes Relay erreichbar, Zertifikat noch ≥ 2 Tage'],

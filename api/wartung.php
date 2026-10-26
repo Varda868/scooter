@@ -5,7 +5,7 @@
 //   ?was=gesund   täglich: Valhalla, Photon, Overpass, Wetter, TomTom-Schlüssel, Alter der POI-Daten, Speicher
 //   ?was=fehler   täglich: neue Fehlerberichte seit der letzten Meldung
 //   ?was=nacht    täglich nachts: Aufräumen und Sicherung von Datenbank (SQLite) und config.php, 7 Tage
-//   ?was=faehren-osm, faehren-se   Fährdaten (Admin → Fährdaten): Auswertung der Kacheln, Schweden-Fahrplan
+//   ?was=faehren-osm, faehren-se, faehren-uk   Fährdaten (Admin → Fährdaten): Auswertung der Kacheln, Fahrpläne Schweden/UK
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
 require __DIR__ . '/lib/relays.php';

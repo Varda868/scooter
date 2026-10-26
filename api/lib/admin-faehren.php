@@ -34,6 +34,7 @@ function bereich_faehren(): void {
         if (($neu = trim((string)($_POST[$f] ?? ''))) === '') continue;
         if (preg_match('/^[\x21-\x7e]{3,300}$/', $neu)) $c['werte'][$f] = $neu; else { $fehler = "$label: Zeichen ungültig (keine Leerzeichen/Umlaute)."; break; }
       }
+      if (!$fehler && $z === 'tnds') $c['faehren']['uk_klartext'] = !empty($_POST['uk_klartext']);
       if (!$fehler && $z === 'trafiklab') {
         // neuer Schlüssel oder Datensatz: Fehlversuche zurücksetzen; anderer Datensatz → ETag gilt nicht mehr
         $st = faehr_se_stand(); $st['fehl'] = 0;
@@ -87,12 +88,13 @@ function bereich_faehren(): void {
     $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="lauf"><input type="hidden" name="q" value="' . $id . '"><button class="klein"' .
       ($id === 'se' && $n >= faehr_se_sperre_ab() ? ' disabled title="Schon ' . $n . ' Abrufe in 30 Tagen"' : '') . '>↻ ' . h($name) . ' jetzt</button>' .
       // ohne JavaScript (CSP): Pflicht-Häkchen als Bestätigung
-      ($id === 'se' ? '<label class="zeile leise"><input type="checkbox" name="ok" value="1" required> lädt die ganze Datei (~200 MB) und zählt ' . ($n + 1) . ' von ' . faehr_se_limit() . '</label>' : '') . '</form>';
+      ($id === 'se' ? '<label class="zeile leise"><input type="checkbox" name="ok" value="1" required> lädt die ganze Datei (~800 MB) und zählt ' . ($n + 1) . ' von ' . faehr_se_limit() . '</label>' : '') . '</form>';
+  $html .= is_file(sw_daten() . '/tnds-S.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="uk"><button class="klein">⟳ UK neu auswerten (ohne Abruf)</button></form>' : '';
   $html .= is_file(sw_daten() . '/gtfs-se.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="se"><button class="klein">⟳ Schweden neu auswerten (ohne Abruf)</button></form>' : '';
   $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="testmail"><button class="klein">✉ Testmail</button></form></div>' .
     '<p class="leise">In Plesk unter <b>Geplante Aufgaben</b> je Quelle eine Aufgabe „URL abrufen“ mit der Adresse und dem Zeitplan von oben anlegen. ' .
     'Bei einem Fehler antwortet die Adresse mit HTTP 500. Wer hier eine Mail-Adresse einträgt, kann Plesk auf „Nicht benachrichtigen“ stellen, sonst kommen Fehler doppelt. ' .
-    'Der Schweden-Lauf lädt rund 200 MB und kann mehrere Minuten dauern; „jetzt“ wartet so lange. „Neu auswerten“ nimmt die Datei auf dem Server und verbraucht keinen Abruf.</p>';
+    'Der Schweden-Lauf lädt rund 800 MB und kann mehrere Minuten dauern; „jetzt“ wartet so lange. „Neu auswerten“ nimmt die Datei auf dem Server und verbraucht keinen Abruf.</p>';
 
   // Qualitätsbericht aus dem letzten OSM-Lauf
   $b = json_decode((string)@file_get_contents(sw_daten() . '/faehren-bericht.json'), true);
@@ -113,6 +115,8 @@ function bereich_faehren(): void {
       $html .= '<label>' . h($label) . ' <span class="leise">' . ($w !== '' ? 'gesetzt (…' . h(substr($w, -4)) . ')' : 'nicht gesetzt') . '</span>' .
         '<input type="password" name="' . h($f) . '" autocomplete="off" placeholder="' . ($w !== '' ? 'leer lassen = unverändert' : h($label) . ' eingeben') . '"></label>';
     }
+    if ($z === 'tnds') $html .= '<label class="zeile"><input type="checkbox" name="uk_klartext" value="1"' . (faehr_uk_klartext() ? ' checked' : '') .
+      '> unverschlüsseltes FTP erlauben, falls der Server kein FTPS kann (Passwort geht dann im Klartext übers Netz)</label>';
     if ($z === 'trafiklab') {
       $html .= '<label>Datensatz (muss zum Schlüssel passen)<select name="se_datensatz">';
       foreach (FAEHR_SE_DATENSAETZE as $ds => [$dn, , $lim, $alt]) $html .= '<option value="' . $ds . '"' . ($ds === faehr_se_datensatz() ? ' selected' : '') . '>' . h($dn) . " ($lim/30 Tage" . ($alt ? ', alt' : '') . ')</option>';
