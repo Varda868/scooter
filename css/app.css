@@ -83,7 +83,7 @@
   legend { font-size:13px; color:var(--muted); padding:0 4px; }
   fieldset label { display:inline-flex; align-items:center; gap:4px; margin:4px 10px 4px 0; color:var(--fg); font-size:14px; }
   #pois { list-style:none; padding:0; font-size:13px; }
-  #pois li { margin:4px 0; cursor:pointer; }
+  #pois li { margin:4px 0; cursor:pointer; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
   #pois li:hover { text-decoration:underline; }
   #rollerBox input[type=number], .roller-add input { width:100%; padding:8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
   .roller-add { display:flex; gap:6px; margin-top:6px; }

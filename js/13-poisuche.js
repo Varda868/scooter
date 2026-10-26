@@ -247,10 +247,10 @@ function showPois(elements, active, note, laeuft) {
     const uhr = ank.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     p.marker = L.marker([p.lat, p.lon], {
       icon: L.divIcon({ className: 'poi-icon' + (offen === false ? ' poi-zu' : ''), html: p.type.id === 'fuel' ? `⛽<span class="poi-badge">${fuelBadges(p.tags)}</span>` : p.type.icon, iconSize: [24, 24] }), title
-    }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
+    }).bindPopup(() => poiPopup(p, `<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
       (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') +
       (offen == null || p.tags.automated === 'yes' ? '' : offen ? `<br>🟢 bei Ankunft (${uhr}) offen` : `<br>🔴 bei Ankunft (${uhr}) zu`) + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + contactInfo(p.tags) +
-      (p.type.id === 'fuel' && +roller.tank > 0 ? '<br><button data-tank-voll>⛽ Hier vollgetankt</button>' : '')).addTo(poiLayer);
+      (p.type.id === 'fuel' && +roller.tank > 0 ? '<br><button data-tank-voll>⛽ Hier vollgetankt</button>' : ''))).addTo(poiLayer);
   }
   $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`
     : pois.length ? `${pois.length} POIs entlang der Route` : 'Keine POIs im Umkreis gefunden.') +
@@ -261,5 +261,30 @@ function showPois(elements, active, note, laeuft) {
     const p = pois[e.target.closest('li')?.dataset.i];
     if (p) { map.setView([p.lat, p.lon], 16); p.marker.openPopup(); }
   };
+  // Langer Druck (Android: contextmenu) übernimmt den POI gleich als Zwischenziel
+  $('pois').oncontextmenu = e => {
+    const p = pois[e.target.closest('li')?.dataset.i];
+    if (!p) return;
+    e.preventDefault();
+    poiAlsHalt(p, 'via');
+    mapBusy('poi', `➕ ${p.tags.name || p.tags.brand || p.type.name} als Zwischenziel`, 3000);
+  };
   return pois.length;
+}
+
+// POI-Popup: Info plus dieselben Knöpfe wie bei Tankstopps und eigenen POIs
+function poiPopup(p, html) {
+  const box = document.createElement('div');
+  box.innerHTML = html;
+  box.append(menuBox([['via', '➕ Als Zwischenziel'], ['end', '🏁 Als Ziel']], act => poiAlsHalt(p, act), 'via'));
+  return box;
+}
+
+// POI als Halt übernehmen; der Name wird zum Halt-Text wie bei den Tankstopps
+function poiAlsHalt(p, act) {
+  const ll = L.latLng(p.lat, p.lon);
+  changeWaypoints(() => {
+    if (act === 'end') setEnd(waypoints.length - 1, ll); else insertVia(ll);
+    waypoints.find(w => w.latlng === ll).text = `${p.type.icon} ${p.tags.name || p.tags.brand || p.type.name}`;
+  });
 }
