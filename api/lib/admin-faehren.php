@@ -73,7 +73,7 @@ function bereich_faehren(): void {
         : '<span class="leise">' . ($art === 'lauf' ? 'noch nie' : 'Platzhalter') . '</span>') . '</td></tr>';
   }
   $html .= '</table>' .
-    '<p class="leise">Trafiklab-Abrufe in den letzten 30 Tagen: <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> · „jetzt“ ab ' . FAEHR_SE_SPERRE . ' gesperrt' .
+    '<p class="leise">Trafiklab-Abrufe in den letzten 30 Tagen: <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . faehr_se_limit() . '</b> · „jetzt“ ab ' . faehr_se_sperre_ab() . ' gesperrt' .
     (($t = faehr_se_stand()['ok_t']) ? ' · letzter erfolgreicher Abruf ' . admin_zeit((int)$t) : '') . '</p>' .
     '<label>Mail an <input type="email" name="mail" value="' . h($e['mail']) . '" placeholder="leer = keine eigene Mail (Plesk meldet Fehler trotzdem)"></label>' .
     '<label class="zeile"><input type="radio" name="mail_art" value="fehler"' . ($e['mail_art'] === 'fehler' ? ' checked' : '') . '> nur bei Fehlern</label>' .
@@ -83,7 +83,7 @@ function bereich_faehren(): void {
   $se = faehr_se_stand(); $n = count($se['abrufe']);
   foreach (FAEHR_QUELLEN as $id => [$name, $art]) if ($art === 'lauf')
     $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="lauf"><input type="hidden" name="q" value="' . $id . '"><button class="klein"' .
-      ($id === 'se' && $n >= FAEHR_SE_SPERRE ? ' disabled title="Schon ' . $n . ' Abrufe in 30 Tagen"' : '') . '>↻ ' . h($name) . ' jetzt</button></form>';
+      ($id === 'se' && $n >= faehr_se_sperre_ab() ? ' disabled title="Schon ' . $n . ' Abrufe in 30 Tagen"' : '') . '>↻ ' . h($name) . ' jetzt</button></form>';
   $html .= is_file(sw_daten() . '/gtfs-se.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="se"><button class="klein">⟳ Schweden neu auswerten (ohne Abruf)</button></form>' : '';
   $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="testmail"><button class="klein">✉ Testmail</button></form></div>' .
     '<p class="leise">In Plesk unter <b>Geplante Aufgaben</b> je Quelle eine Aufgabe „URL abrufen“ mit der Adresse und dem Zeitplan von oben anlegen. ' .
@@ -99,7 +99,7 @@ function bereich_faehren(): void {
     $html .= '<form method="post" class="schluessel">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="schluessel"><input type="hidden" name="z" value="' . h($z) . '">' .
       '<h3>' . ['voll' => '✅', 'teil' => '⚠️', 'leer' => '○'][$st] . ' ' . h($d['name']) . '</h3>' .
       '<div class="leise">' . h($d['wofuer']) . ' · Limit: ' . h($d['limit']) .
-      ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' .
+      ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . faehr_se_limit() . '</b> genutzt' .
         (($st === 'voll' && faehr_se_gesperrt($se_st = faehr_se_stand(), (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ abgelehnt (passt nicht zum Datensatz oder noch nicht aktiv) – gesperrt bis ' . date('H:i', (int)$se_st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . '</b>' : '') : '') .
       ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
       '<div>' . sw_schluessel_link($z) . '</div>';

@@ -20,8 +20,9 @@ const FAEHR_QUELLEN = [
 ];
 // Trafiklab-Schlüssel gelten je API: der Datensatz im Admin muss zu dem Schlüssel passen
 const FAEHR_SE_DATENSAETZE = [
-  'sverige2' => ['GTFS Sverige 2', 'https://opendata.samtrafiken.se/gtfs-sverige-2/sweden.zip?key='],
-  'sweden3' => ['GTFS Sweden 3 Static data', 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key='],
+  // [Name, URL, Abrufe je 30 Tage mit Bronze-Schlüssel]; der Server kennt kein Range, jeder Abruf lädt die ganze Datei
+  'sverige2' => ['GTFS Sverige 2', 'https://opendata.samtrafiken.se/gtfs-sverige-2/sweden.zip?key=', 50],
+  'sweden3' => ['GTFS Sweden 3 Static data', 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key=', 60],
 ];
 function faehr_se_datensatz(): string {
   $d = (string)(sw_config()['faehren']['se_datensatz'] ?? 'sverige2');
@@ -286,13 +287,24 @@ function faehr_finde(array $linien, float $la1, float $lo1, float $la2, float $l
 // Trafiklab erlaubt mit dem Gratis-Schlüssel nur 50 Abrufe in 30 Tagen. Deshalb: höchstens ein Download in
 // FAEHR_SE_ABSTAND_T Tagen, nach einem Fehler höchstens eine Wiederholung am nächsten Tag, ETag/If-Modified-Since,
 // Zähler aller Abrufe (auch fehlgeschlagener) und die ZIP-Datei bleibt liegen, damit sich neu auswerten lässt.
-const FAEHR_SE_LIMIT = 50, FAEHR_SE_SPERRE = 40, FAEHR_SE_ABSTAND_T = 27;
+const FAEHR_SE_ABSTAND_T = 27;
+// Kontingent je Datensatz (jeder Trafiklab-Schlüssel zählt für sich); „jetzt“ 10 vor der Grenze gesperrt, Zeitplan 5 davor
+function faehr_se_limit(): int { return FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][2]; }
+function faehr_se_sperre_ab(): int { return faehr_se_limit() - 10; }
 function faehr_se_stand(?array $neu = null): array {
-  $datei = sw_daten(true) . '/gtfs-se.json';
-  if ($neu !== null) { @file_put_contents($datei, json_encode($neu)); return $neu; }
-  $s = json_decode((string)@file_get_contents($datei), true) ?: [];
-  $s['abrufe'] = array_values(array_filter((array)($s['abrufe'] ?? []), fn($t) => $t > time() - 30 * 86400));
-  return $s + ['etag' => '', 'lastmod' => '', 'ok_t' => 0, 'fehl' => 0, 'versuch_t' => 0];
+  // Abrufe je Datensatz (abrufe_ds); 'abrufe' ist die Sicht auf den eingestellten Datensatz
+  $datei = sw_daten(true) . '/gtfs-se.json'; $ds = faehr_se_datensatz();
+  $roh = json_decode((string)@file_get_contents($datei), true) ?: [];
+  if (!isset($roh['abrufe_ds'])) $roh['abrufe_ds'] = ['sverige2' => (array)($roh['abrufe'] ?? [])];  // alter Stand: alles war Sverige 2
+  if ($neu !== null) {
+    $neu['abrufe_ds'] = $roh['abrufe_ds']; $neu['abrufe_ds'][$ds] = array_values((array)($neu['abrufe'] ?? []));
+    unset($neu['abrufe']);
+    @file_put_contents($datei, json_encode($neu));
+    return faehr_se_stand();
+  }
+  foreach ($roh['abrufe_ds'] as $k => $l) $roh['abrufe_ds'][$k] = array_values(array_filter((array)$l, fn($t) => $t > time() - 30 * 86400));
+  $roh['abrufe'] = $roh['abrufe_ds'][$ds] ?? [];
+  return $roh + ['etag' => '', 'lastmod' => '', 'ok_t' => 0, 'fehl' => 0, 'versuch_t' => 0];
 }
 function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_auswerten = false): ?int {
   $zip = sw_daten(true) . '/gtfs-se.zip';
@@ -309,7 +321,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
     $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf bis ' . date('H:i', (int)$st['abgelehnt_t'] + FAEHR_SE_SPERRE_H * 3600) . ', damit kein Kontingent verbraucht wird. Frisch angelegte Schlüssel brauchen manchmal etwas; unter „Schlüssel & Konten“ lässt sich die Sperre auch sofort aufheben.';
     return null;
   }
-  if ($n >= ($manuell ? FAEHR_SE_SPERRE : FAEHR_SE_LIMIT - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . FAEHR_SE_LIMIT . ')'; return null; }
+  if ($n >= ($manuell ? faehr_se_sperre_ab() : faehr_se_limit() - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . faehr_se_limit() . ')'; return null; }
   if (!$manuell) {
     // Planmäßig: Daten noch frisch → nichts tun; nach Fehlern höchstens einmal am nächsten Tag wiederholen
     if ($st['ok_t'] && time() - $st['ok_t'] < FAEHR_SE_ABSTAND_T * 86400) { $i[] = 'Letzter Abruf vom ' . date('d.m.Y', $st['ok_t']) . ', noch aktuell'; return null; }
@@ -330,7 +342,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $err = curl_error($c);
   curl_close($c); fclose($fh);
   $st['abrufe'][] = time(); $st['versuch_t'] = time();
-  $i[] = 'Abrufe in den letzten 30 Tagen: ' . count($st['abrufe']) . ' von ' . FAEHR_SE_LIMIT . ' (dieser mitgezählt)';
+  $i[] = 'Abrufe in den letzten 30 Tagen: ' . count($st['abrufe']) . ' von ' . faehr_se_limit() . ' (dieser mitgezählt)';
   if ($ok && $code === 304) {
     @unlink("$zip.tmp");
     $st['ok_t'] = time(); $st['fehl'] = 0; faehr_se_stand($st);

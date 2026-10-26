@@ -69,7 +69,7 @@ const SW_SCHLUESSEL = [
   'trafiklab' => ['name' => 'Trafiklab · GTFS Sverige 2 / Sweden 3', 'wofuer' => 'Fahrpläne schwedischer Fähren',
     'felder' => ['trafiklab_key' => 'API-Schlüssel'],
     'login' => 'https://developer.trafiklab.se/login', 'konto' => 'https://www.trafiklab.se/docs/using-trafiklab/creating-an-account/',
-    'limit' => '50 Abrufe pro 30 Tage (Bronze)', 'lizenz' => 'CC0'],
+    'limit' => 'Bronze: 50 (Sverige 2) bzw. 60 (Sweden 3) Abrufe pro 30 Tage, je Schlüssel', 'lizenz' => 'CC0'],
   'trafikverket' => ['name' => 'Trafikverket Open API', 'wofuer' => 'Schwedische Straßenfähren (Färjeleden) in Echtzeit',
     'felder' => ['trafikverket_key' => 'API-Schlüssel'],
     'login' => 'https://www.trafikverket.se/e-tjanster/trafikverkets-oppna-api-for-trafikinformation/', 'konto' => '',
