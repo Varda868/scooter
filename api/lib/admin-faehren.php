@@ -34,6 +34,7 @@ function bereich_faehren(): void {
         if (($neu = trim((string)($_POST[$f] ?? ''))) === '') continue;
         if (preg_match('/^[\x21-\x7e]{3,300}$/', $neu)) $c['werte'][$f] = $neu; else { $fehler = "$label: Zeichen ungültig (keine Leerzeichen/Umlaute)."; break; }
       }
+      if (!$fehler && $z === 'trafiklab') { $st = faehr_se_stand(); $st['fehl'] = 0; faehr_se_stand($st); }  // neuer Schlüssel: Fehlversuche zurücksetzen
       if (!$fehler) { sw_config_speichern($c); admin_zurueck('faehren', SW_SCHLUESSEL[$z]['name'] . (!empty($_POST['weg']) ? ': gelöscht' : ': gespeichert')); }
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
@@ -89,7 +90,8 @@ function bereich_faehren(): void {
     $html .= '<form method="post" class="schluessel">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="schluessel"><input type="hidden" name="z" value="' . h($z) . '">' .
       '<h3>' . ['voll' => '✅', 'teil' => '⚠️', 'leer' => '○'][$st] . ' ' . h($d['name']) . '</h3>' .
       '<div class="leise">' . h($d['wofuer']) . ' · Limit: ' . h($d['limit']) .
-      ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' : '') .
+      ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' .
+        (($st === 'voll' && (faehr_se_stand()['abgelehnt'] ?? '') === hash('sha256', (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ von Trafiklab abgelehnt – Schlüssel für „GTFS Sverige 2“ eintragen</b>' : '') : '') .
       ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
       '<div>' . sw_schluessel_link($z) . '</div>';
     foreach ($d['felder'] as $f => $label) {

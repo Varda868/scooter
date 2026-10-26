@@ -138,12 +138,15 @@ function faehr_warnungen(): array {
 function admin_zeit_kurz(int $t): string { return date('d.m. H:i', $t); }
 
 // Dauer aus OSM (duration=HH:MM, H:MM:SS, ISO 8601 PT…, Minuten) in Minuten; null, wenn unlesbar
-function faehr_dauer_min(?string $d): ?float {
-  $d = trim((string)$d);
+function faehr_dauer_min($d): ?float {
+  // Ganzzahlen ausdrücklich umwandeln: nicht getroffene Gruppen liefert preg_match als '' (→ TypeError bei '' * 60)
+  $d = trim(str_replace(',', '.', (string)$d));
   if ($d === '') return null;
-  if (preg_match('/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/', $d, $m)) return $m[1] * 60 + $m[2] + ($m[3] ?? 0) / 60;
-  if (preg_match('/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i', $d, $m) && $d !== 'PT') return ($m[1] ?? 0) * 60 + ($m[2] ?? 0) + ($m[3] ?? 0) / 60;
-  if (preg_match('/^\d+$/', $d)) return (float)$d;
+  if (preg_match('/^(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/', $d, $m)) return (int)$m[1] * 60 + (int)$m[2] + (int)($m[3] ?? 0) / 60;
+  if (preg_match('/^P(?:(\d+)D)?T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+)S)?$/i', $d, $m) && !preg_match('/T$/i', $d))
+    return (int)($m[1] ?? 0) * 1440 + (float)($m[2] ?? 0) * 60 + (float)($m[3] ?? 0) + (int)($m[4] ?? 0) / 60;
+  if (preg_match('/^\d+$/', $d)) return (float)$d;  // ganze Zahl = Minuten; Dezimalzahlen sind mehrdeutig → unlesbar
+  if (preg_match('/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*(?:min|m))?$/i', $d, $m) && ($m[1] ?? '') . ($m[2] ?? '') !== '') return (int)($m[1] ?? 0) * 60 + (int)($m[2] ?? 0);
   return null;
 }
 function faehr_m(float $la1, float $lo1, float $la2, float $lo2): float {
@@ -287,7 +290,10 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $key = (string)sw_wert('trafiklab_key');
   if ($key === '') { $i[] = 'Kein Trafiklab-Schlüssel eingetragen, übersprungen'; return null; }
   $st = faehr_se_stand(); $n = count($st['abrufe']);
-  $i[] = "Abrufe in den letzten 30 Tagen: $n von " . FAEHR_SE_LIMIT;
+  if (($st['abgelehnt'] ?? '') === hash('sha256', $key)) {
+    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf, damit kein Kontingent verbraucht wird. Unter „Schlüssel & Konten“ einen gültigen Schlüssel für „GTFS Sverige 2“ eintragen.';
+    return null;
+  }
   if ($n >= ($manuell ? FAEHR_SE_SPERRE : FAEHR_SE_LIMIT - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . FAEHR_SE_LIMIT . ')'; return null; }
   if (!$manuell) {
     // Planmäßig: Daten noch frisch → nichts tun; nach Fehlern höchstens einmal am nächsten Tag wiederholen
@@ -309,6 +315,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $err = curl_error($c);
   curl_close($c); fclose($fh);
   $st['abrufe'][] = time(); $st['versuch_t'] = time();
+  $i[] = 'Abrufe in den letzten 30 Tagen: ' . count($st['abrufe']) . ' von ' . FAEHR_SE_LIMIT . ' (dieser mitgezählt)';
   if ($ok && $code === 304) {
     @unlink("$zip.tmp");
     $st['ok_t'] = time(); $st['fehl'] = 0; faehr_se_stand($st);
@@ -317,9 +324,11 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   }
   if (!$ok || $code !== 200) {
     @unlink("$zip.tmp");
-    $st['fehl']++; faehr_se_stand($st);
+    $st['fehl']++;
+    if ($code === 401 || $code === 403) $st['abgelehnt'] = hash('sha256', $key);
+    faehr_se_stand($st);
     // Den Schlüssel nie in Meldungen: nur Status
-    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code)" : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
+    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): ungültig oder nicht für „GTFS Sverige 2“ freigeschaltet. Bei Trafiklab im Projekt die API „GTFS Sverige 2“ hinzufügen und deren Schlüssel nehmen (neue Schlüssel brauchen ggf. einige Minuten). Weitere Abrufe erst mit neuem Schlüssel." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
       "Download fehlgeschlagen (HTTP $code" . ($err ? ', ' . preg_replace('/key=[^&\s]+/', 'key=…', $err) : '') . ')');
     return null;
   }
