@@ -375,7 +375,7 @@ function clearRoute() {
   // Höhenprofil samt Steigungsschildern weg; eine noch laufende Höhenanfrage verfällt
   $('elevation').innerHTML = ''; eleData = null; elevationRequest++; gradeSignLayer.clearLayers();
   renderIncidents([]);
-  wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = '';
+  wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];
   wxShelter = false;
   routeStages = []; routeStageNights = []; currentTrip = null; tripClimb = null; stageLayer.clearLayers(); $('stageSummary').textContent = '';
   tankPlan();
