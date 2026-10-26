@@ -5,6 +5,7 @@
 //   ?was=gesund   täglich: Valhalla, Photon, Overpass, Wetter, TomTom-Schlüssel, Alter der POI-Daten, Speicher
 //   ?was=fehler   täglich: neue Fehlerberichte seit der letzten Meldung
 //   ?was=nacht    täglich nachts: Aufräumen und Sicherung von Datenbank (SQLite) und config.php, 7 Tage
+//   ?was=faehren-osm, faehren-se   Fährdaten (Admin → Fährdaten): Auswertung der Kacheln, Schweden-Fahrplan
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
 require __DIR__ . '/lib/relays.php';
@@ -22,7 +23,11 @@ if (!in_array($was, WARTUNG_AUFGABEN, true)) { http_response_code(400); exit("wa
 @set_time_limit(180);
 
 $probleme = []; $info = [];
-('wartung_' . $was)($probleme, $info);
+if (str_starts_with($was, 'faehren-')) {
+  // Eigener Verlauf und eigene Mail (lib/faehren.php)
+  require __DIR__ . '/lib/faehren.php';
+  [$probleme, $info] = faehr_lauf(substr($was, 8));
+} else ('wartung_' . $was)($probleme, $info);
 wartung_merken($was, $probleme);
 if ($probleme) http_response_code(500);
 echo ($probleme ? "PROBLEM\n- " . implode("\n- ", $probleme) . "\n\n" : "ok\n"), $info ? implode("\n", $info) . "\n" : '';

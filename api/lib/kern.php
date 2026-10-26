@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 6;
+const SW_SCHEMA = 7;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -50,6 +50,9 @@ const SW_STANDARD = [
   'overpass_urls' => ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter'],
   'open_meteo_url' => 'https://api.open-meteo.com/v1/forecast',
   'tomtom_key' => '',
+  // Zugänge für Server-Läufe (Admin → Fährdaten → Schlüssel & Konten, siehe SW_SCHLUESSEL)
+  'trafiklab_key' => '', 'trafikverket_key' => '', 'tnds_user' => '', 'tnds_pass' => '',
+  'barentswatch_id' => '', 'barentswatch_secret' => '', 'aisstream_key' => '',
   'proxy_an' => true,
   'origins' => ['https://scooter.thai-klasse.de'],
   // Talk-Relays in dieser Reihenfolge; eigen = selbst betriebenes Relay (im Dashboard hervorgehoben, Zertifikat genauer beobachtet)
@@ -59,6 +62,42 @@ const SW_STANDARD = [
     ['url' => 'wss://nostr.mom', 'an' => true, 'eigen' => false],
   ],
 ];
+// Schlüssel & Konten (Admin → Fährdaten): je Zugang die Felder in werte[], wo man sich anmeldet bzw. ein Konto anlegt,
+// Abruflimit und Lizenz. Neuer Zugang = hier ein Eintrag (Felder auch in SW_STANDARD); leere Felder = Quelle wird übersprungen.
+// Werte werden nie zurückgezeigt, nur „gesetzt“ und die letzten 4 Zeichen.
+const SW_SCHLUESSEL = [
+  'trafiklab' => ['name' => 'Trafiklab · GTFS Sverige 2 / Sweden 3', 'wofuer' => 'Fahrpläne schwedischer Fähren',
+    'felder' => ['trafiklab_key' => 'API-Schlüssel'],
+    'login' => 'https://developer.trafiklab.se/login', 'konto' => 'https://www.trafiklab.se/docs/using-trafiklab/creating-an-account/',
+    'limit' => '50 Abrufe pro 30 Tage (Bronze)', 'lizenz' => 'CC0'],
+  'trafikverket' => ['name' => 'Trafikverket Open API', 'wofuer' => 'Schwedische Straßenfähren (Färjeleden) in Echtzeit',
+    'felder' => ['trafikverket_key' => 'API-Schlüssel'],
+    'login' => 'https://www.trafikverket.se/e-tjanster/trafikverkets-oppna-api-for-trafikinformation/', 'konto' => '',
+    'limit' => 'laut Anbieter fair use', 'lizenz' => 'CC0'],
+  'tnds' => ['name' => 'Traveline National Dataset (TNDS)', 'wofuer' => 'Fahrpläne britischer Fähren (TransXChange)',
+    'felder' => ['tnds_user' => 'FTP-Benutzer', 'tnds_pass' => 'FTP-Passwort'],
+    'login' => 'https://www.data.gov.uk/dataset/traveline-national-dataset', 'konto' => '',
+    'limit' => 'wöchentlicher Stand, Abruf per FTP', 'lizenz' => 'OGL'],
+  'barentswatch' => ['name' => 'BarentsWatch AIS', 'wofuer' => 'Schiffspositionen Norwegen (Fähren live)',
+    'felder' => ['barentswatch_id' => 'Client-ID', 'barentswatch_secret' => 'Client-Secret'],
+    'login' => 'https://www.barentswatch.no/minside/', 'konto' => 'https://developer.barentswatch.no/docs/AIS/live-ais-api',
+    'limit' => 'laut Anbieter', 'lizenz' => 'NLOD'],
+  'aisstream' => ['name' => 'aisstream.io', 'wofuer' => 'Schiffspositionen weltweit (Fähren live)',
+    'felder' => ['aisstream_key' => 'API-Schlüssel'],
+    'login' => 'https://aisstream.io/authenticate', 'konto' => 'https://aisstream.io',
+    'limit' => 'kostenlos, ohne feste Zusage', 'lizenz' => 'laut Anbieter'],
+];
+function sw_schluessel_link(string $zugang): string {
+  $z = SW_SCHLUESSEL[$zugang] ?? null;
+  if (!$z) return '';
+  $a = fn($url, $text) => '<a href="' . h($url) . '" target="_blank" rel="noopener noreferrer">' . h($text) . '</a>';
+  return '<span class="schluessel-link">' . $a($z['login'], 'Login / Anmeldung ↗') . ($z['konto'] ? ' · ' . $a($z['konto'], 'Infos & Konto ↗') : '') . '</span>';
+}
+// 'voll' = alle Felder gesetzt, 'teil' = einige, 'leer' = keins (Quelle wird übersprungen)
+function sw_schluessel_status(string $zugang): string {
+  $n = count(array_filter(array_keys(SW_SCHLUESSEL[$zugang]['felder']), fn($f) => (string)sw_wert($f) !== ''));
+  return $n === 0 ? 'leer' : ($n === count(SW_SCHLUESSEL[$zugang]['felder']) ? 'voll' : 'teil');
+}
 function sw_config(): array {
   static $c = null;
   if ($c !== null) return $c;
@@ -135,6 +174,10 @@ function sw_schema(PDO $db): void {
   // v6: verschlüsselte Profile für den Abgleich zwischen eigenen Geräten (Schlüssel und Fach-Kennung kennt nur die App)
   if ($v < 6) {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_profil (id VARCHAR(64) PRIMARY KEY, t INTEGER NOT NULL, abruf INTEGER, groesse INTEGER NOT NULL, ip VARCHAR(64), daten " . (sw_mysql() ? 'LONGTEXT' : 'TEXT') . ")");
+  }
+  // v7: Verlauf der Fährdaten-Läufe (Admin → Fährdaten)
+  if ($v < 7) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_faehrlauf (id $id, t INTEGER NOT NULL, quelle VARCHAR(16) NOT NULL, ms INTEGER, ok INTEGER NOT NULL, linien INTEGER, text $txt)");
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);

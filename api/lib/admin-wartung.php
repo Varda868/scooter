@@ -15,6 +15,6 @@ function bereich_wartung(): void {
     $html .= '<tr><td><b>' . h($text) . '</b><pre>' . h($basis . $was) . '</pre></td><td><code>' . h($cron) . '</code></td><td>' .
       ($s ? admin_zeit((int)$s['t']) . '<br>' . ($s['ok'] ? '✅ ok' : '❌ ' . h((string)$s['p'])) : '<span class="leise">noch nie</span>') . '</td></tr>';
   }
-  $html .= '</table><p class="leise">„relays“ ersetzt die Adresse relaypruefung.php aus dem Bereich Relays (gleiches Token). Neues Token dort über „Neue Cron-Adresse“; danach alle Aufgaben in Plesk anpassen.</p>';
+  $html .= '</table><p>Die Läufe für Fährdaten (faehren-osm, faehren-se) stehen mit Zeitplan und Verlauf unter <a href="?s=faehren">Fährdaten</a>.</p><p class="leise">„relays“ ersetzt die Adresse relaypruefung.php aus dem Bereich Relays (gleiches Token). Neues Token dort über „Neue Cron-Adresse“; danach alle Aufgaben in Plesk anpassen.</p>';
   admin_seite('Wartung', $html);
 }
