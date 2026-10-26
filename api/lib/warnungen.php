@@ -117,16 +117,30 @@ const WARN_LAND = ['AT' => 'austria', 'BA' => 'bosnia-herzegovina', 'BE' => 'bel
   'HR' => 'croatia', 'HU' => 'hungary', 'IE' => 'ireland', 'IL' => 'israel', 'IS' => 'iceland', 'IT' => 'italy', 'LT' => 'lithuania',
   'LU' => 'luxembourg', 'LV' => 'latvia', 'MD' => 'moldova', 'ME' => 'montenegro', 'MK' => 'republic-of-north-macedonia',
   'MT' => 'malta', 'NL' => 'netherlands', 'NO' => 'norway', 'PL' => 'poland', 'PT' => 'portugal', 'RO' => 'romania',
-  'RS' => 'serbia', 'SE' => 'sweden', 'SI' => 'slovenia', 'SK' => 'slovakia'];
+  'RS' => 'serbia', 'SE' => 'sweden', 'SI' => 'slovenia', 'SK' => 'slovakia', 'GB' => 'united-kingdom', 'CH' => 'switzerland'];
+// Länder ohne Umrisse in emma.json (melden nur Polygone): grob über den Rahmen [Süd, West, Nord, Ost]
+const WARN_LAND_RAHMEN = ['GB' => [49.8, -8.7, 60.9, 1.8], 'CH' => [45.8, 5.95, 47.85, 10.5]];
 // awareness_type „<n>; <Name>“ → Art
 const WARN_ART_MA = [1 => 'wind', 2 => 'glaette', 3 => 'gewitter', 4 => 'nebel', 5 => 'hitze', 6 => 'kaelte', 7 => 'kueste',
   8 => 'feuer', 9 => 'lawine', 10 => 'regen', 12 => 'regen', 13 => 'regen'];
 const WARN_MA_TTL = 1200;
 
-function warn_emma(): array {
-  static $r = null;
-  if ($r === null) $r = json_decode((string)@file_get_contents(__DIR__ . '/emma.json'), true)['regionen'] ?? [];
-  return $r;
+function warn_emma(string $teil = 'regionen'): array {
+  static $j = null;
+  $j ??= json_decode((string)@file_get_contents(__DIR__ . '/emma.json'), true) ?: [];
+  return $j[$teil] ?? [];
+}
+// CAP-Polygon „lat,lon lat,lon …“ → [Rahmen [W, S, O, N], Ring in Tausendstelgrad lon, lat, …]
+function warn_polygon(string $s): ?array {
+  $ring = [];
+  foreach (preg_split('/\s+/', trim($s)) as $paar) {
+    $x = explode(',', $paar);
+    if (count($x) !== 2 || !is_numeric($x[0]) || !is_numeric($x[1])) return null;
+    $ring[] = (int)round($x[1] * 1000); $ring[] = (int)round($x[0] * 1000);
+  }
+  if (count($ring) < 6) return null;
+  $lo = array_filter($ring, fn($k) => $k % 2 === 0, ARRAY_FILTER_USE_KEY); $la = array_diff_key($ring, $lo);
+  return [[min($lo) / 1000, min($la) / 1000, max($lo) / 1000, max($la) / 1000], $ring];
 }
 // Punkt in Ring (flache Liste in Tausendstelgrad lon, lat, …), Strahlverfahren
 function warn_im_ring(float $x, float $y, array $r): bool {
@@ -165,15 +179,21 @@ function warn_ma_verdichten(string $text): ?array {
     $stufe = (int)($par['awareness_level'] ?? 0) - 1;
     $bis = strtotime($i['expires'] ?? '') ?: null;
     if ($stufe < 1 || ($bis && $bis < time())) continue;
-    $gebiete = [];
-    foreach ((array)($i['area'] ?? []) as $ar) foreach ((array)($ar['geocode'] ?? []) as $g)
-      if (($g['valueName'] ?? '') === 'EMMA_ID') $gebiete[$g['value']] = $ar['areaDesc'] ?? '';
-    if (!$gebiete) continue;
+    // Gebiete als EMMA_ID, als NUTS-Code (FR, HU; über alias) oder als eigenes Polygon (NO, SE, GB, CH, FR-Küste)
+    $gebiete = []; $flaechen = []; $alias = warn_emma('alias');
+    foreach ((array)($i['area'] ?? []) as $ar) {
+      foreach ((array)($ar['geocode'] ?? []) as $g) {
+        $art = (string)($g['valueName'] ?? ''); $v = (string)($g['value'] ?? '');
+        if ($art === 'EMMA_ID' || str_starts_with($art, 'NUTS')) $gebiete[$alias[$v] ?? $v] = $ar['areaDesc'] ?? '';
+      }
+      foreach ((array)($ar['polygon'] ?? []) as $pg) if (is_string($pg) && ($f = warn_polygon($pg))) $flaechen[] = [...$f, $ar['areaDesc'] ?? ''];
+    }
+    if (!$gebiete && !$flaechen) continue;
     $aus[] = ['id' => 'ma:' . ($a['identifier'] ?? sha1(json_encode($i))), 'quelle' => 'MeteoAlarm' . (isset($i['senderName']) ? ' · ' . $i['senderName'] : ''),
       'stufe' => min(3, $stufe), 'art' => WARN_ART_MA[(int)($par['awareness_type'] ?? 0)] ?? warn_art((string)($i['event'] ?? '')),
       'ereignis' => warn_text($i['event'] ?? 'Wetterwarnung'), 'titel' => warn_text($i['headline'] ?? ''),
       'text' => warn_text($i['description'] ?? '', 600),
-      'von' => strtotime($i['onset'] ?? $i['effective'] ?? '') ?: null, 'bis' => $bis, 'gebiete' => $gebiete];
+      'von' => strtotime($i['onset'] ?? $i['effective'] ?? '') ?: null, 'bis' => $bis, 'gebiete' => $gebiete, 'flaechen' => $flaechen];
   }
   return $aus;
 }
@@ -183,6 +203,7 @@ function warn_meteoalarm(array $punkte): array {
   $reg = warn_regionen($punkte);
   $laender = [];
   foreach ($reg as $codes) foreach ($codes as $c) if (isset(WARN_LAND[substr($c, 0, 2)])) $laender[substr($c, 0, 2)] = true;
+  foreach ($punkte as [$la, $lo]) foreach (WARN_LAND_RAHMEN as $l => [$s, $w, $n, $o]) if ($la >= $s && $la <= $n && $lo >= $w && $lo <= $o) $laender[$l] = true;
   // fehlende Länder parallel vorladen, dann aus dem Speicher lesen
   $fehlt = [];
   foreach (array_keys($laender) as $l) if (warn_cache_lesen("ma-$l", WARN_MA_TTL) === null) $fehlt[$l] = WARN_METEOALARM . WARN_LAND[$l];
@@ -191,12 +212,17 @@ function warn_meteoalarm(array $punkte): array {
   $aus = [];
   foreach (array_keys($laender) as $l) foreach (warn_cache_lesen("ma-$l", WARN_MA_TTL + 600) ?? [] as $w) {
     if ($w['bis'] && $w['bis'] < time()) continue;
-    $pk = [];
-    foreach ($reg as $i => $codes) if (array_intersect($codes, array_keys($w['gebiete']))) $pk[] = $i;
+    $pk = []; $namen = [];
+    foreach ($punkte as $i => [$la, $lo]) {
+      $treffer = array_intersect($reg[$i] ?? [], array_keys($w['gebiete']));
+      foreach ($treffer as $c) $namen[] = $w['gebiete'][$c];
+      foreach ($w['flaechen'] ?? [] as [$b, $ring, $name])
+        if ($lo >= $b[0] && $lo <= $b[2] && $la >= $b[1] && $la <= $b[3] && warn_im_ring($lo * 1000, $la * 1000, $ring)) { $treffer = true; $namen[] = $name; }
+      if ($treffer) $pk[] = $i;
+    }
     if (!$pk) continue;
-    $namen = array_values(array_unique(array_filter(array_map(fn($c) => $w['gebiete'][$c] ?? '', array_merge(...array_map(fn($i) => $reg[$i], $pk))))));
-    unset($w['gebiete']);
-    $aus[] = $w + ['gebiet' => implode(', ', array_slice($namen, 0, 3)), 'punkte' => $pk];
+    unset($w['gebiete'], $w['flaechen']);
+    $aus[] = $w + ['gebiet' => implode(', ', array_slice(array_values(array_unique(array_filter($namen))), 0, 3)), 'punkte' => $pk];
   }
   return $aus;
 }
