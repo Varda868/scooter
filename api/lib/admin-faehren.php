@@ -58,7 +58,7 @@ function bereich_faehren(): void {
         : '<span class="leise">' . ($art === 'lauf' ? 'noch nie' : 'Platzhalter') . '</span>') . '</td></tr>';
   }
   $gesetzt = (string)sw_wert('trafiklab_key') !== '';
-  $html .= '</table><label>Trafiklab-Schlüssel für „GTFS Sverige 2“ <span class="leise">' . ($gesetzt ? 'gesetzt (…' . h(substr((string)sw_wert('trafiklab_key'), -4)) . ')' : 'nicht gesetzt – kostenlos auf trafiklab.se anlegen') . '</span>' .
+  $html .= '</table><label>Trafiklab-Schlüssel für „GTFS Sverige 2“ <span class="leise">' . ($gesetzt ? 'gesetzt (…' . h(substr((string)sw_wert('trafiklab_key'), -4)) . ')' : 'nicht gesetzt – kostenlos auf trafiklab.se anlegen') . '</span> ' . sw_schluessel_link('trafiklab_key') .
     '<input type="password" name="trafiklab_key" autocomplete="off" placeholder="' . ($gesetzt ? 'leer lassen = unverändert' : 'Schlüssel eingeben') . '"></label>' .
     ($gesetzt ? '<label class="zeile"><input type="checkbox" name="trafiklab_weg" value="1"> Schlüssel löschen</label>' : '') .
     '<p class="leise">Trafiklab-Abrufe in den letzten 30 Tagen: <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> · „jetzt“ ab ' . FAEHR_SE_SPERRE . ' gesperrt' .

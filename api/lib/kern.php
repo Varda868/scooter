@@ -60,6 +60,17 @@ const SW_STANDARD = [
     ['url' => 'wss://nostr.mom', 'an' => true, 'eigen' => false],
   ],
 ];
+// Schlüsselfelder im Admin: wo man beim Anbieter das Konto bzw. den Schlüssel bekommt.
+// Neues Schlüsselfeld = hier eine Zeile [Name, Login, Konto anlegen], dann sw_schluessel_link('…_key') neben das Eingabefeld.
+const SW_SCHLUESSEL_LOGIN = [
+  'trafiklab_key' => ['Trafiklab', 'https://developer.trafiklab.se/login', 'https://www.trafiklab.se/docs/using-trafiklab/creating-an-account/'],
+];
+function sw_schluessel_link(string $feld): string {
+  if (!isset(SW_SCHLUESSEL_LOGIN[$feld])) return '';
+  [$name, $login, $hilfe] = SW_SCHLUESSEL_LOGIN[$feld] + [2 => ''];
+  $a = fn($url, $text) => '<a href="' . h($url) . '" target="_blank" rel="noopener noreferrer">' . h($text) . '</a>';
+  return '<span class="schluessel-link">' . $a($login, "Login bei $name ↗") . ($hilfe ? ' · ' . $a($hilfe, 'Konto anlegen ↗') : '') . '</span>';
+}
 function sw_config(): array {
   static $c = null;
   if ($c !== null) return $c;
