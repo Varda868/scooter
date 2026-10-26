@@ -1,22 +1,4 @@
-// --- POI-Details (Werkstatt-Marken, Kontakt, Zeltplatz) und Start der App ---
-// Hersteller stehen in OSM uneinheitlich (brand, brands, motorcycle:…, name, description): in allen Tags suchen
-function brandMatch(tags) {
-  const words = [...$('brands').querySelectorAll('input:checked')].map(i => i.value.toLowerCase())
-    .concat($('brand').value.toLowerCase().split(/[,;\s]+/).filter(Boolean));
-  const all = Object.entries(tags).map(([k, v]) => `${k}=${v}`).join(' ').toLowerCase();
-  // Ganze Wörter, damit z. B. "Rex" oder "Beta" nicht in anderen Namen trifft
-  const has = w => new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9])`).test(all);
-  // Vespa ist eine Piaggio-Marke
-  return !words.length || words.some(w => has(w) || (w === 'vespa' && has('piaggio')));
-}
-function workshopInfo(p) {
-  if (p.type.id !== 'workshop') return '';
-  const t = p.tags;
-  const brands = t.brand || t.brands || t['motorcycle:brands'] ||
-    Object.keys(t).filter(k => /^(motorcycle|scooter):(?!repair|sales|parts|rental|clothes|tyres|type)/.test(k) && t[k] === 'yes').map(k => k.split(':')[1]).join(', ');
-  return (brands ? `<br>Marken: ${escapeHtml(brands)}` : '') +
-    (t['motorcycle:repair'] === 'yes' || t.shop === 'motorcycle_repair' || t.craft ? '<br>🔧 Reparatur' : '');
-}
+// --- POI-Details (Kontakt, Zeltplatz) und Start der App ---
 // Ausstattung (Zeltplatz) und Kontakt aus den OSM-Tags; nur was eingetragen ist
 function contactInfo(t) {
   const first = (...keys) => keys.map(k => t[k]).find(Boolean);

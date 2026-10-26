@@ -141,7 +141,7 @@ async function loadPois() {
   mapBusy('poi', null);
   if (!routeCoords) return;
   // Schutzhütten kommen bei Gewitter, Regen oder Schnee unterwegs automatisch dazu
-  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`).checked || (t.id === 'shelter' && wxShelter));
+  const active = POI_TYPES.filter(t => $('poiTypes').querySelector(`input[value="${t.id}"]`)?.checked || (t.id === 'shelter' && wxShelter));
   if (!active.length) return;
 
   const req = ++poiRequest;
@@ -234,7 +234,7 @@ function showPois(elements, active, note, laeuft) {
     const at = locateOnRoute(lat, lon);
     // Zwischenspeicher kann einen größeren Umkreis enthalten als gerade eingestellt
     return at.dist <= poiRadius(type) + 50 ? { lat, lon, type, tags: el.tags || {}, km: at.km } : null;
-  }).filter(p => p && (p.type.id !== 'workshop' || brandMatch(p.tags))).sort((a, b) => a.km - b.km);
+  }).filter(Boolean).sort((a, b) => a.km - b.km);
   if (fuelDuenn()) {
     const wahl = new Set(fuelAuswahl(pois.filter(p => p.type.id === 'fuel'), routeKm.at(-1)));
     for (let i = pois.length - 1; i >= 0; i--) if (pois[i].type.id === 'fuel' && !wahl.has(pois[i])) pois.splice(i, 1);
@@ -249,7 +249,7 @@ function showPois(elements, active, note, laeuft) {
       icon: L.divIcon({ className: 'poi-icon' + (offen === false ? ' poi-zu' : ''), html: p.type.id === 'fuel' ? `⛽<span class="poi-badge">${fuelBadges(p.tags)}</span>` : p.type.icon, iconSize: [24, 24] }), title
     }).bindPopup(`<b>${escapeHtml(title)}</b><br>${p.type.name} · km ${p.km.toFixed(1)}` +
       (p.tags.opening_hours ? `<br>🕒 ${escapeHtml(p.tags.opening_hours)}` : '') +
-      (offen == null || p.tags.automated === 'yes' ? '' : offen ? `<br>🟢 bei Ankunft (${uhr}) offen` : `<br>🔴 bei Ankunft (${uhr}) zu`) + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + workshopInfo(p) + contactInfo(p.tags) +
+      (offen == null || p.tags.automated === 'yes' ? '' : offen ? `<br>🟢 bei Ankunft (${uhr}) offen` : `<br>🔴 bei Ankunft (${uhr}) zu`) + (p.type.id === 'fuel' ? fuelInfo(p.tags) : '') + contactInfo(p.tags) +
       (p.type.id === 'fuel' && +roller.tank > 0 ? '<br><button data-tank-voll>⛽ Hier vollgetankt</button>' : '')).addTo(poiLayer);
   }
   $('poiSummary').textContent = (laeuft ? `${pois.length} POIs bisher, lade weiter …`

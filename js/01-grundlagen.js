@@ -2,6 +2,9 @@
 // dort liegen Datenordner und FTP-Uploads, und fällt eine Zweitadresse weg, geht auf der Stammadresse alles weiter.
 const STAMMADRESSE = 'https://scooter.thai-klasse.de/';
 const ZWEITADRESSEN = ['scooterways.dns.navy', 'www.scooterways.dns.navy'];
+// Haupteingang für Nutzer: geteilte Links zeigen immer hierhin, egal auf welcher Adresse die App läuft
+const HAUPTADRESSE = 'https://scooterways.dns.navy/';
+const EIGENE_ADRESSE = ZWEITADRESSEN.includes(location.hostname) || location.origin + '/' === STAMMADRESSE;
 const BASIS_URL = ZWEITADRESSEN.includes(location.hostname) ? STAMMADRESSE : new URL('./', location.href).href;
 // In Phase 2 nur diese URL auf den eigenen Server umstellen.
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
@@ -57,9 +60,9 @@ const POI_TYPES = [
   { id: 'ferry', icon: '⛴', name: 'Fähranleger', off: true, minRadius: 1000, filters: [ '[amenity=ferry_terminal]' ] },
   // Zeltplätze liegen oft etwas abseits, daher mindestens 2 km Umkreis
   { id: 'camp', icon: '⛺', name: 'Zeltplatz', off: true, minRadius: 2000, filters: [ '[tourism=camp_site]' ] },
-  // Werkstätten liegen meist im Ort, daher mindestens 2 km Umkreis
-  { id: 'workshop', icon: '🔧', name: 'Zweiradwerkstatt', off: true, minRadius: 2000, filters: [
-    '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]' ] }
+  // Werkstätten nur für die Pannenhilfe (js/30-panne.js), nicht entlang der Route; Autowerkstätten als Notlösung
+  { id: 'workshop', icon: '🔧', name: 'Werkstatt', panne: true, filters: [
+    '[shop=motorcycle]', '[shop=motorcycle_repair]', '[shop=scooter]', '[craft=motorcycle_repair]', '[shop=car_repair]' ] }
 ];
 
 const map = L.map('map').setView([51.16, 10.45], 6);
@@ -138,7 +141,7 @@ function setRouteCoords(coords) {
   eleData = null;
   gradeSignLayer.clearLayers();
   wxRouteLayer.clearLayers();
-  $('wxRouteSummary').textContent = '';
+  $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];
   // nach showTrip, das routeKmh erst danach setzt
   queueMicrotask(loadRouteWeather);
   routeStages = []; routeStageNights = []; stageLayer.clearLayers(); $('stageSummary').textContent = '';
@@ -164,19 +167,16 @@ $('radius').oninput = e => $('radiusVal').textContent = e.target.value;
 $('radius').onchange = () => loadPois();
 // Vorgabe seit v35: alles aus außer Tankstellen. Einmalig auch eine früher gespeicherte Auswahl zurücksetzen
 { const s = store.get('settings', {}); if (s.poiStd !== 2) { delete s.poiTypes; s.poiStd = 2; store.set('settings', s); } }
-$('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.map(t =>
+$('poiTypes').insertAdjacentHTML('beforeend', POI_TYPES.filter(t => !t.panne).map(t =>
   `<label><input type="checkbox" value="${t.id}"${(store.get('settings', {}).poiTypes?.[t.id] ?? !t.off) ? ' checked' : ''}> ${t.icon} ${t.name}</label>`).join(''));
 // Auswahl merken (neue Typen starten mit ihrem Standard)
 $('poiTypes').onchange = () => {
-  settings.poiTypes = Object.fromEntries(POI_TYPES.map(t => [t.id, $('poiTypes').querySelector(`input[value="${t.id}"]`).checked]));
+  settings.poiTypes = Object.fromEntries(POI_TYPES.filter(t => !t.panne).map(t => [t.id, $('poiTypes').querySelector(`input[value="${t.id}"]`).checked]));
   store.set('settings', settings);
   loadPois();
 };
-$('brand').onchange = () => loadPois();
 // Nur Marken, die aktuell 50er/45-km/h-Fahrzeuge anbieten (Honda und Yamaha nur noch elektrisch: EM1 e:, Neo's). Suzuki hat keine mehr.
 const BRANDS = ['Peugeot', 'Piaggio', 'Vespa', 'Aprilia', 'Kymco', 'SYM', 'Rieju', 'Beta', 'Kreidler', 'Rex', 'Nova Motors', 'Baotian', 'Niu', 'Honda', 'Yamaha'];
-$('brands').insertAdjacentHTML('beforeend', BRANDS.map(b => `<label><input type="checkbox" value="${b}"> ${b}</label>`).join(''));
-$('brands').onchange = () => loadPois();
 // Regler und Klappzustand merken; Kurzfassung im eingeklappten Kopf
 const SETTING_IDS = ['speed', 'primary', 'hills', 'radius', 'gradeWarn', 'avgSpeed', 'wxWindow', 'dayMax', 'breakMin', 'dayStart'];
 const settings = store.get('settings', {});

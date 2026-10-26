@@ -89,7 +89,7 @@ curl_setopt_array($c, [
   CURLOPT_CUSTOMREQUEST => $methode,
   CURLOPT_POSTFIELDS => $rumpf,
   CURLOPT_HTTPHEADER => $rumpf !== null ? ['Content-Type: application/x-www-form-urlencoded'] : [],
-  CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooter.thai-klasse.de)',
+  CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooterways.dns.navy)',
   CURLOPT_FOLLOWLOCATION => false,
   CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
   CURLOPT_CONNECTTIMEOUT => 8,
@@ -104,6 +104,12 @@ $ok = curl_exec($c);
 $status = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE);
 $typ = (string)(curl_getinfo($c, CURLINFO_CONTENT_TYPE) ?: 'application/octet-stream');
 curl_close($c);
+// Wetter: bei Überlast oder Störung von Open-Meteo still auf MET Norway ausweichen (gleiches Format für die App)
+if ($d === 'wetter' && ($zuGross || !$ok || $status === 429 || $status >= 500)) {
+  require __DIR__ . '/lib/met.php';
+  $ersatz = met_ersatz($p, $ordner);
+  if ($ersatz !== null) { $ok = true; $zuGross = false; $status = 200; $typ = 'application/json'; $daten = $ersatz; }
+}
 if ($zuGross) sw_fehler('Antwort zu groß', 502);
 if (!$ok || !$status) sw_fehler('Dienst nicht erreichbar', 504);
 // Nur Inhaltstypen, die die App erwartet; alles andere würde den Proxy zum Werkzeug für Fremdes machen

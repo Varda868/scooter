@@ -15,6 +15,8 @@ sw_json([
   'openMeteo' => $w['open_meteo_url'],
   'proxy' => (bool)$w['proxy_an'],
   'vapid' => extension_loaded('openssl') ? push_vapid()['pub'] : null,
+  // Amtliche Wetterwarnungen über warnungen.php (DWD, MeteoAlarm)
+  'warnungen' => (bool)$w['proxy_an'],
   'tomtomAmServer' => $w['proxy_an'] && $w['tomtom_key'] !== '',
   // Talk-Relays in der Reihenfolge aus dem Admin-Bereich, nur eingeschaltete
   'relays' => array_values(array_column(array_filter(relay_liste(), fn($r) => $r['an']), 'url')),
