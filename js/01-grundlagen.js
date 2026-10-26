@@ -2,6 +2,9 @@
 // dort liegen Datenordner und FTP-Uploads, und fällt eine Zweitadresse weg, geht auf der Stammadresse alles weiter.
 const STAMMADRESSE = 'https://scooter.thai-klasse.de/';
 const ZWEITADRESSEN = ['scooterways.dns.navy', 'www.scooterways.dns.navy'];
+// Haupteingang für Nutzer: geteilte Links zeigen immer hierhin, egal auf welcher Adresse die App läuft
+const HAUPTADRESSE = 'https://scooterways.dns.navy/';
+const EIGENE_ADRESSE = ZWEITADRESSEN.includes(location.hostname) || location.origin + '/' === STAMMADRESSE;
 const BASIS_URL = ZWEITADRESSEN.includes(location.hostname) ? STAMMADRESSE : new URL('./', location.href).href;
 // In Phase 2 nur diese URL auf den eigenen Server umstellen.
 const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';

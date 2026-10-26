@@ -1,12 +1,12 @@
 // --- Tour als Kurzlink über den eigenen Server (api/kurz.php): /t/<id> öffnet die App mit dieser Tour.
 // Eigene Links merkt sich der Browser samt Löschcode; ohne Server bleibt der Knopf weg.
 const kurzMeine = store.get('kurzlinks', []); // [{ id, bis, loesch, name }]
-const kurzBasis = location.href.replace(/[?#].*$/, '');
+const kurzBasis = EIGENE_ADRESSE ? HAUPTADRESSE : location.href.replace(/[?#].*$/, '');
 // Schöne Form /t/<id> braucht die Weiterleitung aus .htaccess; ohne mod_rewrite bleibt ?t=<id>
 let kurzSchoen = store.get('kurzSchoen', false);
 const kurzUrl = id => kurzSchoen ? new URL(`t/${id}`, kurzBasis).href : `${kurzBasis}?t=${id}`;
 async function kurzSchoenPruefen(id) {
-  try { kurzSchoen = (await fetch(new URL(`t/${id}`, kurzBasis), { redirect: 'manual', cache: 'no-store' })).type === 'opaqueredirect'; } catch { kurzSchoen = false; }
+  try { kurzSchoen = (await fetch(new URL(`t/${id}`, location.href.replace(/[?#].*$/, '')), { redirect: 'manual', cache: 'no-store' })).type === 'opaqueredirect'; } catch { kurzSchoen = false; }
   store.set('kurzSchoen', kurzSchoen);
 }
 
@@ -87,3 +87,14 @@ async function kurzOeffnen(id) {
 const kurzId = new URLSearchParams(location.search).get('t');
 if (/^[A-Za-z0-9]{8}$/.test(kurzId || '')) kurzOeffnen(kurzId);
 kurzKnopf();
+
+// Auf der alten Adresse einmal auf den Haupteingang hinweisen; Daten im Browser gelten je Adresse.
+// Nicht im Rahmen (Plesk-Rahmenweiterleitung zeigt diese Adresse unter dem Haupteingang)
+if (location.origin + '/' === STAMMADRESSE && window.top === window && !store.get('hauptadresseGezeigt', false)) {
+  const b = document.createElement('div');
+  b.className = 'adress-hinweis';
+  b.innerHTML = `Scooterways hat eine neue Adresse: <a href="${HAUPTADRESSE}">scooterways.dns.navy</a>. ` +
+    'Touren und Einstellungen liegen je Adresse getrennt im Browser, mitnehmen über ⚙ → Profil → ☁. <button class="secondary">OK</button>';
+  b.querySelector('button').onclick = () => { store.set('hauptadresseGezeigt', true); b.remove(); };
+  document.body.append(b);
+}

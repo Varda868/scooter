@@ -89,7 +89,7 @@ curl_setopt_array($c, [
   CURLOPT_CUSTOMREQUEST => $methode,
   CURLOPT_POSTFIELDS => $rumpf,
   CURLOPT_HTTPHEADER => $rumpf !== null ? ['Content-Type: application/x-www-form-urlencoded'] : [],
-  CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooter.thai-klasse.de)',
+  CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooterways.dns.navy)',
   CURLOPT_FOLLOWLOCATION => false,
   CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
   CURLOPT_CONNECTTIMEOUT => 8,
