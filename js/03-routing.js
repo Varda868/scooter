@@ -246,13 +246,27 @@ function faehrWegpunkte(locs) {
 
 // Lange Fähre als eigener Abschnitt aus der Grobroute; Start und Ankunft sind Platzhalter, die joinLegs wegschneidet
 function faehrTrip(fa) {
-  const n = fa.coords.length - 1, name = fa.m.street_names, len = fa.km, time = Number.isFinite(fa.s) && fa.s > 0 ? fa.s : len / 25 * 3600;
+  // Name nur, wenn es einer ist („?“ oder „E 20“ aus street_names nicht); den richtigen trägt später der Fähren-Kasten nach
+  const nm = faehrName(fa.m), name = nm ? [nm] : [], n = fa.coords.length - 1, len = fa.km, time = Number.isFinite(fa.s) && fa.s > 0 ? fa.s : len / 25 * 3600;
   const leg = { shape: encode(fa.coords), summary: { length: len, time }, maneuvers: [
     { type: 1, instruction: 'Start', begin_shape_index: 0 },
-    { type: 28, instruction: fa.m.instruction || 'Nehmen Sie die Fähre.', street_names: name, travel_type: 'ferry', time, length: len, begin_shape_index: 0 },
+    { type: 28, instruction: nm && fa.m.instruction || 'Nehmen Sie die Fähre.', street_names: name, travel_type: 'ferry', time, length: len, begin_shape_index: 0 },
     { type: 29, instruction: 'Verlassen Sie die Fähre.', begin_shape_index: n },
     { type: 4, instruction: 'Ziel', begin_shape_index: n }] };
   return { legs: [leg], summary: leg.summary };
+}
+
+// Roller-Abschnitt viel länger als die Strecke über seine Punkte (Gent→Groningen: 703 km für 100 km): meist ist eine
+// Brücke, eine Passstraße oder eine N-Straße für 50er gesperrt, Valhalla fährt dann weit außen herum. Nur ein Hinweis
+// je Route, für den schlimmsten Abschnitt
+const UMWEG_FAKTOR = 2.2, UMWEG_MIN_KM = 40;
+function umwegPruefen(chunk, data) {
+  const t = data.trip;
+  if (!t?.legs || summaryNote.includes('⚠ Umweg zwischen') || t.legs.some(l => l.maneuvers.some(m => m.type === 28))) return;
+  const luft = chunk.reduce((s, w, i) => i ? s + chunk[i - 1].latlng.distanceTo(w.latlng) / 1000 : 0, 0), km = t.summary.length;
+  if (km < UMWEG_FAKTOR * luft || km - luft < UMWEG_MIN_KM) return;
+  const name = w => w.text && !w.grob ? w.text.split(',')[0] : `${w.latlng.lat.toFixed(2)}, ${w.latlng.lng.toFixed(2)}`;
+  summaryNote += ` · ⚠ Umweg zwischen ${name(chunk[0])} und ${name(chunk.at(-1))}: ${Math.round(km)} km statt ca. ${Math.round(luft)} km, vermutlich ist eine Brücke oder Passstraße für 50er gesperrt`;
 }
 
 // Laufzähler: eine neue Berechnung (Ziel dazu, Punkt verschoben) überholt die laufende; die bricht vor der nächsten
@@ -275,8 +289,10 @@ async function planRoute(locs, exclude = []) {
     const data = await fetchRoute(body, signal);
     // Fähre im Roller-Abschnitt, obwohl die Grobroute dort keine hat: meist ist der Hafen für 50er nur über eine
     // Kraftfahrstraße erreichbar (Europoort), dann sucht Valhalla einen Umweg übers Wasser
-    if (chunk.some(w => w.grob) && data.trip?.legs?.some(l => l.maneuvers.some(m => m.type === 28)) && !summaryNote.includes('Umweg über eine weitere Fähre'))
+    // Kurze Flussfähren (Megen–Appeltern, Pannerden) zählen nicht, die nimmt der Roller zu Recht
+    if (chunk.some(w => w.grob) && data.trip?.legs?.some(l => l.maneuvers.some(m => m.type === 28 && (m.length || 0) >= 5)) && !summaryNote.includes('Umweg über eine weitere Fähre'))
       summaryNote += ' · ⚠ Umweg über eine weitere Fähre: Zufahrt zum Hafen für 50er vermutlich gesperrt';
+    umwegPruefen(chunk, data);
     if (chunks.length === 1) return data;
     trips.push(data.trip);
   }

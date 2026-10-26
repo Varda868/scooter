@@ -217,7 +217,16 @@ async function orteSuchen(q, um) {
   return out.sort((a, b) => a.rang - b.rang).slice(0, 8);
 }
 const PHOTON_ART = { house: '🏠', street: '🛣', city: '🏙', town: '🏙', village: '🏡', locality: '📍', district: '📍' };
+// „Sankt Moritz“ heißt in OSM „St. Moritz“ (und umgekehrt): beide Schreibweisen fragen, sonst kommt nur Venetien
 async function photonSuchen(q, um, nurStaedte = false) {
+  const m = /^(sankt|st\.?)\s+(.+)/i.exec(q.trim());
+  if (!m) return photonEinmal(q, um, nurStaedte);
+  const anders = (/^sankt$/i.test(m[1]) ? 'St. ' : 'Sankt ') + m[2];
+  const [a, b] = await Promise.all([photonEinmal(q, um, nurStaedte), photonEinmal(anders, um, nurStaedte).catch(() => [])]);
+  const gesehen = new Set(a.map(x => `${x.lat.toFixed(3)},${x.lon.toFixed(3)}`));
+  return [...a, ...b.filter(x => !gesehen.has(`${x.lat.toFixed(3)},${x.lon.toFixed(3)}`))];
+}
+async function photonEinmal(q, um, nurStaedte) {
   // Ohne zoom gewichtet Photon nur die Nähe („Oslo“ in Kiel → Osloring). Orte weiträumig (zoom 5), mit Hausnummer
   // eher örtlich (Kartenzoom), damit „Bahnhofstr. 3“ in der Nähe bleibt
   const zoom = /\d/.test(q) ? Math.min(14, Math.max(8, Math.round(map.getZoom()))) : 5;
@@ -243,8 +252,12 @@ async function photonSuchen(q, um, nurStaedte = false) {
 // de Cervelló, „Höchstädt“ → Höchstädt an der Donau vor dem Dorf Hochstadt (ortNorm macht beide gleich)
 function ortRang(q, items) {
   const n = ortNorm(q), kopf = it => it.name.split(',')[0].trim();
-  const schluessel = it => [ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3, kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1];
-  return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3] || a[4] - b[4]).map(x => x[5]);
+  // Großstadt aus der Städte-Nachfrage zuerst: „Milano“ meint Mailand, nicht Milanówek (Photon nennt Mailand auf Deutsch)
+  // Bei sonst Gleichem entscheidet die Nähe zur Kartenmitte (Neustadt an der Donau vor Neustadt in Holstein)
+  const c = map.getCenter(), weit = it => it.lat == null ? 0 : Math.round(c.distanceTo([it.lat, it.lon]) / 10000);
+  const schluessel = it => [it.stadtFrage && it.gr === 0 ? 0 : 1, ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3,
+    kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1, weit(it)];
+  return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => { for (let i = 0; i < 7; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }).map(x => x[7]);
 }
 let ortTimer = 0, ortReq = 0;
 function showSuggestions(input) {
@@ -264,7 +277,10 @@ function showSuggestions(input) {
     // Nur Dörfer dieses Namens, keine Stadt? Einmal nur nach Städten fragen: bei „Bastia“ füllen sonst italienische
     // Dörfer alle Plätze, und das korsische Bastia kommt gar nicht erst mit
     const gleich = it => it.gr != null && ortNorm(it.name.split(',')[0].trim()) === ortNorm(q), alle = [...orte, ...web];
-    if (!/\d/.test(q) && alle.some(it => gleich(it) && it.gr === 2) && !alle.some(it => gleich(it) && it.gr <= 1)) web = [...(await photonSuchen(q, um, true).catch(() => [])), ...web];
+    // Ebenso, wenn keine Großstadt dabei ist: „Milano“, „Vienna“, „Kraków“ heißen bei Photon (lang=de) Mailand, Wien, Krakau
+    // und gehen sonst unter Milanówek, Viennay, Krakow am See unter
+    if (!/\d/.test(q) && (alle.some(it => gleich(it) && it.gr === 2) && !alle.some(it => gleich(it) && it.gr <= 1) || !alle.some(it => it.gr === 0)))
+      web = [...(await photonSuchen(q, um, true).catch(() => [])).map(it => ({ ...it, stadtFrage: true })), ...web];
     if (req !== ortReq || document.activeElement !== input) return;
     web = web.filter(it => dazu(it) && !orte.some(o => map.distance([o.lat, o.lon], [it.lat, it.lon]) < 5000 && o.name.split(',')[0] === it.name.split(',')[0]));
     if (req !== ortReq || document.activeElement !== input) return;
@@ -386,7 +402,14 @@ function clearRoute() {
 async function geocode(q) {
   const m = q.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
   if (m) return L.latLng(+m[1], +m[3]);
-  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&q=${encodeURIComponent(q)}`);
+  // Wie die Vorschläge: Photon mit Nähe zur Kartenmitte, sonst landet „Aichach“ in Südtirol (Aicha)
+  try {
+    const best = ortRang(q, await photonSuchen(q, map.getCenter()))[0];
+    if (best) return L.latLng(best.lat, best.lon);
+  } catch {}
+  // Nominatim nur als Rückfall, mit Vorzug für die Gegend um die Kartenmitte (bounded=0: auch außerhalb erlaubt)
+  const c = map.getCenter(), vb = [c.lng - 3, c.lat + 2, c.lng + 3, c.lat - 2].map(x => x.toFixed(3)).join(',');
+  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&viewbox=${vb}&bounded=0&q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (!data.length) throw new Error(`Nicht gefunden: ${q}`);
   return L.latLng(+data[0].lat, +data[0].lon);
