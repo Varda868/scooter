@@ -66,7 +66,7 @@ const SW_STANDARD = [
 // Abruflimit und Lizenz. Neuer Zugang = hier ein Eintrag (Felder auch in SW_STANDARD); leere Felder = Quelle wird übersprungen.
 // Werte werden nie zurückgezeigt, nur „gesetzt“ und die letzten 4 Zeichen.
 const SW_SCHLUESSEL = [
-  'trafiklab' => ['name' => 'Trafiklab · GTFS Sverige 2', 'wofuer' => 'Fahrpläne schwedischer Fähren',
+  'trafiklab' => ['name' => 'Trafiklab · GTFS Sverige 2 / Sweden 3', 'wofuer' => 'Fahrpläne schwedischer Fähren',
     'felder' => ['trafiklab_key' => 'API-Schlüssel'],
     'login' => 'https://developer.trafiklab.se/login', 'konto' => 'https://www.trafiklab.se/docs/using-trafiklab/creating-an-account/',
     'limit' => '50 Abrufe pro 30 Tage (Bronze)', 'lizenz' => 'CC0'],

@@ -34,7 +34,13 @@ function bereich_faehren(): void {
         if (($neu = trim((string)($_POST[$f] ?? ''))) === '') continue;
         if (preg_match('/^[\x21-\x7e]{3,300}$/', $neu)) $c['werte'][$f] = $neu; else { $fehler = "$label: Zeichen ungültig (keine Leerzeichen/Umlaute)."; break; }
       }
-      if (!$fehler && $z === 'trafiklab') { $st = faehr_se_stand(); $st['fehl'] = 0; faehr_se_stand($st); }  // neuer Schlüssel: Fehlversuche zurücksetzen
+      if (!$fehler && $z === 'trafiklab') {
+        // neuer Schlüssel oder Datensatz: Fehlversuche zurücksetzen; anderer Datensatz → ETag gilt nicht mehr
+        $st = faehr_se_stand(); $st['fehl'] = 0;
+        $ds = (string)($_POST['se_datensatz'] ?? '');
+        if (isset(FAEHR_SE_DATENSAETZE[$ds]) && $ds !== faehr_se_datensatz()) { $c['faehren']['se_datensatz'] = $ds; $st['etag'] = $st['lastmod'] = ''; }
+        faehr_se_stand($st);
+      }
       if (!$fehler) { sw_config_speichern($c); admin_zurueck('faehren', SW_SCHLUESSEL[$z]['name'] . (!empty($_POST['weg']) ? ': gelöscht' : ': gespeichert')); }
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
@@ -91,13 +97,18 @@ function bereich_faehren(): void {
       '<h3>' . ['voll' => '✅', 'teil' => '⚠️', 'leer' => '○'][$st] . ' ' . h($d['name']) . '</h3>' .
       '<div class="leise">' . h($d['wofuer']) . ' · Limit: ' . h($d['limit']) .
       ($z === 'trafiklab' ? ' · <b>' . count(faehr_se_stand()['abrufe']) . ' von ' . FAEHR_SE_LIMIT . '</b> genutzt' .
-        (($st === 'voll' && (faehr_se_stand()['abgelehnt'] ?? '') === hash('sha256', (string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ von Trafiklab abgelehnt – Schlüssel für „GTFS Sverige 2“ eintragen</b>' : '') : '') .
+        (($st === 'voll' && (faehr_se_stand()['abgelehnt'] ?? '') === faehr_se_sperre((string)sw_wert('trafiklab_key'))) ? ' · <b class="fehler">❌ abgelehnt: Schlüssel passt nicht zum Datensatz oder ist nicht aktiv</b>' : '') : '') .
       ' · Lizenz: ' . h($d['lizenz']) . ' · ' . ['voll' => 'vollständig', 'teil' => 'unvollständig – Quelle wird übersprungen', 'leer' => 'nicht eingetragen – Quelle wird übersprungen'][$st] . '</div>' .
       '<div>' . sw_schluessel_link($z) . '</div>';
     foreach ($d['felder'] as $f => $label) {
       $w = (string)sw_wert($f);
       $html .= '<label>' . h($label) . ' <span class="leise">' . ($w !== '' ? 'gesetzt (…' . h(substr($w, -4)) . ')' : 'nicht gesetzt') . '</span>' .
         '<input type="password" name="' . h($f) . '" autocomplete="off" placeholder="' . ($w !== '' ? 'leer lassen = unverändert' : h($label) . ' eingeben') . '"></label>';
+    }
+    if ($z === 'trafiklab') {
+      $html .= '<label>Datensatz (muss zum Schlüssel passen)<select name="se_datensatz">';
+      foreach (FAEHR_SE_DATENSAETZE as $ds => [$dn]) $html .= '<option value="' . $ds . '"' . ($ds === faehr_se_datensatz() ? ' selected' : '') . '>' . h($dn) . '</option>';
+      $html .= '</select></label>';
     }
     $html .= '<div class="knoepfe"><button class="klein">Speichern</button>' .
       ($st !== 'leer' ? '<button class="klein" name="weg" value="1">Löschen</button>' : '') . '</div></form>';

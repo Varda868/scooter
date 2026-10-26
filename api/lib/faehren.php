@@ -18,7 +18,17 @@ const FAEHR_QUELLEN = [
   'ais_fi' => ['AIS Finnland (Digitraffic)', 'probe', '*/15 * * * *', 0, 'Schiffspositionen im Finnischen Meerbusen und um Åland (CC BY 4.0), daraus ein lernender Fahrplan.'],
   'ais_dk' => ['AIS Dänemark (Tagesdateien)', 'probe', '0 6 * * *', 0, 'Kattegat, Belte, Öresund: Kiel–Oslo, Kopenhagen–Oslo, Frederikshavn–Göteborg. Wird gerade erprobt.'],
 ];
-const FAEHR_SE_URL = 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key=';
+// Trafiklab-Schlüssel gelten je API: der Datensatz im Admin muss zu dem Schlüssel passen
+const FAEHR_SE_DATENSAETZE = [
+  'sverige2' => ['GTFS Sverige 2', 'https://opendata.samtrafiken.se/gtfs-sverige-2/sweden.zip?key='],
+  'sweden3' => ['GTFS Sweden 3 Static data', 'https://opendata.samtrafiken.se/gtfs-sweden/sweden.zip?key='],
+];
+function faehr_se_datensatz(): string {
+  $d = (string)(sw_config()['faehren']['se_datensatz'] ?? 'sverige2');
+  return isset(FAEHR_SE_DATENSAETZE[$d]) ? $d : 'sverige2';
+}
+// Merker für einen abgelehnten Schlüssel; gilt nur für dieselbe Kombination aus Datensatz und Schlüssel
+function faehr_se_sperre(string $key): string { return hash('sha256', faehr_se_datensatz() . "\n" . $key); }
 const FAEHR_SE_MAX = 1536 * 1048576, FAEHR_HAFEN_M = 5000, FAEHR_TAGE = 28;
 
 // Wichtige Linien je Meer: [Hafen A, lat, lon, Hafen B, lat, lon]. Abdeckung = Anteil, für den es in den Kacheln
@@ -285,13 +295,13 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   if ($nur_auswerten) {
     if (!is_file($zip)) { $p[] = 'Noch keine Schweden-Datei auf dem Server'; return null; }
     $i[] = 'Neu ausgewertet ohne Abruf (Datei vom ' . date('d.m.Y', filemtime($zip)) . ')';
-    return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab GTFS Sverige 2 (Samtrafiken)', $p, $i);
+    return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab ' . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . ' (Samtrafiken)', $p, $i);
   }
   $key = (string)sw_wert('trafiklab_key');
   if ($key === '') { $i[] = 'Kein Trafiklab-Schlüssel eingetragen, übersprungen'; return null; }
   $st = faehr_se_stand(); $n = count($st['abrufe']);
-  if (($st['abgelehnt'] ?? '') === hash('sha256', $key)) {
-    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf, damit kein Kontingent verbraucht wird. Unter „Schlüssel & Konten“ einen gültigen Schlüssel für „GTFS Sverige 2“ eintragen.';
+  if (($st['abgelehnt'] ?? '') === faehr_se_sperre($key)) {
+    $p[] = 'Dieser Schlüssel wurde schon abgelehnt (HTTP 401/403); kein neuer Abruf, damit kein Kontingent verbraucht wird. Unter „Schlüssel & Konten“ einen passenden Schlüssel eintragen oder den Datensatz umstellen.';
     return null;
   }
   if ($n >= ($manuell ? FAEHR_SE_SPERRE : FAEHR_SE_LIMIT - 5)) { $p[] = "Abruf gesperrt: schon $n Abrufe in 30 Tagen (Grenze " . FAEHR_SE_LIMIT . ')'; return null; }
@@ -306,7 +316,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   if ($st['etag'] !== '' && is_file($zip)) $koepfe[] = 'If-None-Match: ' . $st['etag'];
   if ($st['lastmod'] !== '' && is_file($zip)) $koepfe[] = 'If-Modified-Since: ' . $st['lastmod'];
   $antwort = [];
-  $c = curl_init(FAEHR_SE_URL . rawurlencode($key));
+  $c = curl_init(FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][1] . rawurlencode($key));
   curl_setopt_array($c, [CURLOPT_FILE => $fh, CURLOPT_TIMEOUT => 600, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
     CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooterways.dns.navy)', CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
     CURLOPT_HTTPHEADER => $koepfe, CURLOPT_ENCODING => '',
@@ -320,15 +330,15 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
     @unlink("$zip.tmp");
     $st['ok_t'] = time(); $st['fehl'] = 0; faehr_se_stand($st);
     $i[] = 'Trafiklab: unverändert seit dem letzten Abruf (304), vorhandene Datei neu ausgewertet';
-    return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab GTFS Sverige 2 (Samtrafiken)', $p, $i);
+    return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab ' . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . ' (Samtrafiken)', $p, $i);
   }
   if (!$ok || $code !== 200) {
     @unlink("$zip.tmp");
     $st['fehl']++;
-    if ($code === 401 || $code === 403) $st['abgelehnt'] = hash('sha256', $key);
+    if ($code === 401 || $code === 403) $st['abgelehnt'] = faehr_se_sperre($key);
     faehr_se_stand($st);
     // Den Schlüssel nie in Meldungen: nur Status
-    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): ungültig oder nicht für „GTFS Sverige 2“ freigeschaltet. Bei Trafiklab im Projekt die API „GTFS Sverige 2“ hinzufügen und deren Schlüssel nehmen (neue Schlüssel brauchen ggf. einige Minuten). Weitere Abrufe erst mit neuem Schlüssel." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
+    $p[] = $code === 401 || $code === 403 ? "Trafiklab lehnt den Schlüssel ab (HTTP $code): Schlüssel passt nicht zum Datensatz „" . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . "“ oder ist nicht aktiv (neue Schlüssel brauchen ggf. einige Minuten). Weitere Abrufe erst mit anderem Schlüssel oder Datensatz." : ($code === 429 ? 'Trafiklab: Kontingent erschöpft (HTTP 429)' :
       "Download fehlgeschlagen (HTTP $code" . ($err ? ', ' . preg_replace('/key=[^&\s]+/', 'key=…', $err) : '') . ')');
     return null;
   }
@@ -336,7 +346,7 @@ function faehr_lauf_se(array &$p, array &$i, bool $manuell = false, bool $nur_au
   $st['ok_t'] = time(); $st['fehl'] = 0; $st['etag'] = $antwort['etag'] ?? ''; $st['lastmod'] = $antwort['last-modified'] ?? '';
   faehr_se_stand($st);
   $i[] = 'GTFS geladen: ' . round(filesize($zip) / 1048576) . ' MB (bleibt auf dem Server für Neuauswertungen)';
-  return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab GTFS Sverige 2 (Samtrafiken)', $p, $i);
+  return faehr_gtfs_auswerten($zip, 'se', 'Trafiklab ' . FAEHR_SE_DATENSAETZE[faehr_se_datensatz()][0] . ' (Samtrafiken)', $p, $i);
 }
 // GTFS-ZIP → poi/fahrplan/{ziel}.json mit den Fährverbindungen; gibt die Zahl der Verbindungen zurück
 function faehr_gtfs_auswerten(string $zip, string $ziel_name, string $quelle, array &$p, array &$i): ?int {
@@ -351,13 +361,23 @@ function faehr_gtfs_auswerten(string $zip, string $ziel_name, string $quelle, ar
     while (($r = fgetcsv($s, 0, ',', '"', '')) !== false) if (count($r) > 1) $zeile($r, $spalten);
     fclose($s);
   };
-  $routen = [];
-  $lies('routes.txt', function ($r, $s) use (&$routen) {
-    $typ = (int)$r[$s['route_type']];
-    if ($typ === 4 || ($typ >= 1000 && $typ <= 1299)) $routen[$r[$s['route_id']]] = ['name' => trim($r[$s['route_long_name']] ?? '') ?: trim($r[$s['route_short_name']] ?? ''), 'agency' => $r[$s['agency_id']] ?? ''];
-  });
+  // Fähren: route_type 4 bzw. 1000–1299 (Wasser); manche Feeds führen Fähren unter anderen Typen,
+  // daher zusätzlich Bootsbetreiber (agency.txt) und Fährwörter im Linientext
   $betreiber = [];
   $lies('agency.txt', function ($r, $s) use (&$betreiber) { $betreiber[$r[$s['agency_id']] ?? ''] = $r[$s['agency_name']]; });
+  $boot = '/färj|faerge|færge|ferr|rederi|båt|batar|waxholm|stena line|tt-line|finnlines|viking line|tallink|silja|destination gotland|skärgård/iu';
+  $routen = []; $extra = 0;
+  $lies('routes.txt', function ($r, $s) use (&$routen, &$extra, $betreiber, $boot) {
+    $typ = (int)$r[$s['route_type']]; $ag = $r[$s['agency_id']] ?? '';
+    $name = trim($r[$s['route_long_name']] ?? '') ?: trim($r[$s['route_short_name']] ?? '');
+    $wasser = $typ === 4 || ($typ >= 1000 && $typ <= 1299);
+    // Bus, Reisebus, Tram, Seilbahn, Taxi u. Ä. nie als Fähre (Reedereien fahren auch Zubringerbusse)
+    $landweg = in_array($typ, [0, 3, 5, 6, 7, 11, 12], true) || ($typ >= 200 && $typ <= 299) || ($typ >= 700 && $typ <= 999) || $typ >= 1300;
+    if (!$wasser && ($landweg || !preg_match($boot, ($betreiber[$ag] ?? '') . ' ' . $name . ' ' . ($r[$s['route_desc'] ?? -1] ?? '')))) return;
+    if (!$wasser) $extra++;
+    $routen[$r[$s['route_id']]] = ['name' => $name, 'agency' => $ag];
+  });
+  if ($extra) $i[] = "$extra Fährrouten nur über Betreiber/Namen erkannt (route_type kein Wasser-Typ)";
   $fahrten = [];
   $lies('trips.txt', function ($r, $s) use (&$fahrten, $routen) { if (isset($routen[$r[$s['route_id']]])) $fahrten[$r[$s['trip_id']]] = [$r[$s['route_id']], $r[$s['service_id']], null, null, null, null, -1, PHP_INT_MAX]; });
   // je Fahrt erster und letzter Halt: [route, service, von, ab, nach, an, größte seq, kleinste seq]
