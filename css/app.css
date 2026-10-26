@@ -349,3 +349,13 @@ body.nav-pfeil .talk-ptt { z-index:1002; }
 .panne-gross[hidden] { display: none; }
 #panneGross { font-size: clamp(1.8rem, 8vw, 3rem); font-weight: 700; line-height: 1.2; }
 #panneGrossKlein { color: var(--muted); }
+.panne-akku { font-size: 13px; margin: .5rem 0; }
+.panne-akku button { width: auto; margin: 0 .3rem; padding: .25rem .6rem; }
+.panne-notiz { font-size: 13px; }
+.panne-notiz-form { margin-top: .4rem; }
+.panne-notiz-form input { width: 100%; box-sizing: border-box; }
+.panne-notiz-form button.on { outline: 2px solid var(--fg); }
+.panne-karte { display: grid; grid-template-columns: auto 1fr; gap: .5rem 1rem; text-align: left; font-size: clamp(1rem, 4.5vw, 1.4rem); max-width: 40rem; margin: 0 auto; }
+.panne-karte span { color: var(--muted); }
+.panne-karte small { display: block; font-size: .7em; }
+.panne-karte b { overflow-wrap: anywhere; }

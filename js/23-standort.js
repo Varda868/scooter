@@ -119,7 +119,7 @@ async function posEmpfangen(e) {
     zeit: e.created_at, fix: Number.isFinite(d.t) ? d.t : e.created_at, haltAlt: x.halt, halt: h });
   x.marker.setLatLng([d.la, d.lo]);
   pos.leute.set(e.pubkey, x);
-  talkKontaktMerken(e.pubkey, name);
+  talkKontaktMerken(e.pubkey, name, x.sp);
   posPfeil(x);
   haltEmpfangen(x);
   if (d.tp) treffEmpfangen(d.tp, name);

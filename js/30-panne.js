@@ -50,6 +50,7 @@ async function panneOeffnen(ort = null, wer = '') {
   $('panneStatus').textContent = 'Suche Standort …';
   $('panneTalk').hidden = true;
   panneFestZeigen();
+  panneAkku();
   if (!$('panneDlg').open) $('panneDlg').showModal();
   const [la, lo, quelle] = ort || await panneStandort();
   if (req !== panne.req) return;
@@ -65,8 +66,10 @@ async function panneOeffnen(ort = null, wer = '') {
     if (liste === null) { $('panneStatus').textContent = '⚠️ Werkstätten gerade nicht abrufbar (offline und keine Kacheln?).'; return; }
     if (liste.filter(w => w.rang < 2).length >= PANNE_MIN) break;
   }
-  const fach = liste.filter(w => w.rang < 2).sort((a, b) => (a.d + a.rang * 3000 - (a.marke ? 3000 : 0)) - (b.d + b.rang * 3000 - (b.marke ? 3000 : 0))).slice(0, PANNE_MAX);
-  const auto = fach.length < PANNE_MIN ? liste.filter(w => w.rang === 2).sort((a, b) => a.d - b.d).slice(0, PANNE_NOT) : [];
+  // Reihenfolge: Entfernung, Fachbetrieb und eigene Marke vorziehen; eigene Notiz 👍 nach vorn, 👎 nach hinten
+  const wert = w => w.d + w.rang * 3000 - (w.marke ? 3000 : 0) + ({ '+': -8000, '-': 30000 }[panneNotizen[w.key]?.b] || 0);
+  const fach = liste.filter(w => w.rang < 2).sort((a, b) => wert(a) - wert(b)).slice(0, PANNE_MAX);
+  const auto = fach.length < PANNE_MIN ? liste.filter(w => w.rang === 2).sort((a, b) => wert(a) - wert(b)).slice(0, PANNE_NOT) : [];
   $('panneStatus').textContent = fach.length || auto.length ? `Im Umkreis von ${r / 1000} km, Luftlinie${ort ? '' : ` ab ${quelle}`}:` : `Keine Werkstatt im Umkreis von ${r / 1000} km gefunden.`;
   $('panneListe').innerHTML = [...fach, ...auto].map((w, i) => panneZeile(w, i, i === fach.length && auto.length)).join('');
   panne.liste = [...fach, ...auto];
@@ -74,7 +77,7 @@ async function panneOeffnen(ort = null, wer = '') {
 async function panneSuchen(la, lo, r) {
   const els = (await tileElements([[la, lo]], r, t => panneRang(t) >= 0 ? r : 0).catch(() => null))?.elements ?? await panneOverpass(la, lo, r);
   const ky = 110540, kx = 111320 * Math.cos(la * Math.PI / 180);
-  return els.map(e => ({ lat: e.lat ?? e.center?.lat, lon: e.lon ?? e.center?.lon, tags: e.tags || {} }))
+  return els.map(e => ({ lat: e.lat ?? e.center?.lat, lon: e.lon ?? e.center?.lon, tags: e.tags || {}, key: e.type?.[0] + e.id }))
     .filter(e => e.lat != null && panneRang(e.tags) >= 0)
     .map(e => ({ ...e, rang: panneRang(e.tags), marke: panneMarke(e.tags), d: Math.hypot((e.lat - la) * ky, (e.lon - lo) * kx) }))
     .filter(e => e.d <= r);
@@ -92,8 +95,9 @@ function panneZeile(w, i, notTitel) {
   return (notTitel ? '<li class="panne-not">Notlösung: Autowerkstätten (manche helfen auch bei Rollern)</li>' : '') +
     `<li><div><b>${art} ${escapeHtml(t.name || (w.rang === 2 ? 'Autowerkstatt' : 'Zweiradwerkstatt'))}</b>${w.marke ? ' ⭐' : ''}` +
     `<span class="hint"> · ${distText(w.d)}${offen === true ? ' · 🟢 jetzt offen' : offen === false ? ' · 🔴 jetzt zu' : ''}</span>` +
-    (adr ? `<br><span class="hint">${escapeHtml(adr)}</span>` : '') + '</div>' +
-    `<div class="panne-knoepfe">${tel ? `<a class="knopf" href="${telHref(tel)}">📞 ${escapeHtml(tel)}</a>` : ''}<button data-hin="${i}">🧭 hin</button></div></li>`;
+    (adr ? `<br><span class="hint">${escapeHtml(adr)}</span>` : '') + panneNotizText(w) + '</div>' +
+    `<div class="panne-knoepfe">${tel ? `<a class="knopf" href="${telHref(tel)}">📞 ${escapeHtml(tel)}</a>` : ''}<button data-hin="${i}">🧭 hin</button>` +
+    `<button data-notiz="${i}" class="secondary" title="Eigene Notiz zu dieser Werkstatt">📝</button></div></li>`;
 }
 function panneFestZeigen() {
   const z = [];
@@ -120,13 +124,73 @@ function panneTalkZeigen() {
     $('talkPtt').scrollIntoView?.({ block: 'center' });
   };
 }
+// ---- Eigene Notizen zu Werkstätten (nur auf diesem Gerät): 👍 hat geholfen, 👎 nimmt keine 50er o. ä., freier Text
+let panneNotizen = store.get('werkstattNotizen', {});
+const panneNotizText = w => {
+  const n = panneNotizen[w.key];
+  return n ? `<br><span class="panne-notiz">${n.b === '+' ? '👍 ' : n.b === '-' ? '👎 ' : '📝 '}${escapeHtml(n.t || '')}</span>` : '';
+};
+function panneNotizBearbeiten(i) {
+  const w = panne.liste[i], n = panneNotizen[w.key] || {}, li = $('panneListe').querySelector(`[data-notiz="${i}"]`).closest('li');
+  li.querySelector('.panne-notiz-form')?.remove();
+  li.insertAdjacentHTML('beforeend', `<div class="panne-notiz-form"><input maxlength="120" placeholder="z. B. hat sofort geholfen, nimmt keine 50er" value="${escapeHtml(n.t || '')}">` +
+    `<div class="panne-knoepfe"><button data-b="+"${n.b === '+' ? ' class="on"' : ''}>👍</button><button data-b="-"${n.b === '-' ? ' class="on"' : ''}>👎</button><button data-b="">💾</button><button data-b="x" class="secondary">löschen</button></div></div>`);
+  const f = li.querySelector('.panne-notiz-form');
+  f.querySelector('input').focus();
+  f.onclick = e => {
+    const b = e.target.closest('[data-b]')?.dataset.b;
+    if (b == null) return;
+    e.stopPropagation();
+    const t = f.querySelector('input').value.trim();
+    if (b === 'x' || (!t && !b && !n.b)) delete panneNotizen[w.key];
+    else panneNotizen[w.key] = { t, b: b || n.b || '', n: w.tags.name || '', z: Date.now() };
+    store.set('werkstattNotizen', panneNotizen);
+    $('panneListe').innerHTML = panne.liste.map((x, k) => panneZeile(x, k, x.rang === 2 && panne.liste[k - 1]?.rang < 2)).join('');
+  };
+}
 $('panneListe').onclick = e => {
+  const nz = e.target.closest('[data-notiz]')?.dataset.notiz;
+  if (nz != null) { panneNotizBearbeiten(+nz); return; }
   const w = panne.liste?.[+e.target.closest('[data-hin]')?.dataset.hin];
   if (!w) return;
   $('panneDlg').close();
   changeWaypoints(() => waypoints.splice(0, waypoints.length,
     { latlng: L.latLng(panne.ort[0], panne.ort[1]), text: panne.wer ? `Panne ${panne.wer}` : '📍 Pannenort' },
     { latlng: L.latLng(w.lat, w.lon), text: w.tags.name || 'Werkstatt' }));
+};
+// ---- Datenkarte für die Werkstatt: Modell, Kennzeichen, FIN, Reifen, Batterie, Lampen … groß, Feldnamen auch englisch
+function panneDatenkarte() {
+  const zeilen = [['Modell', 'Model', [roller.model, roller.year].filter(Boolean).join(', ')], ['Kennzeichen', 'Plate', roller.plate], ['FIN', 'VIN', roller.vin],
+    ...ROLLER_TECHNIK.map(([k, de, en]) => [de, en, roller[k]])].filter(z => z[2]);
+  $('panneKarte').innerHTML = zeilen.length
+    ? zeilen.map(([de, en, v]) => `<span>${de}<small>${en}</small></span><b>${escapeHtml(v)}</b>`).join('')
+    : '<span class="hint">Noch keine Daten. Unter „Mein Roller“ → „Fahrzeugdaten bearbeiten“ eintragen.</span>';
+  $('panneKarteBox').hidden = false;
+}
+$('panneKarteBox').onclick = () => { $('panneKarteBox').hidden = true; };
+$('panneDatenkarte').onclick = panneDatenkarte;
+// ---- Akku sparen: Navigation und Bildschirm-an beenden; das Teilen mit der Gruppe bleibt (die anderen sollen dich finden)
+async function panneAkku() {
+  let stand = '';
+  try { const b = await navigator.getBattery(); stand = `${Math.round(b.level * 100)} %${b.charging ? ' (lädt)' : ''}`; } catch {}
+  $('panneAkku').innerHTML = `🔋 ${stand ? 'Akku ' + stand + ' · ' : ''}<button id="panneAkkuSparen" class="secondary">Akku sparen</button>` +
+    '<span class="hint"> beendet Navigation und Bildschirm-an, Standort-Teilen bleibt.</span>';
+  $('panneAkkuSparen').onclick = () => {
+    if (nav.on) stopNav();
+    nav.lock?.release?.().catch(() => {});
+    $('panneAkku').innerHTML = '🔋 Navigation beendet. Bildschirm geht jetzt wie gewohnt aus; zum Weiterfahren Navigation neu starten.';
+  };
+}
+// ---- Pannenort teilen: nur auf Tipp, über das Teilen-Menü des Handys (SMS, Messenger, Mail), sonst in die Zwischenablage
+$('panneTeilen').onclick = async () => {
+  if (!panne.ort) return;
+  const [la, lo] = panne.ort.map(v => v.toFixed(5)), a = panne.adresse;
+  const wo = a ? [a.strasse, a.ort].filter(Boolean).join(', ') : '';
+  const text = `🔧 Rollerpanne${panne.wer ? ' von ' + panne.wer : ''}${wo ? ': ' + wo : ''}\n${la}, ${lo}\nhttps://www.openstreetmap.org/?mlat=${la}&mlon=${lo}#map=17/${la}/${lo}` +
+    (roller.model ? `\nRoller: ${roller.model}` : '');
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(text); $('panneStatus').textContent = '📋 Pannenort kopiert, jetzt in SMS oder Messenger einfügen.'; }
+  catch { $('panneStatus').textContent = text; }
 };
 $('panneZu').onclick = () => $('panneDlg').close();
 $('panneKnopf').onclick = () => panneOeffnen();

@@ -102,6 +102,7 @@
       <label for="rl_shop">Heimatwerkstatt</label><input id="rl_shop" type="text" autocomplete="off" spellcheck="false">
       <label for="rl_shopTel">Telefon Werkstatt</label><input id="rl_shopTel" type="text" autocomplete="off" spellcheck="false">
       <label for="rl_shopAddr">Adresse Werkstatt</label><input id="rl_shopAddr" type="text" autocomplete="off" spellcheck="false" placeholder="Straße, Ort">
+      <div id="rollerTechnik" class="roller-technik"><div class="section-title">🪪 Datenkarte für die Werkstatt</div></div>
       <label for="rl_fuel">Verbrauch (l/100 km)</label><input id="rl_fuel" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 2,5">
       <label for="rl_price">Benzinpreis (€/l)</label><input id="rl_price" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 1,85">
       <div class="talk-row"><label>Tankinhalt (l)<input id="rl_tank" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 7"></label>
@@ -274,11 +275,14 @@
 <dialog id="panneDlg" class="sw-dlg panne-dlg">
   <h3 id="panneTitel">🔧 Panne – Hilfe in der Nähe</h3>
   <div id="panneFest" class="panne-fest"></div>
+  <div class="panne-knoepfe"><button id="panneDatenkarte" class="secondary">🪪 Datenkarte für die Werkstatt</button><button id="panneTeilen" class="secondary" title="Nur auf Tipp: Pannenort als Link per SMS, Messenger usw.">📤 Pannenort teilen</button></div>
+  <div id="panneAkku" class="panne-akku"></div>
   <div id="panneTalk" class="panne-talk" hidden></div>
   <div id="panneStatus" class="hint"></div>
   <ul id="panneListe" class="panne-liste"></ul>
   <details id="panneSaetzeBox" class="panne-saetze-box"><summary>🗣 Sätze für Werkstatt und Passanten <select id="panneSprache" aria-label="Sprache"></select></summary>
     <ul id="panneSaetze" class="panne-saetze"></ul></details>
+  <div id="panneKarteBox" class="panne-gross panne-karte-box" hidden><div id="panneKarte" class="panne-karte"></div><div class="hint">Antippen zum Schließen</div></div>
   <div id="panneGrossBox" class="panne-gross" hidden><div id="panneGross"></div><div id="panneGrossKlein"></div>
     <div class="dlg-knoepfe"><button id="panneNochmal">🔊 Nochmal vorlesen</button><button class="secondary">Zurück</button></div></div>
   <div class="dlg-knoepfe"><button id="panneZu" class="secondary">Schließen</button></div>

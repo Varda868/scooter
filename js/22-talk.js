@@ -303,11 +303,12 @@ async function talkHoeren(d) {
   const wer = (d.signatur || d.absender === k.schluessel) && k.name || k.schluessel.slice(0, 8);
   if (d.absender) talkKontaktMerken(d.absender, wer);
   if (d.privat && d.absender) pushLiveGehoert(d.absender);
-  talk.hoert = (d.privat ? '🔒 ' : '') + wer; talkZeigen();
+  const werSp = wer + (d.absender ? talkSpText(d.absender) : '');
+  talk.hoert = (d.privat ? '🔒 ' : '') + werSp; talkZeigen();
   if (opus) {
     const ms = await talkOpusHoeren(d.pakete).catch(() => 0);
     talk.hoert = '';
-    talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+    talkLog(`${d.privat ? '🔒 ' : ''}${werSp} · ${(ms / 1000).toFixed(1).replace('.', ',')} s · Opus${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
     talkZeigen();
     return;
   }
@@ -324,7 +325,7 @@ async function talkHoeren(d) {
   await new Promise(r => setTimeout(r, ms + 300));
   talk.empf.beenden(slot);
   talk.hoert = '';
-  talkLog(`${d.privat ? '🔒 ' : ''}${wer} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
+  talkLog(`${d.privat ? '🔒 ' : ''}${werSp} · ${(ms / 1000).toFixed(1).replace('.', ',')} s${d.fehlend ? ` · ${d.fehlend} Lücken` : ''}`);
   talkZeigen();
 }
 
@@ -397,20 +398,24 @@ function talkZeigen() {
 // die Durchsage geht dann versiegelt nur an deren Schlüssel. Nach dem Start spricht die Taste wieder an alle.
 const TALK_KONTAKTE_MAX = 8;
 let talkKontakte = store.get('talkKontakte', []), talkAn = null;
-function talkKontaktMerken(pk, name) {
+// sp = Sprachen des Kontakts (kommen mit seinem Standort-Event); ohne Angabe bleiben die zuletzt bekannten
+function talkKontaktMerken(pk, name, sp) {
   if (!/^[0-9a-f]{64}$/.test(pk)) return;
   const alt = talkKontakte.find(k => k.pk === pk);
-  if (alt?.name === name && talkKontakte[0] === alt) return;
-  talkKontakte = [{ pk, name }, ...talkKontakte.filter(k => k.pk !== pk)].slice(0, TALK_KONTAKTE_MAX);
+  sp = sp?.length ? sp : alt?.sp;
+  if (alt?.name === name && talkKontakte[0] === alt && String(alt.sp) === String(sp)) return;
+  talkKontakte = [{ pk, name, ...(sp?.length ? { sp } : {}) }, ...talkKontakte.filter(k => k.pk !== pk)].slice(0, TALK_KONTAKTE_MAX);
   store.set('talkKontakte', talkKontakte);
   talkAnZeigen();
 }
+// Sprachkürzel am Rufnamen, z. B. „SIMA (de en)“
+const talkSpText = pk => { const sp = talkKontakte.find(k => k.pk === pk)?.sp; return sp?.length ? ` (${sp.join(' ')})` : ''; };
 function talkAnZeigen() {
   const k = talkKontakte.find(x => x.pk === talkAn);
   $('talkAn').textContent = k ? `🔒 an ${k.name} ▾` : 'an alle ▾';
   $('talkAn').classList.toggle('privat', !!k);
   $('talkAn').hidden = !talkKontakte.length;
-  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}</button>`)].join('');
+  $('talkAnMenu').innerHTML = [`<button data-pk="">📢 an alle</button>`, ...talkKontakte.map(k => `<button data-pk="${k.pk}">🔒 ${escapeHtml(k.name)}${k.sp?.length ? ` <small>${k.sp.join(' ')}</small>` : ''}</button>`)].join('');
   $('talkAnMenu').querySelector(`[data-pk="${talkAn || ''}"]`)?.classList.add('on');
 }
 $('talkAn').onclick = () => { $('talkAnMenu').hidden = !$('talkAnMenu').hidden; };
