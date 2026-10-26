@@ -48,6 +48,10 @@ function bereich_faehren(): void {
     } elseif (in_array($aktion, ['lauf', 'auswerten'], true) && isset(FAEHR_QUELLEN[$q = (string)($_POST['q'] ?? '')])) {
       [$p] = faehr_lauf($q, true, $aktion === 'auswerten');
       admin_zurueck('faehren', FAEHR_QUELLEN[$q][0] . ($p ? ': Fehler, siehe Verlauf' : ': fertig'));
+    } elseif ($aktion === 'tnds_pin_weg') {
+      $f = '';
+      if ($neu = faehr_uk_pin_holen($f)) { faehr_uk_pin($neu); admin_zurueck('faehren', 'TNDS-Zertifikat übernommen, SHA-256 ' . $neu['sha256'] . ' – bitte mit dem von Basemap genannten vergleichen.'); }
+      $fehler = "TNDS-Zertifikat nicht abrufbar: $f";
     } elseif ($aktion === 'sperre_weg') {
       $st = faehr_se_stand(); unset($st['abgelehnt'], $st['abgelehnt_t']); $st['fehl'] = 0; faehr_se_stand($st);
       admin_zurueck('faehren', 'Sperre aufgehoben – „Schweden jetzt“ versucht es erneut (zählt als ein Abruf).');
@@ -115,6 +119,8 @@ function bereich_faehren(): void {
       $html .= '<label>' . h($label) . ' <span class="leise">' . ($w !== '' ? 'gesetzt (…' . h(substr($w, -4)) . ')' : 'nicht gesetzt') . '</span>' .
         '<input type="password" name="' . h($f) . '" autocomplete="off" placeholder="' . ($w !== '' ? 'leer lassen = unverändert' : h($label) . ' eingeben') . '"></label>';
     }
+    if ($z === 'tnds' && ($pin = faehr_uk_pin())) $html .= '<p class="leise">Festgehaltenes Server-Zertifikat (selbst ausgestellt' . ($pin['name'] ? ', ' . h($pin['name']) : '') .
+      ($pin['bis'] ? ', gültig bis ' . date('d.m.Y', $pin['bis']) : '') . ', ' . ($pin['t'] ? 'übernommen ' . admin_zeit((int)$pin['t']) : 'ab Werk') . '), SHA-256:<br><code>' . h($pin['sha256']) . '</code></p>';
     if ($z === 'tnds') $html .= '<label class="zeile"><input type="checkbox" name="uk_klartext" value="1"' . (faehr_uk_klartext() ? ' checked' : '') .
       '> unverschlüsseltes FTP erlauben, falls der Server kein FTPS kann (Passwort geht dann im Klartext übers Netz)</label>';
     if ($z === 'trafiklab') {
@@ -123,6 +129,7 @@ function bereich_faehren(): void {
       $html .= '</select></label>';
     }
     $html .= '<div class="knoepfe"><button class="klein">Speichern</button>' .
+      ($z === 'tnds' ? '<button class="klein" name="aktion" value="tnds_pin_weg">Zertifikat neu übernehmen</button>' : '') .
       ($z === 'trafiklab' && $st === 'voll' && faehr_se_gesperrt(faehr_se_stand(), (string)sw_wert('trafiklab_key')) ? '<button class="klein" name="aktion" value="sperre_weg">Sperre aufheben</button>' : '') .
       ($st !== 'leer' ? '<button class="klein" name="weg" value="1">Löschen</button>' : '') . '</div></form>';
   }
