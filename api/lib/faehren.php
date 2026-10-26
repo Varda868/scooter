@@ -493,17 +493,53 @@ function faehr_lauf_uk(array &$p, array &$i, bool $manuell = false, bool $nur_au
   return faehr_txc_auswerten($zips, 'uk', 'Traveline National Dataset (TNDS), OGL', $p, $i);
 }
 
-// Laden nur, wenn neuer als die vorhandene Datei (MDTM). Erst FTPS; Klartext nur, wenn im Admin ausdrücklich erlaubt.
+// Der TNDS-Server hat ein selbst ausgestelltes Zertifikat. Deshalb wird sein öffentlicher Schlüssel festgehalten
+// (CURLOPT_PINNEDPUBLICKEY): verschlüsselt bleibt es, und ein ausgetauschtes Zertifikat (Abfangversuch) fällt auf, bevor das
+// Passwort rausgeht. Wechselt Basemap den Schlüssel, übernimmt „Zertifikat neu übernehmen“ im Admin den aktuellen (ohne Anmeldung geholt).
+// Ab Werk: der Schlüssel, der am 26.10.2026 unabhängig von einem zweiten Netz geprüft wurde (Zertifikat 14.10.2026–14.10.2027).
+const FAEHR_UK_PIN_STANDARD = ['pin' => 'sha256//yLxXVEHs/608ioaN/2c269dpDykA+37169/FH5xbc0w=',
+  'sha256' => '52:CA:C5:E2:86:E6:A2:0A:05:44:6D:FF:57:CC:13:79:D5:63:53:F5:47:91:C9:88:8D:6D:AF:73:48:F7:61:05',
+  'name' => 'ftp.tnds.basemap.co.uk', 'bis' => 1823472000, 't' => 0];
+function faehr_uk_pin(?array $neu = null): array {
+  $datei = sw_daten(true) . '/tnds-pin.json';
+  if ($neu !== null) { @file_put_contents($datei, json_encode($neu)); return $neu; }
+  return json_decode((string)@file_get_contents($datei), true) ?: FAEHR_UK_PIN_STANDARD;
+}
+function faehr_uk_pin_holen(string &$fehler): ?array {
+  $s = @stream_socket_client('tcp://' . FAEHR_UK_HOST . ':21', $nr, $txt, 20);
+  if (!$s) { $fehler = "keine Verbindung ($txt)"; return null; }
+  stream_set_timeout($s, 20);
+  $antwort = function () use ($s) { $z = ''; do { $l = fgets($s, 1024); if ($l === false) break; $z .= $l; } while (!preg_match('/^\d{3} /', $l)); return $z; };
+  $antwort();
+  fwrite($s, "AUTH TLS\r\n");
+  if (!str_starts_with($antwort(), '234')) { fclose($s); $fehler = 'Server bietet kein AUTH TLS'; return null; }
+  stream_context_set_option($s, 'ssl', 'verify_peer', false);
+  stream_context_set_option($s, 'ssl', 'verify_peer_name', false);
+  stream_context_set_option($s, 'ssl', 'capture_peer_cert', true);
+  if (!@stream_socket_enable_crypto($s, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) { fclose($s); $fehler = 'TLS-Handshake fehlgeschlagen'; return null; }
+  $cert = stream_context_get_params($s)['options']['ssl']['peer_certificate'] ?? null;
+  @fwrite($s, "QUIT\r\n"); fclose($s);
+  $pk = $cert ? openssl_pkey_get_details(openssl_pkey_get_public($cert)) : null;
+  if (!$pk) { $fehler = 'Zertifikat nicht lesbar'; return null; }
+  $der = base64_decode(preg_replace('/-----[^-]+-----|\s/', '', $pk['key']));
+  $info = openssl_x509_parse($cert);
+  return ['pin' => 'sha256//' . base64_encode(hash('sha256', $der, true)), 'sha256' => implode(':', str_split(strtoupper(openssl_x509_fingerprint($cert, 'sha256')), 2)),
+    'name' => $info['subject']['CN'] ?? '', 'bis' => (int)($info['validTo_time_t'] ?? 0), 't' => time()];
+}
+
+// Laden nur, wenn neuer als die vorhandene Datei (MDTM). Erst FTPS mit Zertifikatsprüfung, dann FTPS mit gemerktem
+// Schlüssel (selbst ausgestelltes Zertifikat); Klartext nur, wenn im Admin ausdrücklich erlaubt.
 function faehr_uk_laden(string $name, string $zip, string $user, string $pass, array &$p, array &$i): bool {
-  $versuche = [[CURLUSESSL_ALL, 'FTPS']];
-  if (faehr_uk_klartext()) $versuche[] = [CURLUSESSL_NONE, 'FTP unverschlüsselt'];
+  $versuche = [[CURLUSESSL_ALL, 'FTPS', null]];
   $meldung = '';
-  foreach ($versuche as [$ssl, $art]) {
+  for ($k = 0; $k < count($versuche); $k++) {
+    [$ssl, $art, $pin] = $versuche[$k];
     $fh = fopen("$zip.tmp", 'wb');
     $c = curl_init('ftp://' . FAEHR_UK_HOST . '/' . $name);
     curl_setopt_array($c, [CURLOPT_FILE => $fh, CURLOPT_USERPWD => "$user:$pass", CURLOPT_USE_SSL => $ssl,
       CURLOPT_PROTOCOLS => CURLPROTO_FTP | CURLPROTO_FTPS, CURLOPT_FTP_USE_EPSV => true, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_TIMEOUT => 900,
       CURLOPT_FILETIME => true, CURLOPT_NOPROGRESS => false, CURLOPT_PROGRESSFUNCTION => fn($c, $dl, $da) => $da > FAEHR_UK_MAX ? 1 : 0]
+      + ($pin ? [CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => 0, CURLOPT_PINNEDPUBLICKEY => $pin] : [])
       + (is_file($zip) ? [CURLOPT_TIMECONDITION => CURL_TIMECOND_IFMODSINCE, CURLOPT_TIMEVALUE => filemtime($zip)] : []));
     $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $unmet = (int)curl_getinfo($c, CURLINFO_CONDITION_UNMET);
     $zeit = (int)curl_getinfo($c, CURLINFO_FILETIME); $err = curl_error($c); $nr = curl_errno($c);
@@ -517,10 +553,14 @@ function faehr_uk_laden(string $name, string $zip, string $user, string $pass, a
     }
     @unlink("$zip.tmp");
     // nie Zugangsdaten ausgeben: curl nennt sie zwar nicht, sicherheitshalber trotzdem entfernen
-    $meldung = str_replace([$user, $pass], '…', "$art: " . ($code === 530 ? 'Anmeldung abgelehnt (530) – Benutzer/Passwort prüfen' : ($err ?: "Fehler $nr, Antwort $code")));
-    if ($code === 530) break;
+    $meldung = str_replace(array_filter([$user, $pass], fn($w) => strlen($w) >= 4), '…', "$art: " . ($code === 530 ? 'Anmeldung abgelehnt (530) – Benutzer/Passwort prüfen' :
+      ($nr === CURLE_SSL_PINNEDPUBKEYNOTMATCH ? 'Zertifikat des Servers hat sich geändert – Passwort NICHT gesendet. Wenn TNDS das bestätigt: Admin → Schlüssel & Konten → TNDS „Zertifikat neu übernehmen“' : ($err ?: "Fehler $nr, Antwort $code"))));
+    if ($code === 530 || $nr === CURLE_SSL_PINNEDPUBKEYNOTMATCH) break;
+    // Zertifikat nicht prüfbar (selbst ausgestellt) → mit festgehaltenem Schlüssel erneut (60 = CURLE_PEER_FAILED_VERIFICATION)
+    if ($k === 0 && $nr === 60) $versuche[] = [CURLUSESSL_ALL, 'FTPS mit festgehaltenem Zertifikat', faehr_uk_pin()['pin']];
+    if ($k === count($versuche) - 1 && faehr_uk_klartext() && $ssl !== CURLUSESSL_NONE) $versuche[] = [CURLUSESSL_NONE, 'FTP unverschlüsselt', null];
   }
-  $p[] = "TNDS $name nicht geladen – $meldung" . (!faehr_uk_klartext() ? ' (unverschlüsseltes FTP ist aus; im Admin unter Schlüssel & Konten → TNDS erlaubbar)' : '');
+  $p[] = "TNDS $name nicht geladen – $meldung";
   return false;
 }
 
