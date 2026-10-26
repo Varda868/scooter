@@ -283,6 +283,8 @@
   <div class="dlg-knoepfe"><button id="linkZu" class="secondary">Schließen</button></div>
 </dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Fällt cdnjs aus, hängt sonst die ganze App („L is not defined“): dann Leaflet von unpkg -->
+<script>window.L || document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>')</script>
 <script src="js/01-grundlagen.js"></script>
 <script src="js/02-wegpunkte.js"></script>
 <script src="js/03-routing.js"></script>

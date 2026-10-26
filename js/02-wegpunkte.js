@@ -217,7 +217,16 @@ async function orteSuchen(q, um) {
   return out.sort((a, b) => a.rang - b.rang).slice(0, 8);
 }
 const PHOTON_ART = { house: '🏠', street: '🛣', city: '🏙', town: '🏙', village: '🏡', locality: '📍', district: '📍' };
+// „Sankt Moritz“ heißt in OSM „St. Moritz“ (und umgekehrt): beide Schreibweisen fragen, sonst kommt nur Venetien
 async function photonSuchen(q, um, nurStaedte = false) {
+  const m = /^(sankt|st\.?)\s+(.+)/i.exec(q.trim());
+  if (!m) return photonEinmal(q, um, nurStaedte);
+  const anders = (/^sankt$/i.test(m[1]) ? 'St. ' : 'Sankt ') + m[2];
+  const [a, b] = await Promise.all([photonEinmal(q, um, nurStaedte), photonEinmal(anders, um, nurStaedte).catch(() => [])]);
+  const gesehen = new Set(a.map(x => `${x.lat.toFixed(3)},${x.lon.toFixed(3)}`));
+  return [...a, ...b.filter(x => !gesehen.has(`${x.lat.toFixed(3)},${x.lon.toFixed(3)}`))];
+}
+async function photonEinmal(q, um, nurStaedte) {
   // Ohne zoom gewichtet Photon nur die Nähe („Oslo“ in Kiel → Osloring). Orte weiträumig (zoom 5), mit Hausnummer
   // eher örtlich (Kartenzoom), damit „Bahnhofstr. 3“ in der Nähe bleibt
   const zoom = /\d/.test(q) ? Math.min(14, Math.max(8, Math.round(map.getZoom()))) : 5;
@@ -386,7 +395,14 @@ function clearRoute() {
 async function geocode(q) {
   const m = q.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
   if (m) return L.latLng(+m[1], +m[3]);
-  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&q=${encodeURIComponent(q)}`);
+  // Wie die Vorschläge: Photon mit Nähe zur Kartenmitte, sonst landet „Aichach“ in Südtirol (Aicha)
+  try {
+    const best = ortRang(q, await photonSuchen(q, map.getCenter()))[0];
+    if (best) return L.latLng(best.lat, best.lon);
+  } catch {}
+  // Nominatim nur als Rückfall, mit Vorzug für die Gegend um die Kartenmitte (bounded=0: auch außerhalb erlaubt)
+  const c = map.getCenter(), vb = [c.lng - 3, c.lat + 2, c.lng + 3, c.lat - 2].map(x => x.toFixed(3)).join(',');
+  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&viewbox=${vb}&bounded=0&q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (!data.length) throw new Error(`Nicht gefunden: ${q}`);
   return L.latLng(+data[0].lat, +data[0].lon);

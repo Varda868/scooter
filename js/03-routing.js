@@ -255,6 +255,19 @@ function faehrTrip(fa) {
   return { legs: [leg], summary: leg.summary };
 }
 
+// Roller-Abschnitt viel länger als die Strecke über seine Punkte (Gent→Groningen: 703 km für 100 km): meist ist eine
+// Brücke, eine Passstraße oder eine N-Straße für 50er gesperrt, Valhalla fährt dann weit außen herum. Nur ein Hinweis
+// je Route, für den schlimmsten Abschnitt
+const UMWEG_FAKTOR = 2.2, UMWEG_MIN_KM = 40;
+function umwegPruefen(chunk, data) {
+  const t = data.trip;
+  if (!t?.legs || summaryNote.includes('⚠ Umweg zwischen') || t.legs.some(l => l.maneuvers.some(m => m.type === 28))) return;
+  const luft = chunk.reduce((s, w, i) => i ? s + chunk[i - 1].latlng.distanceTo(w.latlng) / 1000 : 0, 0), km = t.summary.length;
+  if (km < UMWEG_FAKTOR * luft || km - luft < UMWEG_MIN_KM) return;
+  const name = w => w.text && !w.grob ? w.text.split(',')[0] : `${w.latlng.lat.toFixed(2)}, ${w.latlng.lng.toFixed(2)}`;
+  summaryNote += ` · ⚠ Umweg zwischen ${name(chunk[0])} und ${name(chunk.at(-1))}: ${Math.round(km)} km statt ca. ${Math.round(luft)} km, vermutlich ist eine Brücke oder Passstraße für 50er gesperrt`;
+}
+
 // Laufzähler: eine neue Berechnung (Ziel dazu, Punkt verschoben) überholt die laufende; die bricht vor der nächsten
 // Valhalla-Anfrage ab, damit nie zwei Läufe gleichzeitig fragen und kein altes Ergebnis auf der Karte landet
 let routeLauf = 0, routeAbbruch = new AbortController();
@@ -277,6 +290,7 @@ async function planRoute(locs, exclude = []) {
     // Kraftfahrstraße erreichbar (Europoort), dann sucht Valhalla einen Umweg übers Wasser
     if (chunk.some(w => w.grob) && data.trip?.legs?.some(l => l.maneuvers.some(m => m.type === 28)) && !summaryNote.includes('Umweg über eine weitere Fähre'))
       summaryNote += ' · ⚠ Umweg über eine weitere Fähre: Zufahrt zum Hafen für 50er vermutlich gesperrt';
+    umwegPruefen(chunk, data);
     if (chunks.length === 1) return data;
     trips.push(data.trip);
   }
