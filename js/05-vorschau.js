@@ -76,12 +76,23 @@ function drawGradeSigns() {
     // Schild rechts neben die Straße: senkrecht zur Fahrtrichtung in Bildschirmpixeln versetzen (Mercator ist winkeltreu)
     const b = (bearing(L.latLng(pos), L.latLng(ahead)) + 90) * Math.PI / 180, dx = Math.sin(b) * 22, dy = -Math.cos(b) * 22;
     const pct = Math.round(sec.max);
-    L.marker(pos, { keyboard: false, icon: L.divIcon({ className: '', html: gradeSignSvg(sec.dir, pct), iconSize: [28, 25], iconAnchor: [14 - dx, 12.5 - dy] }) })
+    // stark: deutlich über der Schwelle oder lang, die bleiben auch in der mittleren Ansicht
+    const stark = sec.max >= limit + 4 || sec.to - sec.from >= 1;
+    L.marker(pos, { keyboard: false, icon: L.divIcon({ className: stark ? 'grade-icon grade-stark' : 'grade-icon', html: gradeSignSvg(sec.dir, pct), iconSize: [28, 25], iconAnchor: [14 - dx, 12.5 - dy] }) })
       .bindTooltip(`${sec.dir > 0 ? 'Steigung' : 'Gefälle'} bis ${pct} % über ${Math.round((sec.to - sec.from) * 1000)} m · km ${sec.from.toFixed(1)}`)
       .addTo(gradeSignLayer);
   }
 }
 $('gradeWarn').addEventListener('change', drawGradeSigns);
+// In der Gesamtansicht langer Strecken lägen die Schilder als Teppich über der Route: ab Zoom 12 alle,
+// 9–11 nur die starken, darunter keine (steile Stücke zeigt dann das Höhenprofil)
+const STEIG_ZOOM_ALLE = 12, STEIG_ZOOM_STARK = 9;
+const steigKlasse = () => {
+  const z = map.getZoom(), c = map.getContainer().classList;
+  c.toggle('steig-weit', z < STEIG_ZOOM_STARK);
+  c.toggle('steig-mittel', z >= STEIG_ZOOM_STARK && z < STEIG_ZOOM_ALLE);
+};
+map.on('zoomend', steigKlasse); steigKlasse();
 // Neuer Schnitt: Zeiten, Ankunft und Wetter je Halt neu berechnen
 $('avgSpeed').addEventListener('change', () => ready() && route());
 

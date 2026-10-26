@@ -76,6 +76,11 @@
       </fieldset>
       <label><input id="fuelThin" type="checkbox" checked> ⛽ Tankstellen nur direkt an der Strecke, etwa alle 100 km eine</label>
       <label><input id="ferryLines" type="checkbox"> ⛴ Fährlinien auf der Karte <span id="ferryLinesHint" class="hint"></span></label>
+      <label for="gradeWarn">⚠ Warnschild an Steigung/Gefälle ab <span class="hint">(weit herausgezoomt nur die steilsten, ganz draußen keine)</span></label>
+      <select id="gradeWarn">
+        <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
+        <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
+      </select>
       <label for="radius">Umkreis zur Route: <span id="radiusVal">500</span> m</label>
       <input id="radius" type="range" min="100" max="2000" step="100" value="500">
       </details>
@@ -137,11 +142,6 @@
       <input id="hills" type="range" min="0" max="1" step="0.1" value="0.3">
       <label><input id="unpaved" type="checkbox" checked> Schotter, Feld- und Waldwege meiden</label>
       <label><input id="ferry" type="checkbox"> ⛴ Fähren bevorzugen (spart oft Strecke)</label>
-      <label for="gradeWarn">Warnschild an Steigung/Gefälle ab</label>
-      <select id="gradeWarn">
-        <option value="6">6 %</option><option value="8" selected>8 %</option><option value="10">10 %</option>
-        <option value="12">12 %</option><option value="15">15 %</option><option value="0">aus</option>
-      </select>
       <label for="wxWindow">Wetterwarnung an der Strecke (Regen, Schnee, Sturm, Gewitter, Glätte) zur Ankunftszeit</label>
       <select id="wxWindow">
         <option value="15">± 15 min</option><option value="30" selected>± 30 min</option><option value="60">± 60 min</option><option value="0">aus</option>
@@ -336,5 +336,6 @@
 <script src="js/28-kurzlink.js"></script>
 <script src="js/29-push.js"></script>
 <script src="js/30-panne.js"></script>
+<script src="js/31-strassenart.js"></script>
 </body>
 </html>
