@@ -159,6 +159,7 @@ function renderElevation(pts, lenM) {
   eleData = { xs, hs };
   drawGradeSigns();
   $('elevation').innerHTML = `<div class="ele-stats">↑ ${up} m · ↓ ${down} m · ${Math.round(minH)}–${Math.round(maxH)} m ü. NN · max. ${maxGrade.toFixed(0)} % Steigung</div>
+    <div class="ele-stats ele-tage"></div>
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Höhenprofil">
       <line class="ele-grid" x1="${L0}" x2="${W - R0}" y1="${Y(hi)}" y2="${Y(hi)}"/>
       <line class="ele-grid" x1="${L0}" x2="${W - R0}" y1="${Y(lo)}" y2="${Y(lo)}"/>
@@ -171,7 +172,7 @@ function renderElevation(pts, lenM) {
       <line class="ele-cursor" y1="${T0}" y2="${H - B0}" visibility="hidden"/>
       <text class="ele-axis ele-label" y="${T0 + 8}" visibility="hidden"></text>
     </svg>`;
-  eleGeo = { X, top: T0, bottom: H - B0, totalKm };
+  eleGeo = { X, top: T0, bottom: H - B0, totalKm, pts: xs.map((x, i) => [x, hs[i]]) };
   eleEtappenZeichnen();
   const svg = $('elevation').querySelector('svg');
   const cursor = svg.querySelector('.ele-cursor'), label = svg.querySelector('.ele-label');
@@ -187,7 +188,8 @@ function renderElevation(pts, lenM) {
     const h = hs[Math.max(0, i)];
     const x = X(km);
     cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); cursor.setAttribute('visibility', 'visible');
-    label.textContent = `km ${km.toFixed(1)} · ${Math.round(h)} m`;
+    const tag = routeStages.length ? ` · Tag ${1 + nightsBefore(routeStages.filter(s => s < km).length)}` : '';
+    label.textContent = `km ${km.toFixed(1)} · ${Math.round(h)} m${tag}`;
     label.setAttribute('x', x < W / 2 ? x + 4 : x - 4);
     label.setAttribute('text-anchor', x < W / 2 ? 'start' : 'end');
     label.setAttribute('visibility', 'visible');
@@ -204,6 +206,16 @@ let eleShowKm = null, eleGeo = null;
 function eleEtappenZeichnen() {
   const g = $('elevation').querySelector('.ele-etappen');
   if (!g || !eleGeo) return;
+  // Höhenmeter je Tag; der Tag mit dem meisten Anstieg fett
+  const grenzen = [0, ...routeStages, eleGeo.totalKm], tage = grenzen.slice(1).map((bis, d) => {
+    const teil = eleGeo.pts.filter(([x]) => x >= grenzen[d] && x <= bis);
+    return teil.length > 1 ? climb(teil.map(([x, h]) => [x, h])).up : 0;
+  });
+  const maxTag = Math.max(...tage), tageBox = $('elevation').querySelector('.ele-tage');
+  if (tageBox) tageBox.innerHTML = routeStages.length ? tage.map((up, d) => {
+    const t = `T${1 + nightsBefore(d)} ↑ ${up} m`;
+    return up === maxTag && up > 0 ? `<b>${t}</b>` : t;
+  }).join(' · ') : '';
   g.innerHTML = routeStages.filter(km => km > 0 && km < eleGeo.totalKm).map((km, d) => {
     const x = eleGeo.X(km).toFixed(1);
     return `<line class="ele-etappe" x1="${x}" x2="${x}" y1="${eleGeo.top}" y2="${eleGeo.bottom}"/>` +
