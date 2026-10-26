@@ -26,3 +26,5 @@ table input.pos:not([type=checkbox]) { width: 3.2rem; }
 .banner { border: 1px solid var(--gefahr); border-radius: 6px; padding: .6rem .8rem; }
 input.cron:not([type=checkbox]) { width: 9rem; font-family: monospace; }
 .schluessel-link { font-size: .9em; white-space: nowrap; }
+form.schluessel { border-top: 1px solid var(--rand); padding-top: .4em; margin-top: .6em; }
+form.schluessel h3 { margin: .2em 0; font-size: 1em; }
