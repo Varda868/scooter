@@ -229,12 +229,13 @@ async function photonSuchen(q, um, nurStaedte = false) {
 async function photonEinmal(q, um, nurStaedte) {
   // Ohne zoom gewichtet Photon nur die Nähe („Oslo“ in Kiel → Osloring). Orte weiträumig (zoom 5), mit Hausnummer
   // eher örtlich (Kartenzoom), damit „Bahnhofstr. 3“ in der Nähe bleibt
-  const zoom = /\d/.test(q) ? Math.min(14, Math.max(8, Math.round(map.getZoom()))) : 5;
+  // Ab Zoom 13: darunter liefert Photon für „Hauptstraße 1“ ein Set ohne die nahen Treffer (Augsburg fehlt, Dasing vorn)
+  const zoom = /\d/.test(q) ? Math.min(14, Math.max(13, Math.round(map.getZoom()))) : 5;
   const r = await fetch(`${PHOTON_URL}?q=${encodeURIComponent(q)}&lang=de&limit=${nurStaedte ? 3 : 8}&lat=${um.lat.toFixed(4)}&lon=${um.lng.toFixed(4)}&zoom=${zoom}` +
     (nurStaedte ? '&osm_tag=place:city&osm_tag=place:town' : ''),
     { signal: AbortSignal.timeout(6000) });
   if (!r.ok) return [];
-  return ((await r.json()).features || []).map(f => {
+  return ((await r.json()).features || []).map((f, pos) => {
     const p = f.properties, [lon, lat] = f.geometry.coordinates;
     // Gleichnamiges in Übersee (Athens in Georgia) weglassen, Roller fahren in Europa
     if (um.distanceTo([lat, lon]) > 4000e3) return null;
@@ -242,20 +243,30 @@ async function photonEinmal(q, um, nurStaedte) {
     const name = p.type === 'house' || (!p.name && strasse) ? strasse || p.name : p.name || strasse;
     const ort = [p.postcode, p.city || p.town || p.village].filter(Boolean).join(' ');
     // Größe aus place=*: Photon nennt Städte und Dörfer gleichermaßen type „city“
-    const gr = p.osm_key === 'place' ? ({ city: 0, town: 1, village: 2 }[p.osm_value] ?? 3) : 3;
-    return name && { icon: gr <= 1 ? '🏙' : gr === 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
+    // Kanton, Verwaltungsgrenze, Bahnhof, Flächen (gr 4) hinter jeden Ort: „St. Gallen“ meint die Stadt, nicht den Kanton
+    const gr = p.osm_key === 'place' ? ({ city: 0, town: 1, village: 2 }[p.osm_value] ?? (/^(state|county|region|province)$/.test(p.osm_value) ? 4 : 3))
+      : /^(boundary|landuse|railway)$/.test(p.osm_key) ? 4 : 3;
+    return name && { icon: gr <= 1 ? '🏙' : gr === 2 ? '🏡' : PHOTON_ART[p.type] || '📍', gr, pos, name: ort && !name.includes(ort) ? `${name}, ${ort}` : name, lat, lon,
       info: [p.type === 'house' || p.type === 'street' ? '' : p.state, p.country !== 'Deutschland' && p.country, `${Math.round(um.distanceTo([lat, lon]) / 1000)} km`].filter(Boolean).join(' · ') };
   }).filter(Boolean);
 }
 // Ortsindex und Photon gemeinsam ordnen: Name beginnt mit dem Gesuchten, dann Städte vor Dörfern (city, town, village),
 // erst dann der genau gleiche Name, sonst wie geliefert. „Prag“ → Prag vor Pragsdorf, „Palma“ → Palma vor la Palma
 // de Cervelló, „Höchstädt“ → Höchstädt an der Donau vor dem Dorf Hochstadt (ortNorm macht beide gleich)
+// „St.“ und „Sankt“ gleich behandeln, sonst schlägt „St. Gallenkirch“ (beginnt mit „st. gallen“) die Stadt Sankt Gallen
+const ortKern = s => ortNorm(s).replace(/^(st\.?|sankt)\s+/, 'sankt ');
 function ortRang(q, items) {
-  const n = ortNorm(q), kopf = it => it.name.split(',')[0].trim();
+  const n = ortKern(q), kopf = it => it.name.split(',')[0].trim();
+  // Ganzes Wort vor bloßem Anfang (Sankt Gallen vor Sankt Gallenkirch), beides vor fremdem Namen; beim Tippen
+  // („Augsb“) bleibt der Anfang trotzdem vor allem anderen
+  const anfang = it => { const k = ortKern(kopf(it)); return !k.startsWith(n) ? 2 : /^[a-z]/.test(k.slice(n.length)) ? 1 : 0; };
+  // Photon trifft Landesschreibweisen selbst (name:it, name:cs …) und nennt die Stadt auf Deutsch: Milano → Mailand,
+  // Praha → Prag, Venezia → Venedig auf Platz 1–2. Solch eine Stadt mit anderem Namen zählt wie die Städte-Nachfrage
+  const exonym = it => it.pos != null && it.pos <= 1 && it.gr <= 1 && anfang(it) === 2;
   // Großstadt aus der Städte-Nachfrage zuerst: „Milano“ meint Mailand, nicht Milanówek (Photon nennt Mailand auf Deutsch)
   // Bei sonst Gleichem entscheidet die Nähe zur Kartenmitte (Neustadt an der Donau vor Neustadt in Holstein)
   const c = map.getCenter(), weit = it => it.lat == null ? 0 : Math.round(c.distanceTo([it.lat, it.lon]) / 10000);
-  const schluessel = it => [it.stadtFrage && it.gr === 0 ? 0 : 1, ortNorm(kopf(it)).startsWith(n) ? 0 : 1, it.icon === '🏙' ? 0 : 1, it.gr ?? 3,
+  const schluessel = it => [it.stadtFrage && it.gr === 0 || exonym(it) ? 0 : 1, anfang(it), it.icon === '🏙' ? 0 : 1, it.gr ?? 3,
     kopf(it).toLowerCase() === q.trim().toLowerCase() ? 0 : 1, weit(it)];
   return items.map((it, k) => [...schluessel(it), k, it]).sort((a, b) => { for (let i = 0; i < 7; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }).map(x => x[7]);
 }
