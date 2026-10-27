@@ -2,14 +2,32 @@
 const climbCache = new Map();
 let compareRequest = 0;
 
-// Höhen aus der Route selbst (elevation_interval), sonst null; jeder Abschnitt beginnt bei seiner Länge davor
+// Fährstücke eines Abschnitts in Metern ab Abschnittsbeginn, aus den Manöverlängen (28 an Bord … 29 von Bord)
+function faehrMeter(leg) {
+  const out = [];
+  let m = 0, von = null;
+  for (const man of leg.maneuvers || []) {
+    if (man.type === FAEHRE_EIN && von == null) von = m;
+    else if (man.type === FAEHRE_AUS && von != null) { out.push([von, m]); von = null; }
+    m += (man.length || 0) * 1000;
+  }
+  if (von != null) out.push([von, m]);
+  return out;
+}
+
+// Höhen aus der Route selbst (elevation_interval), sonst null; jeder Abschnitt beginnt bei seiner Länge davor.
+// Auf der Fähre liefert das Höhenmodell die Meerestiefe (Adria bis −1000 m), dort gilt Meereshöhe 0.
 function tripElevation(trip) {
   if (!trip?.legs?.length || !trip.legs.every(l => l.elevation?.length > 1)) return null;
   const pts = [];
   let off = 0;
   for (const l of trip.legs) {
-    const iv = l.elevation_interval || 30, len = l.summary.length * 1000;
-    l.elevation.forEach((h, i) => { if (h != null && h > -1000) pts.push([off + Math.min(i * iv, len), h]); });
+    const iv = l.elevation_interval || 30, len = l.summary.length * 1000, fm = faehrMeter(l);
+    l.elevation.forEach((h, i) => {
+      const d = Math.min(i * iv, len);
+      if (fm.some(([a, b]) => d >= a && d <= b)) h = 0;
+      if (h != null && h > -1000) pts.push([off + d, h]);
+    });
     off += len;
   }
   return pts.length > 1 ? pts : null;
@@ -162,7 +180,8 @@ function climb(pts, threshold = 3) {
 function renderElevation(pts, lenM) {
   // Distanzen aus /height beziehen sich auf die vereinfachte Linie; auf die echte Länge strecken
   const scale = lenM / pts[pts.length - 1][0];
-  const xs = pts.map(p => p[0] * scale / 1000), hs = pts.map(p => p[1]);
+  const xs = pts.map(p => p[0] * scale / 1000), hs = pts.map((p, i) => aufFaehre(xs[i]) ? 0 : p[1]);
+  pts = xs.map((x, i) => [pts[i][0], hs[i]]);
   const minH = Math.min(...hs), maxH = Math.max(...hs);
   const lo = Math.floor((minH - 10) / 10) * 10, hi = Math.max(lo + 50, Math.ceil((maxH + 10) / 10) * 10);
   const W = Math.max(200, $('elevation').clientWidth || 300), H = 110, L0 = 30, R0 = 4, T0 = 6, B0 = 16;
