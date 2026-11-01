@@ -214,12 +214,17 @@ $('hills').oninput({ target: $('hills') });
 updateFoldSummaries();
 
 // Streckenstufen: nur Valhalla-Einstellungen (Hauptstraßen meiden, Steigungen zulassen), keine Kurvenwertung.
-// use_hills 1 nimmt Steigungen ohne Aufschlag, sucht sie aber nicht aktiv; Hügel kommen über die kleinen Straßen dazu.
-const RIDE_STYLES = [{ primary: 0.5, hills: 0.3 }, { primary: 0.2, hills: 0.5 }, { primary: 0.05, hills: 0.8 }, { primary: 0, hills: 1 }];
-const rideStyleOf = () => RIDE_STYLES.findIndex(st => Math.abs(st.primary - $('primary').value) < 0.01 && Math.abs(st.hills - $('hills').value) < 0.01);
-const showRideStyle = () => { const i = rideStyleOf(); $('rideStyle').value = i < 0 ? '' : String(i); };
+// use_hills 0 meidet Steigungen so weit wie möglich (〰 flach); 1 nimmt sie ohne Aufschlag, sucht sie aber nicht aktiv,
+// Hügel kommen über die kleinen Straßen dazu. Gespeichert werden nur die Reglerwerte; die Stufe wird daraus über die
+// Werte erkannt (Schlüssel statt Listenplatz), neue Stufen verschieben also nichts. Fahrzeit (Tempo) bleibt unberührt.
+const RIDE_STYLES = {
+  flach: { primary: 0.5, hills: 0 }, flachNeben: { primary: 0.2, hills: 0 },
+  direkt: { primary: 0.5, hills: 0.3 }, neben: { primary: 0.2, hills: 0.5 }, klein: { primary: 0.05, hills: 0.8 }, kleinst: { primary: 0, hills: 1 }
+};
+const rideStyleOf = () => Object.keys(RIDE_STYLES).find(k => Math.abs(RIDE_STYLES[k].primary - $('primary').value) < 0.01 && Math.abs(RIDE_STYLES[k].hills - $('hills').value) < 0.01) || '';
+const showRideStyle = () => { $('rideStyle').value = rideStyleOf(); };
 $('rideStyle').onchange = () => {
-  const st = RIDE_STYLES[$('rideStyle').value];
+  const st = Object.hasOwn(RIDE_STYLES, $('rideStyle').value) ? RIDE_STYLES[$('rideStyle').value] : null;
   if (!st) { showTab('setup'); $('profileBox').open = true; return; }
   for (const id of ['primary', 'hills']) { $(id).value = st[id]; $(id).oninput({ target: $(id) }); }
   updateFoldSummaries();
