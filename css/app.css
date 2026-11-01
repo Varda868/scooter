@@ -388,3 +388,5 @@ body.nav-pfeil .talk-ptt { z-index:1002; }
 .koppeln-qr svg { display:block; width:100%; height:auto; }
 .koppeln-link { display:block; font-size:11px; overflow-wrap:anywhere; }
 .file-btn[hidden] { display:none; }
+  .recht-links { margin:10px 0 0; font-size:13px; color:var(--muted); text-align:center; }
+  .recht-links a { color:var(--muted); }

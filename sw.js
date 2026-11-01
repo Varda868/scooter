@@ -43,6 +43,8 @@ self.addEventListener('fetch', e => {
   // Kurzlinks /t/<id> ebenso: der Server leitet weiter, und eine umgeleitete Antwort darf der SW einer Navigation nicht geben
   if (url.origin === location.origin && (url.pathname.includes('/api/') || /\/t\/[^/]+\/?$/.test(url.pathname))) return;
 
+  // Impressum und Datenschutz sind eigene Seiten: immer live, und nie als App-Hülle ('./') in den Speicher
+  if (url.origin === location.origin && /\/(impressum|datenschutz)\.html$/.test(url.pathname)) return;
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
     e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
