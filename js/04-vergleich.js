@@ -192,12 +192,23 @@ function renderElevation(pts, lenM) {
   // Höhenmeter auch in die Zusammenfassung unter „Route berechnen“
   if (currentTrip) { const ohne = stageTripText(currentTrip.summary); tripClimb = { up, down };
     $('summary').textContent = $('summary').textContent.replace(ohne, stageTripText(currentTrip.summary)); tankPlan(); }
-  // Steilster Abschnitt über mindestens 200 m
-  let maxGrade = 0;
+  // Steilster Abschnitt über mindestens 200 m, dazu wie lange es so steil bleibt (anschließende 200-m-Fenster
+  // in derselben Richtung mit mindestens 80 % davon)
+  const fenster = [];
   for (let i = 0, j = 0; i < pts.length; i++) {
     while (j < pts.length && (xs[j] - xs[i]) * 1000 < 200) j++;
-    if (j < pts.length) maxGrade = Math.max(maxGrade, Math.abs(hs[j] - hs[i]) / ((xs[j] - xs[i]) * 1000) * 100);
+    if (j < pts.length) fenster.push([i, j, (hs[j] - hs[i]) / ((xs[j] - xs[i]) * 1000) * 100]);
   }
+  let k = -1;
+  fenster.forEach((f, n) => { if (k < 0 || Math.abs(f[2]) > Math.abs(fenster[k][2])) k = n; });
+  const maxGrade = k < 0 ? 0 : Math.abs(fenster[k][2]);
+  let a = k, b = k;
+  const steil = n => n >= 0 && n < fenster.length && Math.sign(fenster[n][2]) === Math.sign(fenster[k][2]) && Math.abs(fenster[n][2]) >= 0.8 * maxGrade;
+  if (k >= 0) { while (steil(a - 1)) a--; while (steil(b + 1)) b++; }
+  steilstesZeigen(k < 0 || maxGrade < 6 ? null : {
+    von: xs[fenster[a][0]], bis: xs[fenster[b][1]], proz: Math.round(maxGrade), hoch: fenster[k][2] > 0,
+    auf: Math.max(200, Math.round((xs[fenster[b][1]] - xs[fenster[a][0]]) * 20) * 50)
+  });
   const totalKm = xs[xs.length - 1];
   eleData = { xs, hs };
   drawGradeSigns();
@@ -267,6 +278,28 @@ function eleEtappenZeichnen() {
       `<text class="ele-axis ele-etappe-tag" x="${x}" y="${eleGeo.top + 9}" text-anchor="middle">🌙${1 + nightsBefore(d)}</text>`;
   }).join('');
 }
+
+// Steilstes Stück unter der Zusammenfassung; Antippen zeigt die Stelle auf der Karte (dort z. B. ein Zwischenziel setzen)
+function steilstesZeigen(st) {
+  steilstes = st;
+  const el = $('steilstes');
+  el.hidden = !st;
+  if (!st) return;
+  const warn = +$('gradeWarn').value && st.proz >= +$('gradeWarn').value;
+  el.classList.toggle('warn', !!warn);
+  el.textContent = `${st.proz >= 8 || warn ? '⚠' : '↗'} max. ${st.proz} % ${st.hoch ? 'Steigung' : 'Gefälle'} auf ${st.auf} m · km ${st.von.toFixed(0)} 🔍`;
+  el.title = 'Stelle auf der Karte zeigen';
+}
+$('steilstes').onclick = () => {
+  if (!steilstes || !routeCoords) return;
+  const km = [];
+  for (let x = steilstes.von; x < steilstes.bis; x += 0.05) km.push(x);
+  km.push(steilstes.bis);
+  map.fitBounds(L.latLngBounds(km.map(pointAtKm)), { padding: [60, 60], maxZoom: 16 });
+  eleShowKm?.((steilstes.von + steilstes.bis) / 2);
+  eleCursor.addTo(map);
+  if (matchMedia('(max-width: 700px)').matches) setSheet(false);
+};
 
 // Position auf der Route nach Kilometern (linear zwischen Stützpunkten)
 function pointAtKm(km) {

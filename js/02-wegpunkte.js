@@ -400,7 +400,7 @@ function clearRoute() {
   $('summary').textContent = '';
   $('steps').innerHTML = '';
   // Höhenprofil samt Steigungsschildern weg; eine noch laufende Höhenanfrage verfällt
-  $('elevation').innerHTML = ''; eleData = null; elevationRequest++; gradeSignLayer.clearLayers();
+  $('elevation').innerHTML = ''; eleData = null; steilstes = null; $('steilstes').hidden = true; elevationRequest++; gradeSignLayer.clearLayers();
   renderIncidents([]);
   wxRouteRequest++; wxRouteLayer.clearLayers(); $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];
   wxShelter = false;
