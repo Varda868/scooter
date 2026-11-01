@@ -126,6 +126,8 @@ function wartung_nacht(array &$p, array &$i): void {
   $db = sw_db(); $jetzt = time();
   $n = [];
   $n['Kurzlinks'] = $db->exec("DELETE FROM sw_kurz WHERE bis < $jetzt");
+  // IP-Hash der Kurzlinks nach 7 Tagen weg (Datenschutzerklärung)
+  $n['Kurzlink-IPs'] = $db->exec('UPDATE sw_kurz SET ip = NULL WHERE ip IS NOT NULL AND t < ' . ($jetzt - 7 * 86400));
   $n['Drosselung'] = $db->exec("DELETE FROM sw_drossel WHERE ende < $jetzt");
   $n['Anmeldeversuche'] = $db->exec('DELETE FROM sw_login WHERE t < ' . ($jetzt - 86400));
   $n['Push-Abos'] = $db->exec('DELETE FROM sw_push WHERE fehler >= 20');

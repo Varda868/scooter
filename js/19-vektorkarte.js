@@ -3,10 +3,11 @@
 // den Korridor um die Route vorab. Fehlt die Datei, bleibt die OSM-Rasterkarte.
 // Die Datei schneidet .github/workflows/karte.yml aus dem Protomaps-Build und lädt sie neben die POI-Kacheln.
 const VECTOR_MAP_URL = BASIS_URL + 'poi/karte.pmtiles';
-const VM_LIBS = ['https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js', 'https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js',
-  'https://cdn.jsdelivr.net/npm/@protomaps/basemaps@5.5.0/dist/basemaps.js', 'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js'];
-const VM_CSS = 'https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css';
-const VM_ASSETS = 'https://protomaps.github.io/basemaps-assets/';
+// Bibliotheken, Schriften und Symbole liegen im eigenen vendor/ (feste Versionen, Lizenzen in LIZENZEN.md): kein Abruf bei Dritten
+const VM_LIBS = ['vendor/maplibre-gl-5.6.0/maplibre-gl.js', 'vendor/pmtiles-4.3.0/pmtiles.js',
+  'vendor/protomaps-basemaps-5.5.0/basemaps.js', 'vendor/maplibre-gl-leaflet-0.1.3/leaflet-maplibre-gl.js'];
+const VM_CSS = 'vendor/maplibre-gl-5.6.0/maplibre-gl.css';
+const VM_ASSETS = new URL('vendor/protomaps-assets/', location.href).href;
 const vm = { archive: null, header: null, db: null, layer: null, maxZoom: 15 };
 
 const loadScript = src => new Promise((ok, fail) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = fail; document.head.append(el); });
@@ -41,12 +42,17 @@ async function vectorTile(z, x, y, signal) {
   return data;
 }
 
-// Schriften und Symbole des Kartenstils: fehlt offline ein Schriftbereich, zeichnet MapLibre die ganze Kachel nicht.
-// Deshalb die Bereiche für Deutsch und Nachbarländer (Latin, Latin Extended, Satzzeichen) vorab holen; der Service Worker hält sie.
-const VM_FONTS = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'], VM_RANGES = ['0-255', '256-511', '8192-8447'];
+// Schriften und Symbole des Kartenstils: fehlt ein Schriftbereich, zeichnet MapLibre die ganze Kachel nicht.
+// Mitgeliefert sind nur Latein, Griechisch und Kyrillisch (VM_RANGES); jeden anderen Bereich (Arabisch, CJK …)
+// beantwortet transformRequest mit der leeren leer.pbf: diese Zeichen fehlen dann, die Kachel erscheint trotzdem.
+// Vorab geholt (und vom Service Worker gehalten) werden die häufigsten drei Bereiche, der Rest beim ersten Bedarf.
+const VM_FONTS = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
+const VM_RANGES = ['0-255', '256-511', '512-767', '768-1023', '1024-1279', '1280-1535', '7680-7935', '7936-8191', '8192-8447', '8448-8703'];
+const VM_VORAB = ['0-255', '256-511', '8192-8447'];
+const vmGlyphUrl = (url, typ) => typ === 'Glyphs' && !VM_RANGES.includes(url.match(/(\d+-\d+)\.pbf$/)?.[1]) ? { url: VM_ASSETS + 'fonts/leer.pbf' } : undefined;
 function prefetchMapAssets() {
   const urls = ['', '@2x'].flatMap(r => ['.json', '.png'].map(e => `${VM_ASSETS}sprites/v4/light${r}${e}`))
-    .concat(VM_FONTS.flatMap(f => VM_RANGES.map(r => `${VM_ASSETS}fonts/${encodeURIComponent(f)}/${r}.pbf`)));
+    .concat(VM_FONTS.flatMap(f => VM_VORAB.map(r => `${VM_ASSETS}fonts/${encodeURIComponent(f)}/${r}.pbf`)));
   return Promise.allSettled(urls.map(u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); })))
     .then(rs => rs.filter(r => r.status === 'rejected').length);
 }
@@ -87,7 +93,7 @@ async function initVectorMap() {
     layers: basemaps.layers('protomaps', basemaps.namedFlavor('light'), { lang: 'de' })
   };
   if (navigator.onLine) prefetchMapAssets();
-  vm.layer = L.maplibreGL({ style, interactive: false }).addTo(map);
+  vm.layer = L.maplibreGL({ style, interactive: false, transformRequest: vmGlyphUrl }).addTo(map);
   map.removeLayer(rasterBase);
   if (routeCoords) $('mapSave').hidden = false;
 }
