@@ -54,6 +54,8 @@ const SW_STANDARD = [
   'trafiklab_key' => '', 'trafikverket_key' => '', 'tnds_user' => '', 'tnds_pass' => '',
   'barentswatch_id' => '', 'barentswatch_secret' => '', 'aisstream_key' => '',
   'proxy_an' => true,
+  // Impressum (Admin → Impressum): steht nur in config.php, nie im Repo; api/impressum.php liefert es an die Seiten
+  'impressum_name' => '', 'impressum_anschrift' => '', 'impressum_email' => '',
   'origins' => ['https://scooter.thai-klasse.de'],
   // Talk-Relays in dieser Reihenfolge; eigen = selbst betriebenes Relay (im Dashboard hervorgehoben, Zertifikat genauer beobachtet)
   'relays' => [

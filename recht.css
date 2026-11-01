@@ -1,0 +1,16 @@
+/* Impressum und Datenschutzerklärung: schlichte Textseiten, Farben wie die App */
+:root { color-scheme: light dark; --bg: #fff; --fg: #1d1d1f; --muted: #666; --accent: #e4572e; --line: #ddd; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #eee; --muted: #aaa; --line: #333; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, sans-serif; }
+main { max-width: 46rem; margin: 0 auto; padding: 1.2rem max(16px, env(safe-area-inset-right, 0px)) 3rem max(16px, env(safe-area-inset-left, 0px)); }
+h1 { font-size: 1.6rem; margin: .4rem 0 1rem; text-wrap: balance; }
+h2 { font-size: 1.15rem; margin: 1.8rem 0 .5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+h3 { font-size: 1rem; margin: 1.2rem 0 .3rem; }
+a { color: var(--accent); }
+.leise { color: var(--muted); font-size: .9em; }
+.kontakt { white-space: pre-line; border-left: 3px solid var(--accent); padding: .3rem .8rem; }
+.fehlt { color: var(--muted); font-style: italic; }
+table { border-collapse: collapse; width: 100%; font-size: .95em; }
+.tabelle { overflow-x: auto; }
+td, th { text-align: left; vertical-align: top; padding: .35rem .5rem .35rem 0; border-bottom: 1px solid var(--line); }
+nav { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .95em; }
