@@ -7,7 +7,7 @@ const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
-const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-poidetails.js', 'js/17-fahrten.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js', 'js/30-panne.js', 'js/31-strassenart.js'];
+const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-poidetails.js', 'js/17-fahrten.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js', 'js/30-panne.js', 'js/31-strassenart.js', 'js/32-touren.js'];
 const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'favicon.svg', 'logo-scw.svg', 'logo-scw-hell.svg', 'icon-192.png', 'badge-96.png', ...APP_FILES];
 // Fremdbibliotheken, Kartensymbole und die häufigsten Schriftbereiche (js/19-vektorkarte.js) liegen in vendor/.
 // Die Pfade tragen die Version, die Dateien ändern sich also nie: bei einem App-Update aus dem alten Speicher
@@ -61,7 +61,7 @@ self.addEventListener('fetch', e => {
   // Kurzlinks /t/<id> ebenso: der Server leitet weiter, und eine umgeleitete Antwort darf der SW einer Navigation nicht geben
   if (url.origin === location.origin && (url.pathname.includes('/api/') || /\/t\/[^/]+\/?$/.test(url.pathname))) return;
 
-  // Eigene Textseiten (lizenzen.html usw.): immer live, und nie als App-Hülle ('./') in den Speicher
+  // Eigene Textseiten (Lizenzen, Impressum, Datenschutz): immer live, und nie als App-Hülle ('./') in den Speicher
   if (url.origin === location.origin && /\/(?!index\.html$)[^/]+\.html$/.test(url.pathname)) return;
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
