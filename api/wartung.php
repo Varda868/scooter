@@ -49,8 +49,9 @@ function wartung_relays(array &$p, array &$i): void {
     $e = $erg[$r['url']] ?? null;
     if (!$e) continue;
     if ($r['an'] && $e['ok']) $an++;
-    $i[] = ($e['ok'] ? 'ok   ' : 'FEHL ') . $r['url'] . ($e['ok'] ? '' : ' – ' . $e['fehler']);
-    if (!$r['eigen']) continue;
+    $i[] = ($e['ok'] ? 'ok   ' : 'FEHL ') . $r['url'] . ($e['ok'] ? '' : ' – ' . $e['fehler']) . ($r['an'] ? '' : ' (aus)');
+    // Ausgeschaltetes eigenes Relay (Admin → Relays) nicht melden, auch kein Zertifikat
+    if (!$r['eigen'] || !$r['an']) continue;
     if (!$e['ok']) $p[] = "Eigenes Relay {$r['url']} nicht erreichbar: {$e['fehler']}";
     if ($e['cert_bis'] && $e['cert_bis'] - time() < 2 * 86400)
       $p[] = "Zertifikat von {$r['url']} läuft ab: " . date('d.m.Y H:i', (int)$e['cert_bis']);
