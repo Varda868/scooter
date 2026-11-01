@@ -54,6 +54,8 @@ const SW_STANDARD = [
   'trafiklab_key' => '', 'trafikverket_key' => '', 'tnds_user' => '', 'tnds_pass' => '',
   'barentswatch_id' => '', 'barentswatch_secret' => '', 'aisstream_key' => '',
   'proxy_an' => true,
+  // Impressum (Admin → Impressum): steht nur in config.php, nie im Repo; api/impressum.php liefert es an die Seiten
+  'impressum_name' => '', 'impressum_anschrift' => '', 'impressum_email' => '',
   'origins' => ['https://scooter.thai-klasse.de'],
   // Talk-Relays in dieser Reihenfolge; eigen = selbst betriebenes Relay (im Dashboard hervorgehoben, Zertifikat genauer beobachtet)
   'relays' => [
@@ -298,12 +300,13 @@ function sw_nur_stammadresse(string $datei): void {
   exit;
 }
 // Strenge Kopfzeilen für die HTML-Seiten (Setup, Admin)
-// $skript: eigene Skripte (admin.js) und WebSocket/https-Verbindungen erlauben, nur für den angemeldeten Admin-Bereich
+// Eigene Skripte ('self', z. B. pw-anzeigen.js) immer; $skript erlaubt zusätzlich WebSocket/https-Verbindungen
+// (admin.js), nur für den angemeldeten Admin-Bereich
 function sw_html_koepfe(bool $skript = false): void {
   header('Content-Type: text/html; charset=utf-8');
   header('Cache-Control: no-store');
-  header("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" .
-    ($skript ? "; script-src 'self'; connect-src 'self' wss: https:" : ''));
+  header("Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self'; script-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" .
+    ($skript ? "; connect-src 'self' wss: https:" : ''));
   header('X-Frame-Options: DENY');
   header('X-Content-Type-Options: nosniff');
   header('Referrer-Policy: no-referrer');

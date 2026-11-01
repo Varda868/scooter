@@ -18,7 +18,7 @@ function admin_seite(string $titel, string $inhalt, bool $menue = true): void {
     foreach ($BEREICHE as $k => $b) echo ' <a href="?s=' . h($k) . '"' . (($_GET['s'] ?? 'start') === $k ? ' aria-current="page"' : '') . '>' . h($b['titel']) . '</a>';
     echo '<form method="post" action="?s=abmelden" class="rechts"><input type="hidden" name="csrf" value="' . h(sw_csrf()) . '"><button class="klein">Abmelden</button></form></nav>';
   }
-  echo '<main><h1>' . h($titel) . '</h1>', $inhalt, '</main></body></html>';
+  echo '<main><h1>' . h($titel) . '</h1>', $inhalt, '</main><script src="pw-anzeigen.js"></script></body></html>';
   exit;
 }
 function admin_hinweis(?string $ok, ?string $fehler = null): string {
@@ -63,7 +63,8 @@ function bereich_start(): void {
   require_once __DIR__ . '/lib/relays.php';
   $ip = sw_ip_test();
   $zahlen .= '<li>Ausgehend IPv6: ' . ($ip['ipv6']['ok'] ? '✅ ' . (int)$ip['ipv6']['ms'] . ' ms' : '❌ ' . h((string)$ip['ipv6']['fehler'])) . '</li>';
-  admin_seite('Übersicht', admin_hinweis($OK) . '<ul>' . $zahlen . '</ul><p class="leise">PHP ' . h(PHP_VERSION) . ' · Datenbank ' .
+  $warn = function_exists('impressum_fehlt') && impressum_fehlt() ? '<p class="banner">⚠️ Impressum unvollständig. <a href="?s=impressum">Jetzt eintragen</a></p>' : '';
+  admin_seite('Übersicht', admin_hinweis($OK) . $warn . '<ul>' . $zahlen . '</ul><p class="leise">PHP ' . h(PHP_VERSION) . ' · Datenbank ' .
     (sw_mysql() ? 'MySQL' : 'SQLite') . ' · eingerichtet ' . h(sw_config()['erstellt'] ?? '?') . '</p>');
 }
 

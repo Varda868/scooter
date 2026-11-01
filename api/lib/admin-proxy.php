@@ -4,7 +4,7 @@ defined('SW_API') || exit;
 
 $BEREICHE['proxy'] = ['titel' => 'Proxy', 'fn' => 'bereich_proxy'];
 
-function proxy_dienste(): array { return ['wetter' => 'Wetter', 'photon' => 'Ortssuche', 'overpass' => 'Overpass', 'tomtom' => 'TomTom-Meldungen', 'tomtom-flow' => 'TomTom-Fluss']; }
+function proxy_dienste(): array { return ['wetter' => 'Wetter', 'photon' => 'Ortssuche', 'overpass' => 'Overpass', 'tomtom' => 'TomTom-Meldungen', 'tomtom-flow' => 'TomTom-Fluss', 'valhalla' => 'Routing (Valhalla)']; }
 function bereich_proxy(): void {
   global $OK;
   $basis = sw_daten() . '/cache';

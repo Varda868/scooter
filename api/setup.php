@@ -11,7 +11,7 @@ $meldung = '';
 function seite(string $inhalt): void {
   echo '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
     '<title>Scooterways Setup</title><link rel="stylesheet" href="admin.css"></head><body><main><h1>🛵 Scooterways · Einrichtung</h1>',
-    $inhalt, '</main></body></html>';
+    $inhalt, '</main><script src="pw-anzeigen.js"></script></body></html>';
   exit;
 }
 

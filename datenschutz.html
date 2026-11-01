@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Datenschutz · Scooterways</title>
+<link rel="icon" href="favicon.svg">
+<link rel="stylesheet" href="recht.css">
+</head>
+<body>
+<main>
+  <nav><a href="./">← Zur App</a><a href="impressum.html">Impressum</a></nav>
+  <h1>Datenschutzerklärung</h1>
+  <p class="leise">Stand: November 2026</p>
+
+  <h2>Kurz gesagt</h2>
+  <ul>
+    <li>Es gibt keine Konten, keine Werbung, keine Analyse-Werkzeuge und kein Tracking.</li>
+    <li>Deine Planung, Einstellungen, Roller-Daten und gefahrenen Touren bleiben im Speicher deines Browsers.</li>
+    <li>Auf dem Server liegt nur, was du ausdrücklich dorthin schickst, etwa einen Kurzlink oder ein verschlüsseltes Profil. Deine IP-Adresse wird dort nie im Klartext gespeichert, sondern nur als gesalzener Hash (Pseudonym).</li>
+    <li>Für Karte, Routing, Ortssuche und Wetter fragt die App offene Dienste an. Diese sehen dabei deine IP-Adresse und die angefragten Orte.</li>
+  </ul>
+
+  <h2>Verantwortlich</h2>
+  <p class="kontakt" data-impressum="kontakt">Wird geladen …</p>
+  <p>E-Mail: <span data-impressum="email">wird geladen …</span></p>
+  <p>Scooterways ist ein privates Hobbyprojekt. Einen Datenschutzbeauftragten gibt es nicht und braucht es nicht.</p>
+
+  <h2>1. Hosting und Webserver-Protokolle</h2>
+  <p>Die App liegt bei <b>hosttech</b> (Webhosting mit Plesk), unter scooterways.dns.navy und scooter.thai-klasse.de. Bei jedem Abruf protokolliert der Webserver technisch bedingt die IP-Adresse, Datum und Uhrzeit, die abgerufene Adresse, den Statuscode, die übertragene Datenmenge, die zuvor besuchte Seite und den Browser (User-Agent). Diese Protokolle dienen nur dem sicheren Betrieb und der Fehlersuche. Sie werden automatisch rotiert und gelöscht und nicht mit anderen Daten zusammengeführt.</p>
+  <p class="leise">Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO, berechtigtes Interesse am sicheren Betrieb.</p>
+
+  <h2>2. Speicher im Browser</h2>
+  <p>Die App speichert ihre Daten im Browser (localStorage, IndexedDB, Cache des Service Workers): Einstellungen, Wegpunkte, eigene POIs, Roller und Wartungsbuch, gefahrene Touren, Kartenkacheln für offline und eigene Kurzlinks samt Löschcode. Nichts davon geht von selbst an den Server. Löschen kannst du alles über die Website-Daten deines Browsers. Cookies setzt die App nicht.</p>
+  <p class="leise">Rechtsgrundlage: § 25 Abs. 2 Nr. 2 TDDDG, das Speichern ist für die von dir gewünschte Funktion unbedingt erforderlich.</p>
+
+  <h2>3. Was der Server speichert</h2>
+  <p>Wo hier „IP-Hash“ steht, ist deine IP-Adresse gemeint, pseudonymisiert als gesalzener Hash (HMAC-SHA-256, gekürzt), nur zur Missbrauchsabwehr. Aus dem Hash lässt sich die Adresse nicht zurückrechnen.</p>
+  <div class="tabelle"><table>
+    <tr><th>Funktion</th><th>Was</th><th>Wie lange</th></tr>
+    <tr><td>🔗 Tour als Link teilen</td><td>Wegpunkte mit ihren Namen, gemiedene Stellen, Tourname, Erstell- und Ablaufdatum, Zahl der Abrufe, Hash des Löschcodes. Dazu der IP-Hash, nur zur Missbrauchsabwehr.</td><td>Bis zum Ablauf, den du wählst (7 bis 365 Tage), oder bis du den Link löschst. Den IP-Hash höchstens 7 Tage.</td></tr>
+    <tr><td>☁️ Profil-Abgleich</td><td>Dein Profil, in der App mit deinem Sync-Passwort verschlüsselt (AES-GCM). Der Server sieht weder Passwort noch Inhalt. Dazu Zeitpunkte, Größe und IP-Hash.</td><td>Bis du es löschst („Trennen“), spätestens 365 Tage nach dem letzten Abruf.</td></tr>
+    <tr><td>🔔 Push-Mitteilungen</td><td>Die Push-Adresse deines Browsers mit ihren Schlüsseln, eine aus dem Gruppen-Passwort abgeleitete Kennung bzw. dein Postfach als Hash, dein Rufname (höchstens 9 Zeichen). Die Mitteilungen selbst sind Ende-zu-Ende verschlüsselt.</td><td>Bis du Push abschaltest oder bis die Adresse 20-mal nicht mehr erreichbar war.</td></tr>
+    <tr><td>🐞 Fehlerbericht</td><td>Nur wenn du ihn selbst absendest: Protokolltext, App-Version, Browser (User-Agent), IP-Hash.</td><td>30 Tage</td></tr>
+    <tr><td>Drosselung</td><td>Zähler je IP-Hash, damit niemand den Server überlastet.</td><td>Bis zum Ende des Zeitfensters, höchstens 1 Tag</td></tr>
+    <tr><td>Zwischenspeicher (Proxy)</td><td>Antworten von Wetter, Ortssuche, POI-Abfragen und Warnungen, damit dieselbe Anfrage nicht mehrfach rausgeht. Ohne IP-Adresse.</td><td>Höchstens 2 Tage</td></tr>
+  </table></div>
+  <p>Der Server macht täglich eine Sicherung im privaten, nicht öffentlich erreichbaren Ordner. Sie wird nach 7 Tagen überschrieben.</p>
+  <p class="leise">Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO für Drosselung, Missbrauchsabwehr und Zwischenspeicher, sonst Art. 6 Abs. 1 lit. a DSGVO, weil du die Funktion selbst einschaltest. Du kannst sie jederzeit wieder abschalten bzw. löschen.</p>
+
+  <h2>4. Dienste, die die App direkt anfragt</h2>
+  <p>Diese Dienste sehen bei jeder Anfrage deine IP-Adresse und den Browser, dazu den Inhalt der Anfrage, also meist Koordinaten oder Suchbegriffe. Ist der eigene Server eingeschaltet (⚙ Einstellung → Server), laufen Wetter, Ortssuche, POI-Abfragen und Verkehr über ihn. Dann sieht der Dienst nur die Adresse des Servers, nicht deine.</p>
+  <div class="tabelle"><table>
+    <tr><th>Wofür</th><th>Dienst (Anbieter, Sitz)</th></tr>
+    <tr><td>Routing, Höhenprofil</td><td>Valhalla auf valhalla1.openstreetmap.de (FOSSGIS e. V., Deutschland)</td></tr>
+    <tr><td>Ortssuche</td><td>Photon (photon.komoot.io, komoot GmbH, Deutschland), Nominatim (nominatim.openstreetmap.org, OpenStreetMap Foundation, Vereinigtes Königreich)</td></tr>
+    <tr><td>POIs entlang der Route</td><td>Overpass-Server: overpass-api.de (Deutschland), overpass.private.coffee und maps.mail.ru (VK, Russland). Die App verteilt ihre Abfragen auf alle drei. Über den eigenen Server gehen sie nur an die beiden ersten.</td></tr>
+    <tr><td>Wetter</td><td>Open-Meteo (api.open-meteo.com), über den Server ersatzweise MET Norway (api.met.no, Norwegen)</td></tr>
+    <tr><td>Amtliche Warnungen</td><td>nur über den Server: Deutscher Wetterdienst über Bright Sky (api.brightsky.dev) sowie MeteoAlarm (EUMETNET)</td></tr>
+    <tr><td>Verkehr (optional)</td><td>TomTom (api.tomtom.com, TomTom N.V., Niederlande), nur wenn du Verkehr einschaltest</td></tr>
+    <tr><td>Kartenbilder</td><td>Vektorkarte vom eigenen Server. Schriften und Symbole dazu von Protomaps (protomaps.github.io, über GitHub Pages, GitHub Inc., USA). Die Rasterkarte kommt von tile.openstreetmap.org (OpenStreetMap Foundation, Vereinigtes Königreich).</td></tr>
+    <tr><td>Programmbibliotheken</td><td>Leaflet von cdnjs (Cloudflare, Inc., USA), ersatzweise von unpkg (USA). MapLibre und PMTiles von jsDelivr (USA). Diese CDNs liefern nur Programmdateien aus.</td></tr>
+  </table></div>
+  <p>Die Overpass-Server von VK (Russland) sowie Cloudflare, jsDelivr, unpkg und GitHub (USA) stehen außerhalb der EU. Für die USA gilt teils der EU-US Data Privacy Framework, für Russland gibt es keinen Angemessenheitsbeschluss. Für das Vereinigte Königreich und Norwegen gilt ein Angemessenheitsbeschluss bzw. der EWR.</p>
+  <p class="leise">Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO. Ohne diese Dienste kann die App keine Karte, keine Route und kein Wetter zeigen.</p>
+
+  <h2>5. Talk, Gruppe und Standort teilen</h2>
+  <p>Talk, Gruppenfunk und Standort-Teilen laufen über öffentliche <b>Nostr-Relays</b>: nos.lol, relay.primal.net, nostr.mom und ein eigenes Relay. Die Relays stehen zum Teil außerhalb der EU. Sprachnachrichten und Standorte sind mit dem Gruppen-Passwort verschlüsselt. Öffentlich sichtbar sind aber der öffentliche Schlüssel deiner Talk-Identität (Pubkey), dein Rufname, die gewählte Region (PLZ-Bereich) und der Zeitpunkt. Die Relays sollen Sprachnachrichten nach 1 Stunde löschen, darauf haben wir aber keinen Einfluss. Talk ist aus, bis du es selbst einschaltest. Einen Hilferuf bei einer Panne schickt die App nur als Sprachnachricht, deinen Standort nie von selbst.</p>
+  <p class="leise">Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO, du schaltest Talk selbst ein.</p>
+
+  <h2>6. Push-Dienste</h2>
+  <p>Für Push-Mitteilungen gibt dein Browser die verschlüsselte Mitteilung an den Push-Dienst seines Herstellers weiter: Google (Firebase Cloud Messaging) bei Chrome und Android, Mozilla bei Firefox, Apple bei Safari. Der Dienst sieht dabei, dass eine Mitteilung an dein Gerät geht, aber nicht ihren Inhalt.</p>
+
+  <h2>7. Links zu anderen Seiten</h2>
+  <p>Links etwa zu Betreibern von Fähren, zu OpenStreetMap oder zur Suche nach einem Fahrplan (DuckDuckGo) öffnen fremde Seiten erst, wenn du sie antippst. Dort gelten deren Datenschutzregeln.</p>
+
+  <h2>8. Deine Rechte</h2>
+  <p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21). Eine Einwilligung kannst du jederzeit widerrufen, indem du die Funktion abschaltest. Weil der Server keine Konten kennt und IP-Adressen nur als Hash speichert, kann er Daten oft keiner Person zuordnen. Schick für eine Anfrage am besten den Kurzlink oder das Datum mit. Beschweren kannst du dich bei einer Datenschutz-Aufsichtsbehörde, in Bayern beim Bayerischen Landesamt für Datenschutzaufsicht (BayLDA).</p>
+  <p>Anfragen gehen an die E-Mail-Adresse oben.</p>
+</main>
+<script src="recht.js"></script>
+</body>
+</html>

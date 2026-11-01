@@ -113,7 +113,7 @@ async function syncInfo() {
 }
 function syncZeigen() {
   $('syncBox').hidden = !serverAn();
-  $('syncAus').hidden = !!syncDaten; $('syncAn').hidden = !syncDaten;
+  $('syncAus').hidden = $('koppelnLaden').hidden = !!syncDaten; $('syncAn').hidden = !syncDaten;
   if (syncDaten && serverAn() && !syncZeigen.gefragt) { syncZeigen.gefragt = true; syncInfo(); }
 }
 document.addEventListener('serverkonfig', syncZeigen);
@@ -166,9 +166,12 @@ $('syncRunter').onclick = async () => {
 };
 $('syncTrennen').onclick = async () => {
   if (!confirm('Dieses Gerät vom Abgleich trennen?')) return;
-  if (confirm('Auch das Profil auf dem Server löschen (für alle Geräte mit diesem Passwort)?')) try { await syncAnfrage({ aktion: 'weg' }); } catch {}
+  if (confirm('Auch Profil und Touren auf dem Server löschen (für alle Geräte mit diesem Passwort)?')) {
+    try { await syncAnfrage({ aktion: 'weg' }); } catch {}
+    try { await tourenAnfrage({ aktion: 'weg' }); } catch {}
+  }
   syncDaten = null; store.set('sync', null); localStorage.removeItem(PROFIL_PREFIX + 'sync');
-  syncStatusText('Getrennt.'); syncZeigen();
+  syncStatusText('Getrennt.'); syncZeigen(); tourenZeigen();
 };
 
 // --- Kurzanleitung und Hinweis beim ersten Start (und jederzeit unter ⚙ Einstellung)
