@@ -103,7 +103,7 @@ function rasterAusserhalb() {
   if (drin) map.removeLayer(rasterBase); else if (!map.hasLayer(rasterBase)) rasterBase.addTo(map);
 }
 
-// Startbild: die Übersicht (Zoom 0–5 im Kartengebiet, für Europa rund 90 Kacheln) einmal je Kartenstand im Hintergrund
+// Startbild: die Übersicht (Zoom 0–5 im Kartengebiet, für das heutige Gebiet rund 55 Kacheln) einmal je Kartenstand im Hintergrund
 // ins Gerät holen, damit die App beim Start sofort und auch ohne Netz eine Karte zeigt. Nicht im Mobilfunk/Datensparmodus.
 async function startbildLaden(stand) {
   const netz = navigator.connection;
