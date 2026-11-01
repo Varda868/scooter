@@ -45,6 +45,13 @@
         <span>Start</span> <select id="dayStart" title="Weiterfahrt an Folgetagen">
           <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option></select></label>
       <div id="profileLine" class="hint profile-line" title="Fahrprofil ändern"></div>
+      <details id="tourenBox" class="fold" hidden><summary>⭐ Meine Touren <span id="tourenZahl" class="hint"></span></summary>
+        <ul id="tourenListe" class="touren-liste"></ul>
+        <div class="profil-knoepfe"><button id="tourenAbgleich" hidden>☁️ Abgleichen</button><button id="tourenExport" class="secondary">⬇ Als Datei</button>
+          <label class="file-btn">📂 Datei laden<input id="tourenImport" type="file" accept=".json,application/json"></label></div>
+        <div id="tourenStatus" class="hint"></div>
+        <p class="hint">Gespeichert werden nur die Wegpunkte (Halt oder ◆ Formpunkt), die Route rechnet jedes Gerät neu. Mit dem Abgleich unter ⚙ → 💾 Profil kommen sie verschlüsselt aufs Handy.</p>
+      </details>
       <button id="go">Route berechnen</button>
       <div id="summary"></div>
       <div id="tankInfo" class="hint"></div>
@@ -56,6 +63,7 @@
       <div id="mapSaveInfo" class="hint"></div>
       <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
       <button id="tourLink" hidden class="secondary" title="Kurzlink über den eigenen Server, z. B. für Freunde oder das zweite Gerät">🔗 Tour als Link teilen</button>
+      <button id="tourMerken" hidden class="secondary" title="Wegpunkte unter ⭐ Meine Touren merken, mit dem Abgleich auch auf dem Handy">⭐ Tour merken</button>
       <div id="elevation"></div>
       <div id="wxRouteSummary"></div>
       <div id="wxWarnSummary"></div>
@@ -218,7 +226,8 @@
         <div class="section-title">☁️ Über den eigenen Server abgleichen</div>
         <p class="hint">Verschlüsselt mit einem Sync-Passwort, das nur deine Geräte kennen (der Server sieht nur Datensalat). Auf jedem Gerät dasselbe Passwort eingeben. „Schlüssel mitnehmen“ gilt auch hier.</p>
         <div id="syncAus" class="talk-row"><input id="syncPw" type="password" autocomplete="new-password" placeholder="Sync-Passwort (mind. 10 Zeichen)"><button id="syncSetzen">Verbinden</button></div>
-        <div id="syncAn" class="profil-knoepfe" hidden><button id="syncHoch">⬆ Auf Server sichern</button><button id="syncRunter">⬇ Vom Server laden</button><button id="syncTrennen" class="secondary">Trennen</button></div>
+        <label id="koppelnLaden" class="file-btn">🔑 Kopplungsdatei laden<input id="koppelnImport" type="file" accept=".txt,text/plain"></label>
+        <div id="syncAn" class="profil-knoepfe" hidden><button id="syncHoch">⬆ Auf Server sichern</button><button id="syncRunter">⬇ Vom Server laden</button><button id="koppelnAuf">📱 Gerät koppeln</button><button id="syncTrennen" class="secondary">Trennen</button></div>
         <div id="syncStatus" class="hint"></div>
       </div>
       </details>
@@ -298,6 +307,15 @@
     <div class="dlg-knoepfe"><button id="panneNochmal">🔊 Nochmal vorlesen</button><button class="secondary">Zurück</button></div></div>
   <div class="dlg-knoepfe"><button id="panneZu" class="secondary">Schließen</button></div>
 </dialog>
+<dialog id="koppelnDlg" class="sw-dlg">
+  <h3>📱 Gerät koppeln</h3>
+  <p class="hint">Mit dem Handy diesen Code scannen oder den Link dort öffnen. Danach gleicht das Gerät ⭐ Meine Touren ab und kann dein gesichertes Profil laden, ohne Passwort und ohne Konto.</p>
+  <div id="koppelnQr" class="koppeln-qr"></div>
+  <p class="hint warn">⚠️ Wer den Code oder Link hat, kann dein Profil lesen. Nur auf eigenen Geräten verwenden. Als Datei gesichert ersetzt er das Sync-Passwort, falls du es vergisst.</p>
+  <details><summary>Link anzeigen</summary><code id="koppelnLink" class="koppeln-link"></code></details>
+  <div class="dlg-knoepfe"><button id="koppelnKopieren" class="secondary">Link kopieren</button><button id="koppelnDatei" class="secondary">⬇ Als Datei sichern</button></div>
+  <div class="dlg-knoepfe"><button id="koppelnZu" class="secondary">Schließen</button></div>
+</dialog>
 <dialog id="linkDlg" class="sw-dlg">
   <h3>🔗 Tour als Link</h3>
   <label>Gültig <select id="linkTage"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="90">90 Tage</option><option value="365">1 Jahr</option></select></label>
@@ -343,5 +361,6 @@
 <script src="js/29-push.js"></script>
 <script src="js/30-panne.js"></script>
 <script src="js/31-strassenart.js"></script>
+<script src="js/32-touren.js"></script>
 </body>
 </html>

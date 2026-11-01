@@ -379,5 +379,14 @@ body.nav-pfeil .talk-ptt { z-index:1002; }
 .panne-karte span { color: var(--muted); }
 .panne-karte small { display: block; font-size: .7em; }
 .panne-karte b { overflow-wrap: anywhere; }
+.touren-liste { list-style:none; padding:0; margin:6px 0; }
+.touren-liste li { display:flex; align-items:center; gap:8px; padding:4px 0; border-bottom:1px solid var(--line); }
+.touren-liste .touren-laden { margin:0; width:auto; flex:1; min-width:0; text-align:left; background:transparent; color:var(--fg); font-weight:600; padding:6px 0; overflow-wrap:anywhere; }
+.touren-liste .hint { white-space:nowrap; }
+.touren-liste button.secondary { margin:0; width:auto; padding:4px 10px; }
+.koppeln-qr { width:min(70vw, 240px); margin:8px auto; background:#fff; padding:6px; border-radius:8px; }
+.koppeln-qr svg { display:block; width:100%; height:auto; }
+.koppeln-link { display:block; font-size:11px; overflow-wrap:anywhere; }
+.file-btn[hidden] { display:none; }
   .recht-links { margin:10px 0 0; font-size:13px; color:var(--muted); text-align:center; }
   .recht-links a { color:var(--muted); }
