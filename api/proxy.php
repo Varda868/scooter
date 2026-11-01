@@ -2,6 +2,7 @@
 // Zwischenspeicher-Proxy für die Dienste der App. Kein offener Proxy: nur feste Ziele aus der Konfiguration,
 // nur erlaubte Parameter, nur Aufrufe aus der eigenen App, gedrosselt je Gerät und insgesamt.
 // Aufruf: proxy.php?d=wetter|photon|overpass|tomtom|tomtom-flow&… (Overpass als POST data=…, Server-Nr. in s)
+// Valhalla: proxy.php?d=valhalla&a=route|optimized_route|height|trace_attributes, POST mit dem JSON der App (unverändert weiter)
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
 sw_cors();
@@ -13,7 +14,10 @@ const PROXY_DIENSTE = [
   'overpass' => ['overpass_urls', [], 86400, 12, 5000],
   'tomtom' => ['tomtom_key', ['bbox', 'fields', 'language', 'timeValidityFilter', 'categoryFilter'], 120, 20, 2000],
   'tomtom-flow' => ['tomtom_key', ['z', 'x', 'y'], 300, 600, 30000],
+  // Valhalla: FOSSGIS sieht nur die Server-IP. Kurzer Speicher für gleiche Anfragen (Neuladen, Alternativen, Höhen)
+  'valhalla' => ['valhalla_url', ['a'], 600, 40, 20000],
 ];
+const PROXY_VALHALLA = ['route', 'optimized_route', 'height', 'trace_attributes'], PROXY_VALHALLA_MAX = 2 * 1048576;
 const PROXY_TOMTOM = 'https://api.tomtom.com/traffic';
 const PROXY_MAX_ANTWORT = 30 * 1048576, PROXY_MAX_ANFRAGE = 20000, PROXY_SPEICHER_MAX = 300 * 1048576;
 
@@ -53,6 +57,16 @@ switch ($d) {
     $methode = 'POST'; $rumpf = 'data=' . rawurlencode($q);
     $qs = $q; // Speicherschlüssel: die Abfrage, nicht der Server
     break;
+  case 'valhalla':
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') sw_fehler('nur POST', 405);
+    if (!in_array($p['a'] ?? '', PROXY_VALHALLA, true)) sw_fehler('unbekannter Aufruf', 400);
+    $roh = sw_rumpf(PROXY_VALHALLA_MAX);
+    if ($roh === null) sw_fehler('Anfrage zu groß', 413); // die App fragt dann direkt
+    if (!is_array(json_decode($roh, true))) sw_fehler('Anfrage ungültig', 400);
+    $url = rtrim((string)sw_wert($ziel), '/') . '/' . $p['a'];
+    $methode = 'POST'; $rumpf = $roh;
+    $qs = $p['a'] . "\n" . $roh; // Speicherschlüssel: Aufruf + Anfrage
+    break;
   case 'tomtom':
     if (!sw_wert('tomtom_key')) sw_fehler('kein Schlüssel auf dem Server', 503);
     $url = PROXY_TOMTOM . '/services/5/incidentDetails?' . $qs . '&key=' . rawurlencode(sw_wert('tomtom_key'));
@@ -88,12 +102,12 @@ $c = curl_init($url);
 curl_setopt_array($c, [
   CURLOPT_CUSTOMREQUEST => $methode,
   CURLOPT_POSTFIELDS => $rumpf,
-  CURLOPT_HTTPHEADER => $rumpf !== null ? ['Content-Type: application/x-www-form-urlencoded'] : [],
+  CURLOPT_HTTPHEADER => $rumpf === null ? [] : ['Content-Type: ' . ($d === 'valhalla' ? 'application/json' : 'application/x-www-form-urlencoded')],
   CURLOPT_USERAGENT => 'Scooterways/1 (+https://scooterways.dns.navy)',
   CURLOPT_FOLLOWLOCATION => false,
   CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
   CURLOPT_CONNECTTIMEOUT => 8,
-  CURLOPT_TIMEOUT => $d === 'overpass' ? 38 : 20, // die App bricht Overpass nach 40 s selbst ab
+  CURLOPT_TIMEOUT => $d === 'overpass' ? 38 : ($d === 'valhalla' ? 90 : 20), // die App bricht Overpass nach 40 s selbst ab; lange Routen brauchen
   CURLOPT_ENCODING => '',
   CURLOPT_WRITEFUNCTION => function ($c, $teil) use (&$daten, &$zuGross) {
     if (strlen($daten) + strlen($teil) > PROXY_MAX_ANTWORT) { $zuGross = true; return 0; }
