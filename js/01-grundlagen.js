@@ -110,6 +110,7 @@ let routeKm = null; // kumulierte km je Routenpunkt
 let routeManeuvers = []; // [{km, text, type}] aus Valhalla, für die Vorschaufahrt
 let routeKmh = null; // Durchschnittstempo laut Valhalla
 let eleData = null; // { xs: km, hs: m } aus dem Höhenprofil
+let steilstes = null; // steilstes Stück { von, bis (km), proz, auf } für den Hinweis unter der Zusammenfassung
 let wxShelter = false; // Schutzhütten wegen Wetter automatisch einblenden
 let routeStages = [], currentTrip = null, tripClimb = null; // Mehrtagestour: km am Ende jedes Tages außer dem letzten
 let routeStageNights = []; // je Etappenende: Nächte dort (2 = Ruhetag), parallel zu routeStages
@@ -142,7 +143,7 @@ function mapBusy(key, text, ms) {
 function setRouteCoords(coords) {
   stopSim();
   routeManeuvers = [];
-  eleData = null;
+  eleData = null; steilstes = null; $('steilstes').hidden = true;
   gradeSignLayer.clearLayers();
   wxRouteLayer.clearLayers();
   $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];
@@ -191,7 +192,7 @@ SETTING_IDS.forEach(id => { if (settings[id] != null) $(id).value = settings[id]
 // Bedienmodus: „einfach“ = nur Start, Ziel, los mit festen ruhigen Streckenwerten; sonst (auch ohne Wahl) alles
 const einfach = () => settings.modus === 'einfach';
 // Feste Werte im einfachen Modus: Hauptstraßen meiden, Steigungen eher meiden, nichts Unbefestigtes
-const EINFACH_STRECKE = { use_primary: 0.2, use_hills: 0.3 };
+const EINFACH_STRECKE = { use_primary: 0.2, use_hills: 0.1 };
 document.body.classList.toggle('modus-einfach', einfach());
 ['profileBox', 'poiBox', 'trafficBox'].forEach(id => {
   $(id).open = !!settings[id];

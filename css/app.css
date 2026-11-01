@@ -18,6 +18,9 @@
   details.fold > summary .hint { font-weight:400; }
   button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   #summary { margin-top:14px; font-weight:600; }
+  .steil-hinweis { display:block; width:auto; margin:6px 0 0; padding:4px 10px; background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:600; text-align:left; }
+  .steil-hinweis.warn { border-color:#d97706; color:#b45309; }
+  @media (prefers-color-scheme: dark) { .steil-hinweis.warn { color:#fbbf24; } }
   #play { margin-top:8px; background:var(--fg); color:var(--bg); }
   #navStart { margin-top:8px; background:#1d3557; }
   #mapSave { margin-top:8px; background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500; }
