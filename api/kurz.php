@@ -7,7 +7,7 @@ define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
 sw_cors();
 
-const KURZ_MAX_BYTES = 32768, KURZ_TAGE = [7, 30, 90, 365], KURZ_PRO_STUNDE = 20, KURZ_PRO_TAG_ALLE = 500;
+const KURZ_MAX_BYTES = 32768, KURZ_IP_TAGE = 7, KURZ_TAGE = [7, 30, 90, 365], KURZ_PRO_STUNDE = 20, KURZ_PRO_TAG_ALLE = 500;
 const KURZ_ZEICHEN = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne l, I, O, 0, 1
 
 if (!sw_eingerichtet()) sw_fehler('Server nicht eingerichtet', 503);
@@ -60,6 +60,8 @@ $tage = in_array((int)($b['tage'] ?? 0), KURZ_TAGE, true) ? (int)$b['tage'] : 30
 if (!sw_drossel('kurz:' . sw_ip(), KURZ_PRO_STUNDE, 3600) || !sw_drossel('kurz:alle', KURZ_PRO_TAG_ALLE, 86400)) sw_fehler('Zu viele neue Links, bitte später', 429);
 
 $db->prepare('DELETE FROM sw_kurz WHERE bis < ?')->execute([time()]);
+// IP-Hash nur zur Missbrauchsabwehr, höchstens 7 Tage (auch der Nachtlauf leert ihn)
+$db->prepare('UPDATE sw_kurz SET ip = NULL WHERE ip IS NOT NULL AND t < ?')->execute([time() - KURZ_IP_TAGE * 86400]);
 $loesch = bin2hex(random_bytes(16));
 for ($i = 0; ; $i++) {
   $id = '';
