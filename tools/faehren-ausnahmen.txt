@@ -1,0 +1,7 @@
+# Fährlinien, die trotz Fahrzeugverbot in OSM (motor_vehicle/vehicle/moped/motorcycle=no) in den Fährkacheln
+# bleiben sollen, z. B. weil sich im Wiki zeigt, dass Mopeds doch mitfahren.
+# Eine OSM-ID je Zeile: w123 (Weg) oder r456 (Relation), danach optional # Kommentar.
+# Wirkt beim nächsten Kachel-Lauf (POI-Action).
+#
+# Beispiel:
+# w123456789  # Musterhafen – Musterinsel, laut Wiki 2026 mit Roller gefahren
