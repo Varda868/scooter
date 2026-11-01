@@ -22,3 +22,10 @@ AddCharset utf-8 .js .css .json .webmanifest .svg
     Header set Access-Control-Allow-Headers "Range"
   </If>
 </IfModule>
+
+# vendor/: feste Versionen im Pfad, Inhalt ändert sich nie (Leaflet, MapLibre, Kartenschriften)
+<IfModule mod_headers.c>
+  <If "%{REQUEST_URI} =~ m#^/vendor/#">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>
