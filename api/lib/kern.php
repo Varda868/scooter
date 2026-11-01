@@ -3,7 +3,7 @@
 // Das Repo ist öffentlich: hier stehen keine Schlüssel. Alles Geheime liegt im Datenordner außerhalb des Webroots.
 defined('SW_API') || exit;
 
-const SW_SCHEMA = 7;
+const SW_SCHEMA = 8;
 const SW_ADMIN_COOKIE = '__Host-swadmin';
 const SW_SITZUNG_S = 1800; // Admin-Sitzung läuft nach 30 min ohne Klick ab
 
@@ -84,6 +84,7 @@ const SW_SCHLUESSEL = [
   'barentswatch' => ['name' => 'BarentsWatch AIS', 'wofuer' => 'Schiffspositionen Norwegen (Fähren live)',
     'felder' => ['barentswatch_id' => 'Client-ID', 'barentswatch_secret' => 'Client-Secret'],
     'login' => 'https://www.barentswatch.no/minside/', 'konto' => 'https://developer.barentswatch.no/docs/AIS/live-ais-api',
+    'hinweis' => 'Client-ID so eintragen, wie BarentsWatch sie nennt: „mail:clientname“ (die Mail-Adresse des Kontos, Doppelpunkt, Name des Clients). Scope ais.',
     'limit' => 'laut Anbieter', 'lizenz' => 'NLOD'],
   'aisstream' => ['name' => 'aisstream.io', 'wofuer' => 'Schiffspositionen weltweit (Fähren live)',
     'felder' => ['aisstream_key' => 'API-Schlüssel'],
@@ -181,6 +182,14 @@ function sw_schema(PDO $db): void {
   // v7: Verlauf der Fährdaten-Läufe (Admin → Fährdaten)
   if ($v < 7) {
     $db->exec("CREATE TABLE IF NOT EXISTS sw_faehrlauf (id $id, t INTEGER NOT NULL, quelle VARCHAR(16) NOT NULL, ms INTEGER, ok INTEGER NOT NULL, linien INTEGER, text $txt)");
+  }
+  // v8: AIS-Fähren (lib/ais.php): Schiffe, Zustand je Schiff, Hafen-Ereignisse (keine Spuren, 60 Tage)
+  if ($v < 8) {
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_ais_schiff (mmsi VARCHAR(9) PRIMARY KEY, name VARCHAR(64), typ INTEGER, quelle VARCHAR(16), t INTEGER NOT NULL, zuletzt INTEGER NOT NULL)");
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_ais_zustand (mmsi VARCHAR(9) PRIMARY KEY, ort VARCHAR(24) NOT NULL, liegt INTEGER NOT NULL, t INTEGER NOT NULL, b INTEGER NOT NULL, bla REAL, blo REAL, bv REAL)");
+    $db->exec("CREATE TABLE IF NOT EXISTS sw_ais_ereignis (id $id, mmsi VARCHAR(9) NOT NULL, hafen VARCHAR(24) NOT NULL, art VARCHAR(2) NOT NULL, t INTEGER NOT NULL, genau INTEGER NOT NULL)");
+    $db->exec('CREATE INDEX ' . (sw_mysql() ? '' : 'IF NOT EXISTS ') . 'sw_ais_ereignis_mt ON sw_ais_ereignis (mmsi, t)');
+    $db->exec('CREATE INDEX ' . (sw_mysql() ? '' : 'IF NOT EXISTS ') . 'sw_ais_ereignis_t ON sw_ais_ereignis (t)');
   }
   $db->prepare('DELETE FROM sw_meta WHERE k=?')->execute(['schema']);
   $db->prepare('INSERT INTO sw_meta (k, v) VALUES (?, ?)')->execute(['schema', (string)SW_SCHEMA]);

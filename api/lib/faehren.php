@@ -2,6 +2,8 @@
 // Fährdaten: Quellen, geplante Läufe (über wartung.php), Verlauf, Mail und Qualitätsbericht.
 // Läuft auf dem Server; die App bekommt nur fertige, kleine Dateien unter poi/ (Kacheln, poi/fahrplan/*.json).
 defined('SW_API') || exit;
+require_once __DIR__ . '/relays.php';
+require_once __DIR__ . '/ais.php';
 
 // id => [Name, Art, empfohlener Zeitplan (Cron-Stil), längste erwartete Pause in Stunden (für „überfällig“), Text]
 // Art: lauf = läuft hier über wartung.php, extern = läuft woanders (GitHub Action), probe = noch in Erprobung
@@ -17,6 +19,8 @@ const FAEHR_QUELLEN = [
   'fi' => ['Finnland: Fintraffic GTFS', 'probe', '50 4 4 * *', 0, 'Schären- und Ålandfähren (CC BY 4.0). Wird gerade erprobt.'],
   'ee' => ['Estland: peatus.ee GTFS', 'probe', '0 5 4 * *', 0, 'Inselfähren Estlands. Wird gerade erprobt.'],
   'ferryhopper' => ['Ferryhopper (Häfen, Verbindungen, Abfahrten)', 'probe', '0 5 * * 1', 0, 'Wöchentlich Häfen und Verbindungen, täglich Abfahrten der Linien der App. Nutzungsbedingungen noch offen.'],
+  'ais' => ['AIS: aisstream.io + BarentsWatch (lernender Fahrplan)', 'lauf', '*/15 * * * *', 2,
+    'Positionen der Passagierfähren (gepflegte MMSI-Liste + gelernte Passagierschiffe): aisstream.io je Lauf 60 s, BarentsWatch für Norwegen. Gespeichert werden keine Spuren, nur Abfahrt/Ankunft je Hafen (60 Tage). Wöchentlich daraus poi/fahrplan/ais.json: Abfahrtszeiten je Wochentag, Dauer als Median. Ohne Schlüssel wird übersprungen.'],
   'ais_fi' => ['AIS Finnland (Digitraffic)', 'probe', '*/15 * * * *', 0, 'Schiffspositionen im Finnischen Meerbusen und um Åland (CC BY 4.0), daraus ein lernender Fahrplan.'],
   'ais_dk' => ['AIS Dänemark (Tagesdateien)', 'probe', '0 6 * * *', 0, 'Kattegat, Belte, Öresund: Kiel–Oslo, Kopenhagen–Oslo, Frederikshavn–Göteborg. Wird gerade erprobt.'],
 ];
@@ -115,6 +119,8 @@ function faehr_lauf(string $id, bool $manuell = false, bool $nur_auswerten = fal
   try { $linien = ('faehr_lauf_' . $id)($p, $i, $manuell, $nur_auswerten); }
   catch (Throwable $t) { $p[] = 'Abbruch: ' . $t->getMessage(); }
   $dauer = (int)round((microtime(true) - $start) * 1000);
+  // AIS läuft alle 15 min: in Verlauf und Mail nur der erste Lauf jeder Stunde, Fehler, Fahrplan-Läufe und „jetzt“
+  if ($id === 'ais' && !$p && !$manuell && $linien === null && (int)date('i') >= 15) return [$p, $i];
   $db = sw_db();
   $db->prepare('INSERT INTO sw_faehrlauf (t, quelle, ms, ok, linien, text) VALUES (?, ?, ?, ?, ?, ?)')
     ->execute([time(), $id, $dauer, $p ? 0 : 1, $linien, mb_substr(implode("\n", array_merge($p ? ['PROBLEM: ' . implode(' · ', $p)] : [], $i)), 0, 60000)]);
@@ -148,6 +154,7 @@ function faehr_warnungen(): array {
     if ($art !== 'lauf' || !$e['quellen'][$id]['an']) continue;
     if ($id === 'se' && (string)sw_wert('trafiklab_key') === '') continue;
     if ($id === 'uk' && ((string)sw_wert('tnds_user') === '' || (string)sw_wert('tnds_pass') === '')) continue;
+    if ($id === 'ais' && (string)sw_wert('aisstream_key') === '' && (string)sw_wert('barentswatch_secret') === '') continue;
     $l = faehr_verlauf($id, 1)[0] ?? null;
     if (!$l) $w[] = "$name: noch nie gelaufen";
     elseif (!$l['ok']) $w[] = "$name: letzter Lauf fehlgeschlagen (" . admin_zeit_kurz((int)$l['t']) . ')';
