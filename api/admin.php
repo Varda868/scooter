@@ -63,7 +63,8 @@ function bereich_start(): void {
   require_once __DIR__ . '/lib/relays.php';
   $ip = sw_ip_test();
   $zahlen .= '<li>Ausgehend IPv6: ' . ($ip['ipv6']['ok'] ? '✅ ' . (int)$ip['ipv6']['ms'] . ' ms' : '❌ ' . h((string)$ip['ipv6']['fehler'])) . '</li>';
-  admin_seite('Übersicht', admin_hinweis($OK) . '<ul>' . $zahlen . '</ul><p class="leise">PHP ' . h(PHP_VERSION) . ' · Datenbank ' .
+  $warn = function_exists('impressum_fehlt') && impressum_fehlt() ? '<p class="banner">⚠️ Impressum unvollständig. <a href="?s=impressum">Jetzt eintragen</a></p>' : '';
+  admin_seite('Übersicht', admin_hinweis($OK) . $warn . '<ul>' . $zahlen . '</ul><p class="leise">PHP ' . h(PHP_VERSION) . ' · Datenbank ' .
     (sw_mysql() ? 'MySQL' : 'SQLite') . ' · eingerichtet ' . h(sw_config()['erstellt'] ?? '?') . '</p>');
 }
 

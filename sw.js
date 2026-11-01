@@ -1,6 +1,6 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v67';
+const VERSION = 'v68';
 // Stammadresse wie in js/01-grundlagen.js: Zweitadressen laden POI-Kacheln von dort
 const STAMM_ORIGIN = 'https://scooter.thai-klasse.de';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
@@ -43,6 +43,8 @@ self.addEventListener('fetch', e => {
   // Kurzlinks /t/<id> ebenso: der Server leitet weiter, und eine umgeleitete Antwort darf der SW einer Navigation nicht geben
   if (url.origin === location.origin && (url.pathname.includes('/api/') || /\/t\/[^/]+\/?$/.test(url.pathname))) return;
 
+  // Impressum und Datenschutz sind eigene Seiten: immer live, und nie als App-Hülle ('./') in den Speicher
+  if (url.origin === location.origin && /\/(impressum|datenschutz)\.html$/.test(url.pathname)) return;
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
     e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {

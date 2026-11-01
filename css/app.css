@@ -379,3 +379,5 @@ body.nav-pfeil .talk-ptt { z-index:1002; }
 .panne-karte span { color: var(--muted); }
 .panne-karte small { display: block; font-size: .7em; }
 .panne-karte b { overflow-wrap: anywhere; }
+  .recht-links { margin:10px 0 0; font-size:13px; color:var(--muted); text-align:center; }
+  .recht-links a { color:var(--muted); }
