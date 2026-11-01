@@ -171,7 +171,7 @@ $('koppelnAuf').onclick = async () => {
   try {
     qrLaden ||= new Promise((ok, fehler) => {
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js'; s.onload = ok; s.onerror = fehler;
+      s.src = 'vendor/qrcode-generator-1.4.4/qrcode.js'; s.onload = ok; s.onerror = fehler;
       document.head.append(s);
     });
     await qrLaden;

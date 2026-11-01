@@ -1,6 +1,6 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v72';
+const VERSION = 'v73';
 // Stammadresse wie in js/01-grundlagen.js: Zweitadressen laden POI-Kacheln von dort
 const STAMM_ORIGIN = 'https://scooter.thai-klasse.de';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
@@ -15,7 +15,7 @@ const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'favicon.svg', 'l
 const PA = 'vendor/protomaps-assets/';
 const VENDOR_FILES = ['vendor/leaflet-1.9.4/leaflet.js', 'vendor/leaflet-1.9.4/leaflet.css',
   'vendor/maplibre-gl-5.6.0/maplibre-gl.js', 'vendor/maplibre-gl-5.6.0/maplibre-gl.css', 'vendor/pmtiles-4.3.0/pmtiles.js',
-  'vendor/protomaps-basemaps-5.5.0/basemaps.js', 'vendor/maplibre-gl-leaflet-0.1.3/leaflet-maplibre-gl.js', PA + 'fonts/leer.pbf',
+  'vendor/protomaps-basemaps-5.5.0/basemaps.js', 'vendor/maplibre-gl-leaflet-0.1.3/leaflet-maplibre-gl.js', 'vendor/qrcode-generator-1.4.4/qrcode.js', PA + 'fonts/leer.pbf',
   ...['', '@2x'].flatMap(r => ['.json', '.png'].map(e => `${PA}sprites/v4/light${r}${e}`)),
   ...['Regular', 'Medium', 'Italic'].flatMap(f => ['0-255', '256-511', '8192-8447'].map(r => `${PA}fonts/Noto%20Sans%20${f}/${r}.pbf`))];
 const istVendor = url => new URL(url, location.href).pathname.includes('/vendor/');

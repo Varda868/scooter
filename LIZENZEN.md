@@ -11,6 +11,7 @@ Systemschrift `system-ui`). In der App: Menü → „Lizenzen“ (`lizenzen.html
 | Leaflet | 1.9.4 | BSD-2-Clause | npm `leaflet` | `vendor/leaflet-1.9.4/LICENSE.txt` |
 | MapLibre GL JS | 5.6.0 | BSD-3-Clause | npm `maplibre-gl` | `vendor/maplibre-gl-5.6.0/LICENSE.txt` |
 | PMTiles | 4.3.0 | BSD-3-Clause | npm `pmtiles` | `vendor/pmtiles-4.3.0/LICENSE.txt` |
+| qrcode-generator | 1.4.4 | MIT | npm `qrcode-generator` (QR-Code „Gerät koppeln“) | `vendor/qrcode-generator-1.4.4/LICENSE.txt` |
 | Protomaps basemaps (Kartenstil) | 5.5.0 | BSD-3-Clause, Gestaltung CC0 | npm `@protomaps/basemaps` | `vendor/protomaps-basemaps-5.5.0/LICENSE.txt` |
 | maplibre-gl-leaflet | 0.1.3 | ISC | npm `@maplibre/maplibre-gl-leaflet` | `vendor/maplibre-gl-leaflet-0.1.3/LICENSE.txt` |
 | Noto Sans Regular/Medium/Italic (Kartenschrift als Glyphen) | basemaps-assets `028c18f` | SIL OFL 1.1 | github.com/protomaps/basemaps-assets | `vendor/protomaps-assets/fonts/OFL.txt` |
