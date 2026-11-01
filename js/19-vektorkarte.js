@@ -68,7 +68,7 @@ async function initVectorMap() {
     res.body?.cancel().catch(() => {});
   } catch { available = store.get('vectorMap', false); }
   store.set('vectorMap', available);
-  if (!available) return;
+  if (!available) return false;
   // Neue Kartendatei (Update im März/Juli/Oktober): gespeicherte Kacheln der alten verwerfen
   if (stand && stand !== store.get('vectorMapStand', null)) {
     if (store.get('vectorMapStand', null)) await tileDb().then(db => new Promise(ok => { const tx = db.transaction('tiles', 'readwrite'); tx.objectStore('tiles').clear(); tx.oncomplete = tx.onerror = ok; })).catch(() => {});
@@ -78,8 +78,9 @@ async function initVectorMap() {
   for (const src of VM_LIBS) await loadScript(src);
   vm.archive = new pmtiles.PMTiles(new URL(VECTOR_MAP_URL, location.href).href);
   vm.header = await vm.archive.getHeader().catch(() => store.get('vectorMapHeader', null));
-  if (!vm.header) return;
-  store.set('vectorMapHeader', { maxZoom: vm.header.maxZoom, minZoom: vm.header.minZoom });
+  if (!vm.header) return false;
+  const h = vm.header;
+  store.set('vectorMapHeader', { maxZoom: h.maxZoom, minZoom: h.minZoom, minLon: h.minLon, minLat: h.minLat, maxLon: h.maxLon, maxLat: h.maxLat });
   vm.maxZoom = vm.header.maxZoom;
   maplibregl.addProtocol('scw', async (params, ctl) => {
     const [, z, x, y] = params.url.match(/scw:\/\/(\d+)\/(\d+)\/(\d+)/).map(Number);
@@ -94,8 +95,36 @@ async function initVectorMap() {
   };
   if (navigator.onLine) prefetchMapAssets();
   vm.layer = L.maplibreGL({ style, interactive: false, transformRequest: vmGlyphUrl }).addTo(map);
-  map.removeLayer(rasterBase);
+  rasterAusserhalb();
+  map.on('moveend', rasterAusserhalb);
   if (routeCoords) $('mapSave').hidden = false;
+  setTimeout(startbildLaden, 8000, stand);
+  return true;
+}
+
+// Außerhalb des Kartengebiets (Kartenmitte) die OSM-Rasterkarte darüberlegen, drinnen wieder weg
+function rasterAusserhalb() {
+  const h = vm.header, c = map.getCenter();
+  const drin = !h || h.minLat === undefined || c.lat >= h.minLat && c.lat <= h.maxLat && c.lng >= h.minLon && c.lng <= h.maxLon;
+  if (drin) map.removeLayer(rasterBase); else if (!map.hasLayer(rasterBase)) rasterBase.addTo(map);
+}
+
+// Startbild: die Übersicht (Zoom 0–5 im Kartengebiet, für das heutige Gebiet rund 55 Kacheln) einmal je Kartenstand im Hintergrund
+// ins Gerät holen, damit die App beim Start sofort und auch ohne Netz eine Karte zeigt. Nicht im Mobilfunk/Datensparmodus.
+async function startbildLaden(stand) {
+  const netz = navigator.connection;
+  if (!navigator.onLine || netz?.saveData || netz?.type === 'cellular' || store.get('vectorStartbild', null) === stand) return;
+  const h = vm.header, kacheln = [];
+  for (let z = h.minZoom; z <= Math.min(5, h.maxZoom); z++) {
+    const n = 2 ** z, tx = lon => Math.min(n - 1, Math.floor((lon + 180) / 360 * n));
+    const ty = lat => { const r = lat * Math.PI / 180; return Math.min(n - 1, Math.max(0, Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n))); };
+    for (let x = tx(h.minLon); x <= tx(h.maxLon); x++) for (let y = ty(h.maxLat); y <= ty(h.minLat); y++) kacheln.push([z, x, y]);
+  }
+  let fehler = 0;
+  await Promise.all(Array.from({ length: 2 }, async () => {
+    while (kacheln.length) { const [z, x, y] = kacheln.shift(); await vectorTile(z, x, y).catch(() => fehler++); }
+  }));
+  if (!fehler) store.set('vectorStartbild', stand);
 }
 
 // Kacheln im Korridor um die Route, je Zoomstufe (bis zur höchsten Stufe der Datei; darüber vergrößert MapLibre)
@@ -138,4 +167,5 @@ $('mapSave').onclick = async () => {
     : `✓ Karte für diese Tour gespeichert: ${tiles.length} Kacheln, ${(bytes / 1048576).toFixed(1)} MB`;
   $('mapSave').disabled = false;
 };
-initVectorMap().catch(() => {});
+// Ohne Vektorkarte (keine Datei, Bibliothek lädt nicht, offline ohne Kopf) bleibt bzw. kommt die OSM-Rasterkarte
+initVectorMap().catch(() => false).then(ok => { if (!ok && !map.hasLayer(rasterBase)) rasterBase.addTo(map); });
