@@ -9,7 +9,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="vendor/leaflet-1.9.4/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -45,6 +45,13 @@
         <span>Start</span> <select id="dayStart" title="Weiterfahrt an Folgetagen">
           <option value="7">7:00</option><option value="8">8:00</option><option value="9" selected>9:00</option><option value="10">10:00</option><option value="11">11:00</option></select></label>
       <div id="profileLine" class="hint profile-line" title="Fahrprofil ändern"></div>
+      <details id="tourenBox" class="fold" hidden><summary>⭐ Meine Touren <span id="tourenZahl" class="hint"></span></summary>
+        <ul id="tourenListe" class="touren-liste"></ul>
+        <div class="profil-knoepfe"><button id="tourenAbgleich" hidden>☁️ Abgleichen</button><button id="tourenExport" class="secondary">⬇ Als Datei</button>
+          <label class="file-btn">📂 Datei laden<input id="tourenImport" type="file" accept=".json,application/json"></label></div>
+        <div id="tourenStatus" class="hint"></div>
+        <p class="hint">Gespeichert werden nur die Wegpunkte (Halt oder ◆ Formpunkt), die Route rechnet jedes Gerät neu. Mit dem Abgleich unter ⚙ → 💾 Profil kommen sie verschlüsselt aufs Handy.</p>
+      </details>
       <button id="go">Route berechnen</button>
       <div id="summary"></div>
       <div id="tankInfo" class="hint"></div>
@@ -56,6 +63,7 @@
       <div id="mapSaveInfo" class="hint"></div>
       <button id="gpxTour" hidden class="secondary" title="Track, Halte und Etappen als GPX, z. B. für OsmAnd mit BRouter (offline)">⬇ Tour als GPX (OsmAnd/BRouter)</button>
       <button id="tourLink" hidden class="secondary" title="Kurzlink über den eigenen Server, z. B. für Freunde oder das zweite Gerät">🔗 Tour als Link teilen</button>
+      <button id="tourMerken" hidden class="secondary" title="Wegpunkte unter ⭐ Meine Touren merken, mit dem Abgleich auch auf dem Handy">⭐ Tour merken</button>
       <div id="elevation"></div>
       <div id="wxRouteSummary"></div>
       <div id="wxWarnSummary"></div>
@@ -218,12 +226,14 @@
         <div class="section-title">☁️ Über den eigenen Server abgleichen</div>
         <p class="hint">Verschlüsselt mit einem Sync-Passwort, das nur deine Geräte kennen (der Server sieht nur Datensalat). Auf jedem Gerät dasselbe Passwort eingeben. „Schlüssel mitnehmen“ gilt auch hier.</p>
         <div id="syncAus" class="talk-row"><input id="syncPw" type="password" autocomplete="new-password" placeholder="Sync-Passwort (mind. 10 Zeichen)"><button id="syncSetzen">Verbinden</button></div>
-        <div id="syncAn" class="profil-knoepfe" hidden><button id="syncHoch">⬆ Auf Server sichern</button><button id="syncRunter">⬇ Vom Server laden</button><button id="syncTrennen" class="secondary">Trennen</button></div>
+        <label id="koppelnLaden" class="file-btn">🔑 Kopplungsdatei laden<input id="koppelnImport" type="file" accept=".txt,text/plain"></label>
+        <div id="syncAn" class="profil-knoepfe" hidden><button id="syncHoch">⬆ Auf Server sichern</button><button id="syncRunter">⬇ Vom Server laden</button><button id="koppelnAuf">📱 Gerät koppeln</button><button id="syncTrennen" class="secondary">Trennen</button></div>
         <div id="syncStatus" class="hint"></div>
       </div>
       </details>
       <button id="introAuf" class="secondary">ℹ Kurzanleitung und Hinweis</button>
-      <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende.</p>
+      <p class="recht-links"><a href="impressum.html" target="_blank" rel="noopener">Impressum</a> · <a href="datenschutz.html" target="_blank" rel="noopener">Datenschutz</a></p>
+      <p class="hint">Tippe auf die Karte, um Start, Ziel oder Zwischenziele zu setzen. Marker lassen sich verschieben; Tipp auf einen Marker zeigt Notiz und „Entfernen“. 📝 hängt eine Notiz an einen Wegpunkt. Eigene POIs werden in diesem Browser gespeichert; „GPX speichern“ und GPX laden übertragen sie auf andere Geräte. Route mit der Maus ziehen oder antippen: Formpunkt (◆, ohne Halt) oder Straße meiden. Graue Linien sind Alternativen. Routing: Valhalla (motor_scooter), Daten © OpenStreetMap-Mitwirkende. <a href="lizenzen.html">Lizenzen</a></p>
     </section>
   </div>
   <div id="map"></div>
@@ -245,6 +255,7 @@
       <button data-modus="touren"><b>🗺 Touren &amp; Gruppe</b><small>Alles: Zwischenziele, Etappen, Alternativen, Fähren, Tankplan, Talk mit der Gruppe.</small></button>
     </div>
     <p class="hint">Verstanden? Mit der Wahl geht’s los. Umschalten jederzeit oben unter ⚙ Einstellung.</p>
+    <p class="recht-links"><a href="impressum.html" target="_blank" rel="noopener">Impressum</a> · <a href="datenschutz.html" target="_blank" rel="noopener">Datenschutz</a></p>
   </dialog>
   <div id="nav" class="nav" hidden>
     <div class="nav-turn"><span id="navArrow">↑</span><div><div id="navDist"></div><div id="navText"></div></div></div>
@@ -296,6 +307,15 @@
     <div class="dlg-knoepfe"><button id="panneNochmal">🔊 Nochmal vorlesen</button><button class="secondary">Zurück</button></div></div>
   <div class="dlg-knoepfe"><button id="panneZu" class="secondary">Schließen</button></div>
 </dialog>
+<dialog id="koppelnDlg" class="sw-dlg">
+  <h3>📱 Gerät koppeln</h3>
+  <p class="hint">Mit dem Handy diesen Code scannen oder den Link dort öffnen. Danach gleicht das Gerät ⭐ Meine Touren ab und kann dein gesichertes Profil laden, ohne Passwort und ohne Konto.</p>
+  <div id="koppelnQr" class="koppeln-qr"></div>
+  <p class="hint warn">⚠️ Wer den Code oder Link hat, kann dein Profil lesen. Nur auf eigenen Geräten verwenden. Als Datei gesichert ersetzt er das Sync-Passwort, falls du es vergisst.</p>
+  <details><summary>Link anzeigen</summary><code id="koppelnLink" class="koppeln-link"></code></details>
+  <div class="dlg-knoepfe"><button id="koppelnKopieren" class="secondary">Link kopieren</button><button id="koppelnDatei" class="secondary">⬇ Als Datei sichern</button></div>
+  <div class="dlg-knoepfe"><button id="koppelnZu" class="secondary">Schließen</button></div>
+</dialog>
 <dialog id="linkDlg" class="sw-dlg">
   <h3>🔗 Tour als Link</h3>
   <label>Gültig <select id="linkTage"><option value="7">7 Tage</option><option value="30" selected>30 Tage</option><option value="90">90 Tage</option><option value="365">1 Jahr</option></select></label>
@@ -305,10 +325,8 @@
   <details id="linkMeine"><summary>Meine Links</summary><ul id="linkListe"></ul></details>
   <div class="dlg-knoepfe"><button id="linkZu" class="secondary">Schließen</button></div>
 </dialog>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<!-- Fällt cdnjs aus, hängt sonst die ganze App („L is not defined“): dann Leaflet von unpkg -->
-<script>window.L || document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>')</script>
-<!-- Auch unpkg weg: klare Meldung statt hängender App, bei wiederkehrendem Netz selbst neu laden -->
+<script src="vendor/leaflet-1.9.4/leaflet.js"></script>
+<!-- Leaflet fehlt (Update nur halb angekommen, Speicher gelöscht und offline): klare Meldung statt hängender App, bei wiederkehrendem Netz selbst neu laden -->
 <script>window.L || (document.body.insertAdjacentHTML('afterbegin', '<div id="leafletFehlt" role="alert" style="position:fixed;inset:0;z-index:9999;display:grid;place-content:center;gap:12px;padding:24px;text-align:center;background:#fff;color:#14213d;font:16px system-ui,sans-serif">' +
   '<b>🗺 Die Kartenbibliothek konnte nicht geladen werden.</b><span>Bitte Internetverbindung prüfen. Die App lädt neu, sobald das Netz wieder da ist.</span>' +
   '<button onclick="location.reload()" style="justify-self:center;padding:10px 18px;font:inherit">Neu laden</button></div>'), addEventListener('online', () => location.reload()))</script>
@@ -341,5 +359,6 @@
 <script src="js/29-push.js"></script>
 <script src="js/30-panne.js"></script>
 <script src="js/31-strassenart.js"></script>
+<script src="js/32-touren.js"></script>
 </body>
 </html>

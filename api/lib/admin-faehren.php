@@ -55,6 +55,16 @@ function bereich_faehren(): void {
     } elseif ($aktion === 'sperre_weg') {
       $st = faehr_se_stand(); unset($st['abgelehnt'], $st['abgelehnt_t']); $st['fehl'] = 0; faehr_se_stand($st);
       admin_zurueck('faehren', 'Sperre aufgehoben – „Schweden jetzt“ versucht es erneut (zählt als ein Abruf).');
+    } elseif ($aktion === 'ais_liste') {
+      // eine Zeile je Schiff: MMSI (9 Ziffern), danach optional der Name
+      $liste = []; $falsch = [];
+      foreach (preg_split('/\R/', (string)($_POST['liste'] ?? '')) as $z) {
+        if (($z = trim($z)) === '' || $z[0] === '#') continue;
+        if (preg_match('/^(\d{9})\b[\s,;:–-]*(.*)$/u', $z, $m)) $liste[$m[1]] = [$m[1], mb_substr(trim($m[2]), 0, 60)];
+        else $falsch[] = mb_substr($z, 0, 30);
+      }
+      if ($falsch) $fehler = 'Ohne gültige MMSI (9 Ziffern am Zeilenanfang): ' . implode(', ', array_slice($falsch, 0, 5));
+      else { $c = sw_config(); $c['faehren']['ais_liste'] = array_values($liste); sw_config_speichern($c); admin_zurueck('faehren', count($liste) . ' Schiffe in der AIS-Liste gespeichert.'); }
     } elseif ($aktion === 'testmail') {
       $e = faehr_einstellungen();
       if ($e['mail'] === '') $fehler = 'Erst eine Mail-Adresse speichern.';
@@ -95,6 +105,7 @@ function bereich_faehren(): void {
       ($id === 'se' ? '<label class="zeile leise"><input type="checkbox" name="ok" value="1" required> lädt die ganze Datei (~800 MB) und zählt ' . ($n + 1) . ' von ' . faehr_se_limit() . '</label>' : '') . '</form>';
   $html .= is_file(sw_daten() . '/tnds-S.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="uk"><button class="klein">⟳ UK neu auswerten (ohne Abruf)</button></form>' : '';
   $html .= is_file(sw_daten() . '/gtfs-se.zip') ? '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="se"><button class="klein">⟳ Schweden neu auswerten (ohne Abruf)</button></form>' : '';
+  $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="auswerten"><input type="hidden" name="q" value="ais"><button class="klein">⟳ AIS-Fahrplan jetzt bauen</button></form>';
   $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="testmail"><button class="klein">✉ Testmail</button></form></div>' .
     '<p class="leise">In Plesk unter <b>Geplante Aufgaben</b> je Quelle eine Aufgabe „URL abrufen“ mit der Adresse und dem Zeitplan von oben anlegen. ' .
     'Bei einem Fehler antwortet die Adresse mit HTTP 500. Wer hier eine Mail-Adresse einträgt, kann Plesk auf „Nicht benachrichtigen“ stellen, sonst kommen Fehler doppelt. ' .
@@ -133,6 +144,23 @@ function bereich_faehren(): void {
       ($z === 'trafiklab' && $st === 'voll' && faehr_se_gesperrt(faehr_se_stand(), (string)sw_wert('trafiklab_key')) ? '<button class="klein" name="aktion" value="sperre_weg">Sperre aufheben</button>' : '') .
       ($st !== 'leer' ? '<button class="klein" name="weg" value="1">Löschen</button>' : '') . '</div></form>';
   }
+
+  // AIS: lernender Fahrplan
+  $a = ais_status();
+  $html .= '<h2>AIS-Fähren (lernender Fahrplan)</h2><p class="leise">' . $a['haefen'] . ' Häfen aus den OSM-Fährlinien · ' . $a['gepflegt'] . ' Schiffe gepflegt, ' . $a['gelernt'] . ' gelernt · ' .
+    $a['ereignisse'] . ' Hafen-Ereignisse gespeichert (' . $a['woche'] . ' in 7 Tagen, gelöscht nach ' . AIS_TAGE . ' Tagen) · ' . $a['liegen'] . ' Schiffe liegen gerade im Hafen · Fahrplan ' .
+    ($a['fahrplan'] ? 'gebaut ' . admin_zeit($a['fahrplan']) : 'noch nicht gebaut') . '</p>';
+  if ($a['fehl']) $html .= '<p class="fehler">aisstream.io: ' . $a['fehl'] . ' Läufe hintereinander ohne Verbindung (Mail ab ' . AIS_FEHL_MELDEN . ')</p>';
+  if ($a['bw'] !== '') $html .= '<p class="leise">BarentsWatch: ' . (str_starts_with($a['bw'], 'ok ') ? '✅ Token ok, ' . admin_zeit((int)substr($a['bw'], 3)) : '❌ ' . h(preg_replace('/ \d+$/', '', $a['bw'])) . ' – Norwegen wird übersprungen') . '</p>';
+  if ($a['letzte']) {
+    $html .= '<details><summary>Letzte Ereignisse</summary><table><tr><th>Zeit</th><th>Schiff</th><th>Hafen</th><th></th></tr>';
+    foreach ($a['letzte'] as $e) $html .= '<tr><td>' . admin_zeit((int)$e['t']) . ($e['genau'] ? '' : ' <span class="leise">±</span>') . '</td><td>' . h(($e['name'] ?: '') . ' ' . $e['mmsi']) . '</td><td>' . h((string)$e['hafenname']) . '</td><td>' . ($e['art'] === 'ab' ? 'Abfahrt' : 'Ankunft') . '</td></tr>';
+    $html .= '</table></details>';
+  }
+  $zeilen = implode("\n", array_map(fn($m, $n) => trim("$m $n"), array_keys(ais_liste()), ais_liste()));
+  $html .= '<form method="post">' . admin_csrf_feld() . '<input type="hidden" name="aktion" value="ais_liste"><label>Gepflegte Schiffe: je Zeile MMSI und Name (z. B. <code>211190000 Nils Holgersson</code>). ' .
+    'Diese werden immer abgefragt; dazu lernt der Lauf alle 3 Stunden Passagierschiffe (AIS-Typ 60–69), die an den bekannten Fährhäfen liegen.' .
+    '<textarea name="liste" rows="6" spellcheck="false">' . h($zeilen) . '</textarea></label><button class="klein">Liste speichern</button></form>';
 
   $html .= '<h2>Qualität der Fährlinien</h2>';
   if (!$b) $html .= '<p class="leise">Noch kein Bericht. „OSM-Fährkacheln jetzt“ erzeugt ihn.</p>';

@@ -3,10 +3,11 @@
 // den Korridor um die Route vorab. Fehlt die Datei, bleibt die OSM-Rasterkarte.
 // Die Datei schneidet .github/workflows/karte.yml aus dem Protomaps-Build und lädt sie neben die POI-Kacheln.
 const VECTOR_MAP_URL = BASIS_URL + 'poi/karte.pmtiles';
-const VM_LIBS = ['https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js', 'https://cdn.jsdelivr.net/npm/pmtiles@4.3.0/dist/pmtiles.js',
-  'https://cdn.jsdelivr.net/npm/@protomaps/basemaps@5.5.0/dist/basemaps.js', 'https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js'];
-const VM_CSS = 'https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css';
-const VM_ASSETS = 'https://protomaps.github.io/basemaps-assets/';
+// Bibliotheken, Schriften und Symbole liegen im eigenen vendor/ (feste Versionen, Lizenzen in LIZENZEN.md): kein Abruf bei Dritten
+const VM_LIBS = ['vendor/maplibre-gl-5.6.0/maplibre-gl.js', 'vendor/pmtiles-4.3.0/pmtiles.js',
+  'vendor/protomaps-basemaps-5.5.0/basemaps.js', 'vendor/maplibre-gl-leaflet-0.1.3/leaflet-maplibre-gl.js'];
+const VM_CSS = 'vendor/maplibre-gl-5.6.0/maplibre-gl.css';
+const VM_ASSETS = new URL('vendor/protomaps-assets/', location.href).href;
 const vm = { archive: null, header: null, db: null, layer: null, maxZoom: 15 };
 
 const loadScript = src => new Promise((ok, fail) => { const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = fail; document.head.append(el); });
@@ -41,12 +42,17 @@ async function vectorTile(z, x, y, signal) {
   return data;
 }
 
-// Schriften und Symbole des Kartenstils: fehlt offline ein Schriftbereich, zeichnet MapLibre die ganze Kachel nicht.
-// Deshalb die Bereiche für Deutsch und Nachbarländer (Latin, Latin Extended, Satzzeichen) vorab holen; der Service Worker hält sie.
-const VM_FONTS = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'], VM_RANGES = ['0-255', '256-511', '8192-8447'];
+// Schriften und Symbole des Kartenstils: fehlt ein Schriftbereich, zeichnet MapLibre die ganze Kachel nicht.
+// Mitgeliefert sind nur Latein, Griechisch und Kyrillisch (VM_RANGES); jeden anderen Bereich (Arabisch, CJK …)
+// beantwortet transformRequest mit der leeren leer.pbf: diese Zeichen fehlen dann, die Kachel erscheint trotzdem.
+// Vorab geholt (und vom Service Worker gehalten) werden die häufigsten drei Bereiche, der Rest beim ersten Bedarf.
+const VM_FONTS = ['Noto Sans Regular', 'Noto Sans Medium', 'Noto Sans Italic'];
+const VM_RANGES = ['0-255', '256-511', '512-767', '768-1023', '1024-1279', '1280-1535', '7680-7935', '7936-8191', '8192-8447', '8448-8703'];
+const VM_VORAB = ['0-255', '256-511', '8192-8447'];
+const vmGlyphUrl = (url, typ) => typ === 'Glyphs' && !VM_RANGES.includes(url.match(/(\d+-\d+)\.pbf$/)?.[1]) ? { url: VM_ASSETS + 'fonts/leer.pbf' } : undefined;
 function prefetchMapAssets() {
   const urls = ['', '@2x'].flatMap(r => ['.json', '.png'].map(e => `${VM_ASSETS}sprites/v4/light${r}${e}`))
-    .concat(VM_FONTS.flatMap(f => VM_RANGES.map(r => `${VM_ASSETS}fonts/${encodeURIComponent(f)}/${r}.pbf`)));
+    .concat(VM_FONTS.flatMap(f => VM_VORAB.map(r => `${VM_ASSETS}fonts/${encodeURIComponent(f)}/${r}.pbf`)));
   return Promise.allSettled(urls.map(u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); })))
     .then(rs => rs.filter(r => r.status === 'rejected').length);
 }
@@ -62,7 +68,7 @@ async function initVectorMap() {
     res.body?.cancel().catch(() => {});
   } catch { available = store.get('vectorMap', false); }
   store.set('vectorMap', available);
-  if (!available) return;
+  if (!available) return false;
   // Neue Kartendatei (Update im März/Juli/Oktober): gespeicherte Kacheln der alten verwerfen
   if (stand && stand !== store.get('vectorMapStand', null)) {
     if (store.get('vectorMapStand', null)) await tileDb().then(db => new Promise(ok => { const tx = db.transaction('tiles', 'readwrite'); tx.objectStore('tiles').clear(); tx.oncomplete = tx.onerror = ok; })).catch(() => {});
@@ -72,8 +78,9 @@ async function initVectorMap() {
   for (const src of VM_LIBS) await loadScript(src);
   vm.archive = new pmtiles.PMTiles(new URL(VECTOR_MAP_URL, location.href).href);
   vm.header = await vm.archive.getHeader().catch(() => store.get('vectorMapHeader', null));
-  if (!vm.header) return;
-  store.set('vectorMapHeader', { maxZoom: vm.header.maxZoom, minZoom: vm.header.minZoom });
+  if (!vm.header) return false;
+  const h = vm.header;
+  store.set('vectorMapHeader', { maxZoom: h.maxZoom, minZoom: h.minZoom, minLon: h.minLon, minLat: h.minLat, maxLon: h.maxLon, maxLat: h.maxLat });
   vm.maxZoom = vm.header.maxZoom;
   maplibregl.addProtocol('scw', async (params, ctl) => {
     const [, z, x, y] = params.url.match(/scw:\/\/(\d+)\/(\d+)\/(\d+)/).map(Number);
@@ -87,9 +94,37 @@ async function initVectorMap() {
     layers: basemaps.layers('protomaps', basemaps.namedFlavor('light'), { lang: 'de' })
   };
   if (navigator.onLine) prefetchMapAssets();
-  vm.layer = L.maplibreGL({ style, interactive: false }).addTo(map);
-  map.removeLayer(rasterBase);
+  vm.layer = L.maplibreGL({ style, interactive: false, transformRequest: vmGlyphUrl }).addTo(map);
+  rasterAusserhalb();
+  map.on('moveend', rasterAusserhalb);
   if (routeCoords) $('mapSave').hidden = false;
+  setTimeout(startbildLaden, 8000, stand);
+  return true;
+}
+
+// Außerhalb des Kartengebiets (Kartenmitte) die OSM-Rasterkarte darüberlegen, drinnen wieder weg
+function rasterAusserhalb() {
+  const h = vm.header, c = map.getCenter();
+  const drin = !h || h.minLat === undefined || c.lat >= h.minLat && c.lat <= h.maxLat && c.lng >= h.minLon && c.lng <= h.maxLon;
+  if (drin) map.removeLayer(rasterBase); else if (!map.hasLayer(rasterBase)) rasterBase.addTo(map);
+}
+
+// Startbild: die Übersicht (Zoom 0–5 im Kartengebiet, für das heutige Gebiet rund 55 Kacheln) einmal je Kartenstand im Hintergrund
+// ins Gerät holen, damit die App beim Start sofort und auch ohne Netz eine Karte zeigt. Nicht im Mobilfunk/Datensparmodus.
+async function startbildLaden(stand) {
+  const netz = navigator.connection;
+  if (!navigator.onLine || netz?.saveData || netz?.type === 'cellular' || store.get('vectorStartbild', null) === stand) return;
+  const h = vm.header, kacheln = [];
+  for (let z = h.minZoom; z <= Math.min(5, h.maxZoom); z++) {
+    const n = 2 ** z, tx = lon => Math.min(n - 1, Math.floor((lon + 180) / 360 * n));
+    const ty = lat => { const r = lat * Math.PI / 180; return Math.min(n - 1, Math.max(0, Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n))); };
+    for (let x = tx(h.minLon); x <= tx(h.maxLon); x++) for (let y = ty(h.maxLat); y <= ty(h.minLat); y++) kacheln.push([z, x, y]);
+  }
+  let fehler = 0;
+  await Promise.all(Array.from({ length: 2 }, async () => {
+    while (kacheln.length) { const [z, x, y] = kacheln.shift(); await vectorTile(z, x, y).catch(() => fehler++); }
+  }));
+  if (!fehler) store.set('vectorStartbild', stand);
 }
 
 // Kacheln im Korridor um die Route, je Zoomstufe (bis zur höchsten Stufe der Datei; darüber vergrößert MapLibre)
@@ -132,4 +167,5 @@ $('mapSave').onclick = async () => {
     : `✓ Karte für diese Tour gespeichert: ${tiles.length} Kacheln, ${(bytes / 1048576).toFixed(1)} MB`;
   $('mapSave').disabled = false;
 };
-initVectorMap().catch(() => {});
+// Ohne Vektorkarte (keine Datei, Bibliothek lädt nicht, offline ohne Kopf) bleibt bzw. kommt die OSM-Rasterkarte
+initVectorMap().catch(() => false).then(ok => { if (!ok && !map.hasLayer(rasterBase)) rasterBase.addTo(map); });

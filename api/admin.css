@@ -28,3 +28,7 @@ input.cron:not([type=checkbox]) { width: 9rem; font-family: monospace; }
 .schluessel-link { font-size: .9em; white-space: nowrap; }
 form.schluessel { border-top: 1px solid var(--rand); padding-top: .4em; margin-top: .6em; }
 form.schluessel h3 { margin: .2em 0; font-size: 1em; }
+.pw-feld { display: flex; gap: .3rem; align-items: stretch; margin-top: .2rem; }
+.pw-feld input { margin-top: 0 !important; flex: 1; min-width: 0; }
+.pw-auge { padding: 0 .7rem; background: var(--feld); color: var(--fg); border: 1px solid var(--rand); }
+.pw-auge[aria-pressed=true] { background: var(--akzent); color: #fff; }

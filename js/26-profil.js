@@ -2,7 +2,7 @@
 // Zwischenspeicher (POI-Cache, Offline-Karte) bleiben draußen. Schlüssel nur auf Wunsch, dann deutlich gekennzeichnet.
 const PROFIL_APP = 'scooterways-profil', PROFIL_PREFIX = 'scooterways.';
 // sync: Schlüssel des Server-Abgleichs bleibt immer auf dem Gerät (nie in Datei oder Abgleich, beim Laden nicht gelöscht)
-const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand', 'devlog', 'dev', 'sync'];
+const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand', 'vectorStartbild', 'devlog', 'dev', 'sync'];
 // Geheimnisse: [Speicher-Schlüssel, Feld im Objekt oder null für den ganzen Eintrag]
 const PROFIL_GEHEIM = [['tomtom', 'key'], ['talk', 'pw'], ['talkSk', null]];
 
@@ -113,7 +113,7 @@ async function syncInfo() {
 }
 function syncZeigen() {
   $('syncBox').hidden = !serverAn();
-  $('syncAus').hidden = !!syncDaten; $('syncAn').hidden = !syncDaten;
+  $('syncAus').hidden = $('koppelnLaden').hidden = !!syncDaten; $('syncAn').hidden = !syncDaten;
   if (syncDaten && serverAn() && !syncZeigen.gefragt) { syncZeigen.gefragt = true; syncInfo(); }
 }
 document.addEventListener('serverkonfig', syncZeigen);
@@ -166,9 +166,12 @@ $('syncRunter').onclick = async () => {
 };
 $('syncTrennen').onclick = async () => {
   if (!confirm('Dieses Gerät vom Abgleich trennen?')) return;
-  if (confirm('Auch das Profil auf dem Server löschen (für alle Geräte mit diesem Passwort)?')) try { await syncAnfrage({ aktion: 'weg' }); } catch {}
+  if (confirm('Auch Profil und Touren auf dem Server löschen (für alle Geräte mit diesem Passwort)?')) {
+    try { await syncAnfrage({ aktion: 'weg' }); } catch {}
+    try { await tourenAnfrage({ aktion: 'weg' }); } catch {}
+  }
   syncDaten = null; store.set('sync', null); localStorage.removeItem(PROFIL_PREFIX + 'sync');
-  syncStatusText('Getrennt.'); syncZeigen();
+  syncStatusText('Getrennt.'); syncZeigen(); tourenZeigen();
 };
 
 // --- Kurzanleitung und Hinweis beim ersten Start (und jederzeit unter ⚙ Einstellung)

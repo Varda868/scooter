@@ -5,7 +5,7 @@
 //   ?was=gesund   täglich: Valhalla, Photon, Overpass, Wetter, TomTom-Schlüssel, Alter der POI-Daten, Speicher
 //   ?was=fehler   täglich: neue Fehlerberichte seit der letzten Meldung
 //   ?was=nacht    täglich nachts: Aufräumen und Sicherung von Datenbank (SQLite) und config.php, 7 Tage
-//   ?was=faehren-osm, faehren-se, faehren-uk   Fährdaten (Admin → Fährdaten): Auswertung der Kacheln, Fahrpläne Schweden/UK
+//   ?was=faehren-osm, faehren-se, faehren-uk, faehren-ais   Fährdaten (Admin → Fährdaten): Auswertung der Kacheln, Fahrpläne Schweden/UK
 define('SW_API', 1);
 require __DIR__ . '/lib/kern.php';
 require __DIR__ . '/lib/relays.php';
@@ -128,6 +128,8 @@ function wartung_nacht(array &$p, array &$i): void {
   $db = sw_db(); $jetzt = time();
   $n = [];
   $n['Kurzlinks'] = $db->exec("DELETE FROM sw_kurz WHERE bis < $jetzt");
+  // IP-Hash der Kurzlinks nach 7 Tagen weg (Datenschutzerklärung)
+  $n['Kurzlink-IPs'] = $db->exec('UPDATE sw_kurz SET ip = NULL WHERE ip IS NOT NULL AND t < ' . ($jetzt - 7 * 86400));
   $n['Drosselung'] = $db->exec("DELETE FROM sw_drossel WHERE ende < $jetzt");
   $n['Anmeldeversuche'] = $db->exec('DELETE FROM sw_login WHERE t < ' . ($jetzt - 86400));
   $n['Push-Abos'] = $db->exec('DELETE FROM sw_push WHERE fehler >= 20');

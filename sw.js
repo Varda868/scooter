@@ -1,23 +1,41 @@
 // Scooterways Service Worker: App-Hülle offline verfügbar, angesehene Kartenkacheln zwischenspeichern.
 // Routing, Wetter, POIs usw. gehen immer ans Netz; ihre Offline-Reserve liegt in der App (localStorage).
-const VERSION = 'v67';
+const VERSION = 'v72';
 // Stammadresse wie in js/01-grundlagen.js: Zweitadressen laden POI-Kacheln von dort
 const STAMM_ORIGIN = 'https://scooter.thai-klasse.de';
 const SHELL = `shell-${VERSION}`, TILES = 'tiles';
 const MAX_TILES = 4000; // ca. 60–100 MB
 const POIS = 'pois', MAX_POI_TILES = 300; // 1°-Kacheln, je nach Gegend 10–500 kB
-const LEAFLET = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
-const CDN = 'https://cdn.jsdelivr.net/npm/'; // MapLibre, PMTiles, Protomaps-Stile (versioniert, ändern sich nie)
 // Reihenfolge der Skripte bestimmt index.html; neue Module hier ergänzen
-const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-poidetails.js', 'js/17-fahrten.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js', 'js/30-panne.js', 'js/31-strassenart.js'];
+const APP_FILES = ['css/app.css', 'js/00-logger.js', 'js/01-grundlagen.js', 'js/02-wegpunkte.js', 'js/03-routing.js', 'js/04-vergleich.js', 'js/05-vorschau.js', 'js/06-kartenknoepfe.js', 'js/07-navi.js', 'js/08-verkehr.js', 'js/09-etappen.js', 'js/10-wetter.js', 'js/11-pois.js', 'js/13-poisuche.js', 'js/14-gpx.js', 'js/15-poidetails.js', 'js/17-fahrten.js', 'js/18-roller.js', 'js/19-vektorkarte.js', 'js/20-start.js', 'js/21-oberflaeche.js', 'js/22-talk.js', 'js/23-standort.js', 'js/24-tank.js', 'js/25-faehre.js', 'js/26-profil.js', 'js/27-server.js', 'js/28-kurzlink.js', 'js/29-push.js', 'js/30-panne.js', 'js/31-strassenart.js', 'js/32-touren.js'];
 const SHELL_FILES = ['./', 'manifest.webmanifest', 'icon.svg', 'favicon.svg', 'logo-scw.svg', 'logo-scw-hell.svg', 'icon-192.png', 'badge-96.png', ...APP_FILES];
-const CDN_FILES = [LEAFLET + 'leaflet.min.js', LEAFLET + 'leaflet.min.css'];
+// Fremdbibliotheken, Kartensymbole und die häufigsten Schriftbereiche (js/19-vektorkarte.js) liegen in vendor/.
+// Die Pfade tragen die Version, die Dateien ändern sich also nie: bei einem App-Update aus dem alten Speicher
+// übernehmen statt erneut laden (spart gut 2 MB je Update), ebenso später nachgeladene Schriftbereiche.
+const PA = 'vendor/protomaps-assets/';
+const VENDOR_FILES = ['vendor/leaflet-1.9.4/leaflet.js', 'vendor/leaflet-1.9.4/leaflet.css',
+  'vendor/maplibre-gl-5.6.0/maplibre-gl.js', 'vendor/maplibre-gl-5.6.0/maplibre-gl.css', 'vendor/pmtiles-4.3.0/pmtiles.js',
+  'vendor/protomaps-basemaps-5.5.0/basemaps.js', 'vendor/maplibre-gl-leaflet-0.1.3/leaflet-maplibre-gl.js', PA + 'fonts/leer.pbf',
+  ...['', '@2x'].flatMap(r => ['.json', '.png'].map(e => `${PA}sprites/v4/light${r}${e}`)),
+  ...['Regular', 'Medium', 'Italic'].flatMap(f => ['0-255', '256-511', '8192-8447'].map(r => `${PA}fonts/Noto%20Sans%20${f}/${r}.pbf`))];
+const istVendor = url => new URL(url, location.href).pathname.includes('/vendor/');
 
-// CDN-Dateien einzeln und fehlertolerant: ein Aussetzer dort soll die Installation nicht verhindern
-// (sie werden sonst beim nächsten Laden über den fetch-Handler nachgeholt)
+async function vendorUebernehmen(neu) {
+  const alt = (await caches.keys()).filter(k => k.startsWith('shell-') && k !== SHELL);
+  const da = new Set();
+  for (const k of alt) {
+    const c = await caches.open(k);
+    for (const req of (await c.keys()).filter(r => istVendor(r.url) && !da.has(r.url))) {
+      const res = await c.match(req);
+      if (res) { await neu.put(req, res); da.add(req.url); }
+    }
+  }
+  return Promise.all(VENDOR_FILES.map(u => new URL(u, location.href).href).filter(u => !da.has(u)).map(u => neu.add(u)));
+}
+
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL)
-    .then(c => Promise.all([c.addAll(SHELL_FILES.map(u => new Request(u, { cache: 'reload' }))), ...CDN_FILES.map(u => c.add(u).catch(() => {}))]))
+    .then(c => Promise.all([c.addAll(SHELL_FILES.map(u => new Request(u, { cache: 'reload' }))), vendorUebernehmen(c)]))
     .then(() => self.skipWaiting()));
 });
 
@@ -43,6 +61,8 @@ self.addEventListener('fetch', e => {
   // Kurzlinks /t/<id> ebenso: der Server leitet weiter, und eine umgeleitete Antwort darf der SW einer Navigation nicht geben
   if (url.origin === location.origin && (url.pathname.includes('/api/') || /\/t\/[^/]+\/?$/.test(url.pathname))) return;
 
+  // Eigene Textseiten (Lizenzen, Impressum, Datenschutz): immer live, und nie als App-Hülle ('./') in den Speicher
+  if (url.origin === location.origin && /\/(?!index\.html$)[^/]+\.html$/.test(url.pathname)) return;
   // Seite selbst: Netz zuerst (Updates aus Plesk kommen sofort an), offline aus dem Speicher
   if (req.mode === 'navigate' || (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname))) {
     e.respondWith(fetch(req, { cache: 'no-cache' }).then(res => {
@@ -87,11 +107,12 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Übrige App-Dateien (Leaflet, MapLibre, Icons, Manifest) und Schriften/Symbole der Vektorkarte:
-  // Speicher zuerst, im Hintergrund auffrischen. Dieser Speicher wird nie gekürzt, ohne Schriften keine Vektorkacheln.
-  if (url.origin === location.origin || req.url.startsWith(LEAFLET) || req.url.startsWith(CDN) || url.hostname === 'protomaps.github.io') {
+  // vendor/ (versionierte Pfade, ändern sich nie): Speicher zuerst, ohne Auffrischen; nachgeladene Schriftbereiche bleiben.
+  // Übrige eigene Dateien (Icons, Manifest): Speicher zuerst, im Hintergrund auffrischen. Dieser Speicher wird nie gekürzt.
+  if (url.origin === location.origin) {
     e.respondWith(caches.open(SHELL).then(async cache => {
       const hit = await cache.match(req);
+      if (hit && istVendor(req.url)) return hit;
       const net = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; });
       return hit || net;
     }));

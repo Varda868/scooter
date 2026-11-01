@@ -10,8 +10,14 @@ const serverAn = () => !!serverKonfig?.eingerichtet && settings.server !== false
 function proxyZiel(url, init) {
   if (!serverAn()) return null;
   const k = serverKonfig, p = API_URL + 'proxy.php?d=';
-  // Valhalla nicht über den Proxy (große POSTs, nichts zu speichern), aber auf den im Admin-Bereich eingestellten Server
-  if (k.valhalla && k.valhalla !== VALHALLA_STANDARD && url.startsWith(VALHALLA_STANDARD + '/')) return [k.valhalla + url.slice(VALHALLA_STANDARD.length), init];
+  // Valhalla über den Proxy (FOSSGIS sieht nur die Server-IP), JSON unverändert. Ohne Proxy und als Rückfall
+  // direkt an den im Admin-Bereich eingestellten Valhalla-Server
+  if (url.startsWith(VALHALLA_STANDARD + '/')) {
+    const direkt = k.valhalla && k.valhalla !== VALHALLA_STANDARD ? [k.valhalla + url.slice(VALHALLA_STANDARD.length), init] : null;
+    const a = url.slice(VALHALLA_STANDARD.length + 1);
+    if (k.proxy && init?.method === 'POST' && /^(route|optimized_route|height|trace_attributes)$/.test(a)) return Object.assign([p + 'valhalla&a=' + a, init], { direkt });
+    return direkt;
+  }
   if (!k.proxy) return null;
   const q = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
   if (url.startsWith(WEATHER_URL + '?')) return [p + 'wetter&' + q, init];
@@ -33,8 +39,9 @@ window.fetch = function (input, init) {
   if (url.startsWith(WEATHER_URL + '?')) return direktFetch(input, init).then(res => res.status === 429 || res.status >= 500 ? direktFetch(...ziel).catch(() => res) : res,
     err => { if (init?.signal?.aborted) throw err; return direktFetch(...ziel); });
   // Server nicht erreichbar, gedrosselt oder Dienst dahinter gestört: einmal direkt versuchen
-  return direktFetch(...ziel).then(res => res.status === 429 || res.status >= 500 ? direktFetch(input, init).catch(() => res) : res,
-    err => { if (init?.signal?.aborted) throw err; return direktFetch(input, init); });
+  const direkt = () => ziel.direkt ? direktFetch(...ziel.direkt) : direktFetch(input, init);
+  return direktFetch(...ziel).then(res => res.status === 429 || res.status === 413 || res.status >= 500 ? direkt().catch(() => res) : res,
+    err => { if (init?.signal?.aborted) throw err; return direkt(); });
 };
 
 function serverZeigen() {

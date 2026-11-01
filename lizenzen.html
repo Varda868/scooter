@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lizenzen · Scooterways</title>
+<link rel="icon" href="favicon.svg">
+<style>
+:root { color-scheme: light dark; --bg: #fff; --fg: #1d1d1f; --muted: #666; --accent: #e4572e; --line: #ddd; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #eee; --muted: #aaa; --line: #333; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 46rem; margin: 0 auto; padding: 1.2rem max(16px, env(safe-area-inset-right, 0px)) 3rem max(16px, env(safe-area-inset-left, 0px)); }
+h1 { font-size: 1.6rem; margin: .4rem 0 1rem; }
+h2 { font-size: 1.15rem; margin: 1.8rem 0 .5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
+a { color: var(--accent); }
+.leise { color: var(--muted); font-size: .9em; }
+.tabelle { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .93em; }
+td, th { text-align: left; vertical-align: top; padding: .35rem .6rem .35rem 0; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="./">← Zur App</a></nav>
+  <h1>Lizenzen</h1>
+  <p>Scooterways ist freie Software unter der <a href="https://github.com/Varda868/scooter/blob/main/LICENSE" rel="noopener">AGPL-3.0</a>, Quelltext auf <a href="https://github.com/Varda868/scooter" rel="noopener">GitHub</a>. Alle Bibliotheken und Kartenschriften liefert dieser Server selbst aus. Es werden keine Dateien von CDNs und keine Webfonts geladen.</p>
+
+  <h2>Mitgelieferte Komponenten</h2>
+  <div class="tabelle"><table>
+    <tr><th>Komponente</th><th>Version</th><th>Lizenz</th></tr>
+    <tr><td>Leaflet</td><td>1.9.4</td><td><a href="vendor/leaflet-1.9.4/LICENSE.txt">BSD-2-Clause</a></td></tr>
+    <tr><td>MapLibre GL JS</td><td>5.6.0</td><td><a href="vendor/maplibre-gl-5.6.0/LICENSE.txt">BSD-3-Clause</a></td></tr>
+    <tr><td>PMTiles</td><td>4.3.0</td><td><a href="vendor/pmtiles-4.3.0/LICENSE.txt">BSD-3-Clause</a></td></tr>
+    <tr><td>Protomaps basemaps (Kartenstil)</td><td>5.5.0</td><td><a href="vendor/protomaps-basemaps-5.5.0/LICENSE.txt">BSD-3-Clause, Gestaltung CC0</a></td></tr>
+    <tr><td>maplibre-gl-leaflet</td><td>0.1.3</td><td><a href="vendor/maplibre-gl-leaflet-0.1.3/LICENSE.txt">ISC</a></td></tr>
+    <tr><td>Noto Sans (Kartenschrift)</td><td>basemaps-assets 028c18f</td><td><a href="vendor/protomaps-assets/fonts/OFL.txt">SIL OFL 1.1</a></td></tr>
+    <tr><td>Kartensymbole „light“</td><td>v4</td><td><a href="vendor/protomaps-assets/sprites/LICENSE-tangrams-icons.txt">MIT</a>, Gestaltung CC0</td></tr>
+    <tr><td>Talk (aus der b:con-App)</td><td>78eab39</td><td><a href="talk/LICENSE-AGPL-3.0.txt">AGPL-3.0</a></td></tr>
+    <tr><td>Codec2</td><td>310777b</td><td><a href="talk/LICENSE-codec2-LGPL-2.1.txt">LGPL-2.1</a></td></tr>
+    <tr><td>@noble/secp256k1</td><td>3.2.0</td><td><a href="talk/LICENSE-secp256k1-MIT.txt">MIT</a></td></tr>
+  </table></div>
+  <p class="leise">Die Oberfläche nutzt die Systemschrift des Geräts.</p>
+
+  <h2>Daten und Dienste</h2>
+  <div class="tabelle"><table>
+    <tr><th>Quelle</th><th>Wofür</th><th>Lizenz</th></tr>
+    <tr><td>© <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap-Mitwirkende</a></td><td>Karte, POIs, Fähren, Orte, Routing</td><td>ODbL 1.0</td></tr>
+    <tr><td>Valhalla (FOSSGIS), Nominatim, Photon, Overpass</td><td>Routing, Höhen, Suche, POI-Abfragen</td><td>freie Software, Daten ODbL</td></tr>
+    <tr><td>Open-Meteo</td><td>Wetter</td><td>CC BY 4.0</td></tr>
+    <tr><td>MET Norway</td><td>Wetter (Ersatz)</td><td>CC BY 4.0</td></tr>
+    <tr><td>Deutscher Wetterdienst (über Bright Sky)</td><td>Warnungen Deutschland</td><td>Quelle: Deutscher Wetterdienst</td></tr>
+    <tr><td>EUMETNET MeteoAlarm</td><td>Warnungen Europa</td><td>nach den Bedingungen von MeteoAlarm</td></tr>
+    <tr><td>Trafiklab</td><td>Fahrpläne Schweden</td><td>nach den Bedingungen von Trafiklab</td></tr>
+    <tr><td>Traveline TNDS, NaPTAN</td><td>Fahrpläne Großbritannien</td><td>Open Government Licence v3.0</td></tr>
+    <tr><td>TomTom (nur mit Schlüssel)</td><td>Baustellen, Sperrungen</td><td>proprietär</td></tr>
+  </table></div>
+</main>
+</body>
+</html>
