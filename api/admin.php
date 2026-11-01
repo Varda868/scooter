@@ -18,7 +18,7 @@ function admin_seite(string $titel, string $inhalt, bool $menue = true): void {
     foreach ($BEREICHE as $k => $b) echo ' <a href="?s=' . h($k) . '"' . (($_GET['s'] ?? 'start') === $k ? ' aria-current="page"' : '') . '>' . h($b['titel']) . '</a>';
     echo '<form method="post" action="?s=abmelden" class="rechts"><input type="hidden" name="csrf" value="' . h(sw_csrf()) . '"><button class="klein">Abmelden</button></form></nav>';
   }
-  echo '<main><h1>' . h($titel) . '</h1>', $inhalt, '</main></body></html>';
+  echo '<main><h1>' . h($titel) . '</h1>', $inhalt, '</main><script src="pw-anzeigen.js"></script></body></html>';
   exit;
 }
 function admin_hinweis(?string $ok, ?string $fehler = null): string {
