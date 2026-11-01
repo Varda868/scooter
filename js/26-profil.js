@@ -2,7 +2,7 @@
 // Zwischenspeicher (POI-Cache, Offline-Karte) bleiben draußen. Schlüssel nur auf Wunsch, dann deutlich gekennzeichnet.
 const PROFIL_APP = 'scooterways-profil', PROFIL_PREFIX = 'scooterways.';
 // sync: Schlüssel des Server-Abgleichs bleibt immer auf dem Gerät (nie in Datei oder Abgleich, beim Laden nicht gelöscht)
-const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand', 'devlog', 'dev', 'sync'];
+const PROFIL_CACHE = ['poiCache', 'vectorMapHeader', 'vectorMapStand', 'vectorStartbild', 'devlog', 'dev', 'sync'];
 // Geheimnisse: [Speicher-Schlüssel, Feld im Objekt oder null für den ganzen Eintrag]
 const PROFIL_GEHEIM = [['tomtom', 'key'], ['talk', 'pw'], ['talkSk', null]];
 

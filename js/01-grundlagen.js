@@ -67,9 +67,11 @@ const POI_TYPES = [
 
 const map = L.map('map').setView([51.16, 10.45], 6);
 // crossOrigin: CORS-Antworten statt "opaque", damit der Service Worker angesehene Kacheln platzsparend zwischenspeichern kann
+// Grundkarte ist die eigene Vektorkarte (js/19-vektorkarte.js). Die OSM-Rasterkacheln kommen nur noch, wenn es sie
+// nicht gibt, sie nicht lädt oder die Kartenmitte außerhalb ihres Gebiets liegt (zIndex: dann über der Vektorkarte)
 const rasterBase = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, crossOrigin: true, attribution: '© OpenStreetMap-Mitwirkende'
-}).addTo(map);
+  maxZoom: 19, crossOrigin: true, attribution: '© OpenStreetMap-Mitwirkende', zIndex: 5
+});
 // Übersichten (ganze Route, GPX) in Zehntel-Zoomstufen einpassen, sonst bleibt bei langen Touren links und rechts
 // bis zur Hälfte der Breite leer; danach wieder ganze Stufen für Tippen und Ziehen. Links Platz für die Kartenknöpfe.
 function fitFein(bounds, opts = {}) {
@@ -88,6 +90,8 @@ const store = {
   get(key, fallback) { try { return JSON.parse(localStorage.getItem('scooterways.' + key)) ?? fallback; } catch { return fallback; } },
   set(key, value) { try { localStorage.setItem('scooterways.' + key, JSON.stringify(value)); } catch {} }
 };
+// Gab es die Vektorkarte zuletzt nicht, gleich die Rasterkarte; sonst (auch beim ersten Start) bis zur Vektorkarte nur Landfarbe
+if (!store.get('vectorMap', true)) rasterBase.addTo(map);
 const saved = store.get('plan', null);
 if (saved?.waypoints?.length >= 2) {
   waypoints = saved.waypoints.map(w => ({ ...w, latlng: w.latlng && L.latLng(w.latlng) }));
