@@ -90,7 +90,7 @@ function bereich_relays(): void {
     $n = $s && $s['nip11'] ? json_decode($s['nip11'], true) : null;
     $html .= '<tr data-url="' . h($r['url']) . '"><td>' . ($r['eigen'] ? '🏠 ' : '') . '<code>' . h($r['url']) . '</code>' . ($r['an'] ? '' : ' <span class="leise">(aus)</span>') .
       ($s && $s['ip'] ? '<br><span class="leise">' . (str_contains($s['ip'], ':') ? 'IPv6' : 'IPv4') . ' ' . h($s['ip']) . '</span>' : '') . '</td>' .
-      '<td>' . relay_zelle($s) . '</td><td class="browser">' . relay_zelle($b, true) . '</td><td>' . relay_cert($s, $r['eigen']) . '</td><td>' . relay_nip11_zelle($n) . '</td><td>' . ($punkte ?: '–') . '</td></tr>';
+      '<td>' . ($r['an'] ? relay_zelle($s) : '<span class="leise">aus</span>') . '</td><td class="browser">' . relay_zelle($b, true) . '</td><td>' . relay_cert($s, $r['eigen']) . '</td><td>' . relay_nip11_zelle($n) . '</td><td>' . ($punkte ?: '–') . '</td></tr>';
   }
   $html .= '</table>';
 

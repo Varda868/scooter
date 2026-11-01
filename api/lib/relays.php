@@ -186,10 +186,11 @@ function relay_merken(array $r, string $quelle): void {
       $r['ip'], $r['cert_bis'], $r['nip11'] === null ? null : json_encode($r['nip11']), $r['fehler'] === null ? null : relay_text($r['fehler'])]);
   $db->prepare('DELETE FROM sw_relay WHERE t < ?')->execute([time() - RELAY_VERLAUF_TAGE * 86400]);
 }
-// Alle eingetragenen Relays (auch ausgeschaltete) prüfen; beim eigenen Relay danach Schlüssel merken bzw. Adresswechsel
+// Alle eingeschalteten Relays prüfen (ausgeschaltete gar nicht); beim eigenen Relay danach Schlüssel merken bzw. Adresswechsel
 function relay_alle_pruefen(): array {
   $out = [];
   foreach (relay_liste() as $r) {
+    if (!$r['an']) continue;
     $e = relay_pruefen($r['url']);
     if ($r['eigen']) $e = relay_adresswechsel($r, $e);
     relay_merken($e, 'server');
