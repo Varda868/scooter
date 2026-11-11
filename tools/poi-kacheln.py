@@ -7,7 +7,8 @@ Die Filter kommen aus POI_TYPES in js/01-grundlagen.js, damit App und Kacheln ni
 Kachel = Liste [ "n123", lat, lon, {tags} ]; nur die Tags, die die App anzeigt oder zum Zuordnen braucht.
 Fährlinien (Wege und Relationen mit route=ferry, Relationen über tools/faehr-relationen.py) zusätzlich als
 AUSGABE/f/{lat}_{lon}.json = [ "w123" oder "r123", [[lat, lon], …], {tags} ] (eine Relation mit mehreren Teilen
-steht je Teil einmal drin),
+steht je Teil einmal drin; Linien, die laut OSM eindeutig keine Fahrzeuge mitnehmen, fehlen, außer sie stehen in
+tools/faehren-ausnahmen.txt),
 vereinfacht auf etwa 50 m; eine Linie steht in jeder Kachel, die ihr Rahmen berührt.
 Orte (place=city|town|village|hamlet, für Vorschläge beim Tippen, auch offline) als AUSGABE/o/{lat}_{lon}.json
 = [ [name, lat, lon, art, name:de oder "", bei], … ] mit art c/t/v/h; bei = nächste größere Stadt (Dorf/Weiler: Stadt
@@ -24,6 +25,22 @@ KEEP = {'name', 'brand', 'brands', 'operator', 'opening_hours', 'website', 'cont
 FERRY_KEEP = {'name', 'operator', 'duration', 'website', 'contact:website', 'url', 'fee', 'opening_hours', 'interval',
               'motor_vehicle', 'motorcar', 'motorcycle', 'moped', 'mofa', 'vehicle', 'bicycle', 'foot'}
 FERRY_EXPR = 'w/route=ferry'
+# Linien, die laut OSM eindeutig keine Fahrzeuge mitnehmen, kommen nicht in die Kacheln (wie faehreMitnahme in
+# js/25-faehre.js); Ausnahmen (OSM-ID je Zeile, # Kommentar) in tools/faehren-ausnahmen.txt
+FERRY_JA = ('moped', 'mofa', 'motorcycle', 'motor_vehicle', 'motorcar', 'vehicle')
+FERRY_NEIN = ('moped', 'motorcycle', 'motor_vehicle', 'vehicle')
+
+
+def ohne_fahrzeuge(tags):
+    return not any(tags.get(k) == 'yes' for k in FERRY_JA) and any(tags.get(k) == 'no' for k in FERRY_NEIN)
+
+
+def faehr_ausnahmen():
+    try:
+        with open(os.path.join(ROOT, 'tools', 'faehren-ausnahmen.txt'), encoding='utf-8') as fh:
+            return {m.group(0) for z in fh if (m := re.match(r'[wr]\d+', z.split('#', 1)[0].strip()))}
+    except FileNotFoundError:
+        return set()
 PLACE_ART = {'city': 'c', 'town': 't', 'village': 'v', 'hamlet': 'h'}
 PLACE_EXPR = 'n/place=' + ','.join(PLACE_ART)
 
@@ -174,7 +191,11 @@ def main(out):
     in_rel = {'w' + w for r in frel.values() for w in r['teile']}
     linien = [(oid, join_lines(r['teile'].values()), r['tags']) for oid, r in frel.items()]
     linien += [(oid, ferry_lines(g), t) for oid, (g, t) in fwege.items() if oid not in in_rel]
+    ausnahmen, ohne = faehr_ausnahmen(), 0
     for oid, teile, tags in linien:
+        if ohne_fahrzeuge(tags) and oid not in ausnahmen:
+            ohne += 1
+            continue
         fseen.add(oid)
         keep = {k: v for k, v in tags.items() if k in FERRY_KEEP}
         for n, line in enumerate(teile):
@@ -205,8 +226,8 @@ def main(out):
              'license': 'Daten © OpenStreetMap-Mitwirkende, ODbL 1.0 (openstreetmap.org/copyright)'}
     with open(os.path.join(out, 'index.json'), 'w', encoding='utf-8') as fh:
         json.dump(index, fh, separators=(',', ':'))
-    print(f"{len(seen)} POIs in {len(tiles)} Kacheln, {len(fseen)} Fährlinien in {len(ferries)} Kacheln, "
-          f"{len(pseen)} Orte in {len(places)} Kacheln", file=sys.stderr)
+    print(f"{len(seen)} POIs in {len(tiles)} Kacheln, {len(fseen)} Fährlinien in {len(ferries)} Kacheln "
+          f"({ohne} ohne Fahrzeuge weggelassen, {len(ausnahmen)} Ausnahmen), {len(pseen)} Orte in {len(places)} Kacheln", file=sys.stderr)
 
 
 if __name__ == '__main__':
