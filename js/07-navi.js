@@ -112,17 +112,12 @@ function navFix(pos) {
     nav.lastReroute = Date.now(); nav.off = 0;
     $('navNote').textContent = 'Neu berechnen …';
     say('Route wird neu berechnet');
-    const passedKm = nav.km;
-    changeWaypoints(() => {
-      const located = waypoints.filter(w => w.latlng);
-      // Bereits passierte Zwischenziele fallen weg, Start = aktuelle Position
-      const ahead = located.slice(1, -1).filter(w => locateOnRoute(w.latlng.lat, w.latlng.lng).km > passedKm + 0.05);
-      waypoints = [{ latlng: ll, text: 'Mein Standort' }, ...ahead, located.at(-1)];
-    });
+    navNeuRechnen(ll, nav.km);
     nav.km = 0; nav.said = new Set();
     return;
   }
   if (loc.dist <= OFF_ROUTE_M) nav.km = Math.max(nav.km - 0.05, loc.km);
+  $('navSkip').hidden = !navHalteVorne().length;
   if (echt) nav.fixAt = { km: nav.km, t: Date.now(), v: speed != null && speed >= 0 ? speed : null };
 
   const dot = nav.marker.getElement()?.firstChild;
@@ -167,6 +162,34 @@ function navFix(pos) {
   if (navOhneKarte()) return; // Pfeil-Modus: Karte bleibt stehen, keine Kacheln
   map.setView(ll, nav.manual ?? nav.zoom, { animate: true });
 }
+
+// Ab der aktuellen Position neu rechnen: bereits passierte Zwischenziele (und ein übersprungener) fallen weg
+function navNeuRechnen(ll, passedKm, ohne = null) {
+  changeWaypoints(() => {
+    const located = waypoints.filter(w => w.latlng);
+    const ahead = located.slice(1, -1).filter(w => w !== ohne && locateOnRoute(w.latlng.lat, w.latlng.lng).km > passedKm + 0.05);
+    waypoints = [{ latlng: ll, text: 'Mein Standort' }, ...ahead, located.at(-1)];
+  });
+  nav.km = 0; nav.said = new Set();
+}
+// Zwischenziele (ohne Formpunkte und Ziel) mit ihrer Lage auf der Route, je Route einmal berechnet
+function navHalteVorne() {
+  if (nav.halteFuer !== routeCoords) {
+    nav.halteFuer = routeCoords;
+    nav.halte = routeCoords ? waypoints.filter(w => w.latlng).slice(1, -1).filter(w => !w.shaping)
+      .map(w => ({ w, km: locateOnRoute(w.latlng.lat, w.latlng.lng).km })) : [];
+  }
+  return nav.halte.filter(h => h.km > nav.km + 0.05);
+}
+// ⏭ Nächsten Halt auslassen (z. B. Cache in einer Stichstraße, an dem man vorbeifährt) und ab hier ohne ihn weiter
+$('navSkip').onclick = () => {
+  const h = navHalteVorne()[0], ll = nav.lastPos ? L.latLng(nav.lastPos.coords.latitude, nav.lastPos.coords.longitude) : null;
+  if (!h || !ll) return;
+  nav.lastReroute = Date.now(); nav.off = 0;
+  $('navNote').textContent = 'Neu berechnen …';
+  say('Halt übersprungen, Route wird neu berechnet');
+  navNeuRechnen(ll, nav.km, h.w);
+};
 
 // --- Pfeil-Modus: schwarzer Bildschirm mit großem Pfeil, ohne Karte. Spart Display, Kacheln und GPS.
 // GPS nach Abstand: weiter als PFEIL_WEIT_M bis zum nächsten Manöver nur alle PFEIL_TAKT_MS ein Fix, dazwischen wird
