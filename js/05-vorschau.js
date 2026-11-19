@@ -7,6 +7,7 @@ const TURN_WINKEL = { 7: 0, 8: 0, 9: 45, 10: 90, 11: 135, 14: -135, 15: -90, 16:
   20: 35, 21: -35, 22: 0, 23: 20, 24: -20, 25: 0 };
 function turnIcon(m, ersatz = '↑') {
   if (!m) return ersatz;
+  if (m.poi) return `<span class="turn-poi">${escapeHtml(m.icon)}</span>`;
   const kopf = (x, y, dx, dy) => `<path d="M${x + dx * 8} ${y + dy * 8}L${x - dy * 8} ${y + dx * 8}L${x + dy * 8} ${y - dx * 8}Z" fill="currentColor"/>`;
   const svg = inner => `<svg class="turn-svg" viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">${inner}</g></svg>`;
   if (m.type === 12 || m.type === 13) { // Wende: 13 links herum, 12 rechts herum
@@ -206,7 +207,7 @@ function renderSim(now) {
   // Nah an Abbiegungen etwas heran: Abbiegung voraus oder gerade passiert, so bleibt der Zoom in der Stadt mit
   // vielen Abbiegungen stehen, statt zu pendeln. Höchstens alle 4 s ein Wechsel, gleitend über ZOOM_GLIDE ms.
   // Nur TURN_ZOOM (< 0,5) Stufen: Die Kacheln bleiben auf ihrer Zoomstufe und werden nur skaliert, die Karte verschwindet nicht kurz.
-  const nearTurn = routeManeuvers.some(m => m.km > sim.km - 0.15 && m.km < sim.km + 0.3);
+  const nearTurn = routeManeuvers.some(m => !m.poi && m.km > sim.km - 0.15 && m.km < sim.km + 0.3);
   const want = baseZoom(factor) + (nearTurn ? TURN_ZOOM : 0);
   if (Math.abs(want - map.getZoom()) > 0.01 && now - sim.zoomAt > 4000) {
     sim.zoomAt = now; sim.zoomFrom = map.getZoom(); sim.zoomTo = want;

@@ -173,7 +173,7 @@ function haltFix(f) {
   if (halt.gemeldet || !posZiel()) return;
   // Geplanter Halt (Zwischenziel, Start, Ziel) zählt nicht; an Kreuzungen im Navi erst nach 3 min (Ampel, Schranke)
   if (waypoints.some(w => w.latlng && !w.shaping && w.latlng.distanceTo(ll) < 150)) return;
-  const kreuzung = nav.on && routeManeuvers.some(m => Math.abs(m.km - nav.km) < 0.05);
+  const kreuzung = nav.on && routeManeuvers.some(m => !m.poi && Math.abs(m.km - nav.km) < 0.05);
   if (f.t - halt.ankerT < (kreuzung ? HALT_KREUZUNG_MS : HALT_MS)) return;
   haltMelden('', halt.ankerT);
 }
