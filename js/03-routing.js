@@ -67,15 +67,17 @@ async function fetchRoute(body, signal) {
   try { res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body), signal }); }
   catch (err) { if (err.name === 'AbortError') throw ueberholt(); throw Object.assign(new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen und erneut berechnen.'), { offline: true }); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(valhallaError(res.status, data));
+  if (!res.ok) throw Object.assign(new Error(valhallaError(res.status, data)), { code: data.error_code, detail: data.error || '' });
   return data;
 }
 
 // Die öffentliche Valhalla-Instanz rechnet höchstens 200 km Luftlinie je Anfrage. Lange Strecken: zwischen weit
 // entfernten Punkten Formpunkte auf der Luftlinie einfügen, in Anfragen bis MAX_REQUEST_KM teilen und wieder zusammensetzen.
 const MAX_REQUEST_KM = 180;
-// Punkte je Valhalla-Anfrage (Server-Grenze max_locations); mehr Halte, z. B. aus einer GPX-Route, gehen in mehreren Stücken
-const MAX_REQUEST_LOCS = 20;
+// Punkte je Valhalla-Anfrage (Server-Grenze max_locations); mehr Halte, z. B. aus einer GPX-Route, gehen in mehreren Stücken.
+// Die Grenze ist je Server und Fahrzeug eingestellt: meldet der Server „zu viele Punkte“ (150), merkt sich die App eine
+// kleinere Zahl (aus der Meldung oder die Hälfte) und rechnet neu.
+let MAX_REQUEST_LOCS = store.get('valhallaMaxLocs', 20);
 // Ein einzelner Abschnitt bis MAX_LEG_KM Luftlinie geht am Stück an den Roller (Grenze 200 km), ohne Grobroute:
 // die rechnet als Motorrad und kennt manche Zweirad-Fähre nicht (Cairnryan–Belfast gibt es nur für motor_scooter)
 const MAX_LEG_KM = 195;
@@ -275,6 +277,16 @@ function umwegPruefen(chunk, data) {
 // Valhalla-Anfrage ab, damit nie zwei Läufe gleichzeitig fragen und kein altes Ergebnis auf der Karte landet
 let routeLauf = 0, routeAbbruch = new AbortController();
 async function planRoute(locs, exclude = []) {
+  for (;;) {
+    try { return await planRouteStuecke(locs, exclude); } catch (err) {
+      if (err.code !== 150 || MAX_REQUEST_LOCS <= 2) throw err;
+      const zahl = +(/(\d+)\s*$/.exec(err.detail)?.[1] || 0);
+      MAX_REQUEST_LOCS = Math.max(2, zahl > 1 && zahl < MAX_REQUEST_LOCS ? zahl : Math.floor(MAX_REQUEST_LOCS / 2));
+      store.set('valhallaMaxLocs', MAX_REQUEST_LOCS);
+    }
+  }
+}
+async function planRouteStuecke(locs, exclude) {
   const lauf = routeLauf, signal = routeAbbruch.signal, chunks = chunkLocations(await grobePunkte(faehrWegpunkte(locs)));
   const trips = [];
   for (const chunk of chunks) {
