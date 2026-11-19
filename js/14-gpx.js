@@ -52,7 +52,7 @@ $('gpx').onchange = async e => {
       } else if (rte.length > 1) {
         // Route statt Track: Punkte der Reihe nach als Halte, die Strecke rechnet Valhalla für den Roller
         tracks++;
-        const wps = rte.map(p => ({ latlng: L.latLng(p.lat, p.lon), text: p.name }));
+        const wps = rte.map(p => ({ latlng: L.latLng(p.lat, p.lon), text: p.name, strasse: true }));
         changeWaypoints(() => { waypoints = wps; excluded = []; });
         map.fitBounds(L.latLngBounds(wps.map(w => w.latlng)), { padding: [30, 30] });
       }
