@@ -57,19 +57,28 @@ $('gpx').onchange = async e => {
         map.fitBounds(L.latLngBounds(wps.map(w => w.latlng)), { padding: [30, 30] });
       }
       // Wegpunkte als eigene POIs, Duplikate (gleiche Stelle) überspringen
+      // Gleicher Wegpunkt = gleiche Stelle oder gleicher Code (GC-Code, Name aus der Datei): dann nur aktualisieren,
+      // z. B. eine neue Datei mit gelösten Mystery-Finals verschiebt den POI statt einen zweiten anzulegen
       let neu = 0;
       for (const w of wpts) {
-        if (myPois.some(p => Math.abs(p.lat - w.lat) < 1e-5 && Math.abs(p.lon - w.lon) < 1e-5)) continue;
+        const code = w.own ? '' : w.code;
+        const alt = myPois.find(p => (code && (p.code === code || (!p.code && p.quelle && p.name.split(' ')[0] === code))) ||
+          (Math.abs(p.lat - w.lat) < 1e-5 && Math.abs(p.lon - w.lon) < 1e-5));
+        if (alt) {
+          if (!w.own && alt.quelle) Object.assign(alt, { lat: w.lat, lon: w.lon, name: gpxName(w), icon: gpxIcon(w), code,
+            note: [w.desc, /^https?:\/\//.test(w.link) ? w.link : ''].filter(Boolean).join(' · '), quelle: file.name });
+          continue;
+        }
         myPois.push(w.own
           ? { id: Date.now().toString(36) + myPois.length, lat: w.lat, lon: w.lon, name: w.code, icon: w.sym || '⭐', note: w.desc }
-          : { id: Date.now().toString(36) + myPois.length, lat: w.lat, lon: w.lon, name: gpxName(w), icon: gpxIcon(w),
+          : { id: Date.now().toString(36) + myPois.length, lat: w.lat, lon: w.lon, name: gpxName(w), icon: gpxIcon(w), code,
               note: [w.desc, /^https?:\/\//.test(w.link) ? w.link : ''].filter(Boolean).join(' · '), quelle: file.name });
         neu++;
       }
       store.set('myPois', myPois);
       renderMyPois();
       added += neu;
-      if (neu && wpts.some(w => !w.own)) gpxQuelle = file.name;
+      if (wpts.some(w => !w.own)) gpxQuelle = file.name;
     }
     if (tracks) loadPois();
     gpxInfoZeigen(tracks || added ? '' : '⚠️ Die Datei enthält weder Track, Route noch Wegpunkte.', added);
@@ -83,7 +92,7 @@ $('gpx').onchange = async e => {
 let gpxQuelle = null;
 function gpxInfoZeigen(text, added) {
   const n = gpxQuelle ? myPois.filter(p => p.quelle === gpxQuelle).length : 0;
-  $('gpxInfo').innerHTML = escapeHtml(text) + (n ? `${text ? ' ' : ''}${added} POI(s) übernommen. <button type="button" class="secondary klein" id="gpxPoisWeg">🗑 ${n} POIs aus „${escapeHtml(gpxQuelle)}“ entfernen</button>` : '');
+  $('gpxInfo').innerHTML = escapeHtml(text) + (n ? `${text ? ' ' : ''}${added} POI(s) neu${n > added ? `, ${n - added} schon vorhanden (aktualisiert)` : ''}. <button type="button" class="secondary klein" id="gpxPoisWeg">🗑 ${n} POIs aus „${escapeHtml(gpxQuelle)}“ entfernen</button>` : '');
   const weg = $('gpxPoisWeg');
   if (weg) weg.onclick = () => {
     myPois = myPois.filter(p => p.quelle !== gpxQuelle);
