@@ -74,6 +74,8 @@ async function fetchRoute(body, signal) {
 // Die öffentliche Valhalla-Instanz rechnet höchstens 200 km Luftlinie je Anfrage. Lange Strecken: zwischen weit
 // entfernten Punkten Formpunkte auf der Luftlinie einfügen, in Anfragen bis MAX_REQUEST_KM teilen und wieder zusammensetzen.
 const MAX_REQUEST_KM = 180;
+// Punkte je Valhalla-Anfrage (Server-Grenze max_locations); mehr Halte, z. B. aus einer GPX-Route, gehen in mehreren Stücken
+const MAX_REQUEST_LOCS = 20;
 // Ein einzelner Abschnitt bis MAX_LEG_KM Luftlinie geht am Stück an den Roller (Grenze 200 km), ohne Grobroute:
 // die rechnet als Motorrad und kennt manche Zweirad-Fähre nicht (Cairnryan–Belfast gibt es nur für motor_scooter)
 const MAX_LEG_KM = 195;
@@ -101,7 +103,7 @@ function chunkLocations(locs) {
       continue;
     }
     const d = pts[i - 1].latlng.distanceTo(pts[i].latlng) / 1000;
-    if (sum + d > MAX_REQUEST_KM && cur.length > 1) { chunks.push(cur); cur = [pts[i - 1]]; sum = 0; }
+    if ((sum + d > MAX_REQUEST_KM || cur.length >= MAX_REQUEST_LOCS) && cur.length > 1) { chunks.push(cur); cur = [pts[i - 1]]; sum = 0; }
     cur.push(pts[i]); sum += d;
   }
   if (cur.length > 1) chunks.push(cur);
@@ -434,6 +436,41 @@ async function route() {
   }
 }
 
+// Abbiegeliste unter der Route: Fähren mit ⛴, Name (später aus OSM nachgetragen), Dauer und Ankunft; eigene POIs mit Symbol
+function schritteZeigen() {
+  $('steps').innerHTML = routeManeuvers.map(m => { const fs = m.poi ? null : faehrSchritt(m, m.km);
+    return `<li${fs && m.type === 28 ? ` data-fi="${fs.fi}"` : ''}${fs ? ' class="faehr-schritt"' : m.poi ? ' class="poi-schritt"' : ''}>${escapeHtml(m.text)}</li>`; }).join('');
+}
+// Zwischenziele: Valhalla meldet am Ende jedes Abschnitts „Ziel erreicht“; dort steht der Name des Halts
+function zwischenzieleBenennen(trip) {
+  const halte = waypoints.filter(w => w.latlng && !w.shaping);
+  if (trip.legs.length !== halte.length - 1) return;
+  let n = 0;
+  for (const m of routeManeuvers) {
+    if (m.type < 4 || m.type > 6 || m.poi) continue;
+    const w = halte[++n];
+    if (!w || n === halte.length - 1) break;
+    const name = (w.text || '').trim() || `Zwischenziel ${n}`;
+    m.text = `🏁 ${name}`; m.verbal = `Zwischenziel: ${name}`;
+  }
+}
+// Eigene POIs entlang der Route als Hinweis in Abbiegeliste und Navi („📦 GCBJN58 Geschickt geflickt“); nicht an Halten,
+// die heißen dort schon so. Abstand wie im POI-Kasten (Regler „Abstand zur Route“).
+function poiHinweise(neuZeigen = true) {
+  routeManeuvers = routeManeuvers.filter(m => !m.poi);
+  if (!routeCoords || !routeManeuvers.length) return;
+  const max = +$('radius').value, halte = waypoints.filter(w => w.latlng && !w.shaping);
+  for (const p of myPois) {
+    if (halte.some(w => w.latlng.distanceTo([p.lat, p.lon]) < 30)) continue;
+    const loc = locateOnRoute(p.lat, p.lon);
+    if (loc.dist > max) continue;
+    const neben = loc.dist >= 50 ? ` · ${Math.round(loc.dist / 10) * 10} m neben der Strecke` : '';
+    routeManeuvers.push({ km: loc.km, poi: true, icon: p.icon, text: `${p.icon} ${p.name}${neben}`, verbal: p.name, lanes: null });
+  }
+  routeManeuvers.sort((a, b) => a.km - b.km);
+  if (neuZeigen) schritteZeigen();
+}
+
 // Bei Zwischenzielen liefert Valhalla einen Abschnitt (leg) je Teilstrecke.
 const tripCoords = trip => trip.legs.flatMap((l, i) => decode(l.shape).slice(i ? 1 : 0));
 const hhmm = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -502,6 +539,8 @@ function showTrip(trip, alternates = []) {
       verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }
+  zwischenzieleBenennen(trip);
+  poiHinweise(false);
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
   // Route ziehen (Formpunkt, Straße meiden) nur im Touren-Modus
   if (!einfach()) enableRouteEditing(routeLayer);
@@ -511,8 +550,7 @@ function showTrip(trip, alternates = []) {
   $('summary').textContent = stageTripText(trip.summary) + (alternates.length ? ` · ${alternates.length} Alternative(n) grau` : '') + rough + summaryNote;
   summaryNote = '';
   // Fähren mit ⛴, Name (später aus OSM nachgetragen), Dauer und Ankunft
-  $('steps').innerHTML = routeManeuvers.map(m => { const fs = faehrSchritt(m, m.km);
-    return `<li${fs && m.type === 28 ? ` data-fi="${fs.fi}"` : ''}${fs ? ' class="faehr-schritt"' : ''}>${escapeHtml(m.text)}</li>`; }).join('');
+  schritteZeigen();
   loadElevation(trip);
   loadPois();
   renderMyPois();

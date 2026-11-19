@@ -59,6 +59,7 @@ function openPoiForm(ll, poi) {
     }
     store.set('myPois', myPois);
     renderMyPois();
+    poiHinweise();
   }, 'save'));
   L.popup({ className: 'map-menu', minWidth: 220 }).setLatLng(ll).setContent(box).openOn(map);
   setTimeout(() => box.querySelector('[name=name]').focus(), 50);

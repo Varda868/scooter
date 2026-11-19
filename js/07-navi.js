@@ -141,7 +141,7 @@ function navFix(pos) {
   }
   if (!next || restM < 30) {
     $('navArrow').textContent = '🏁'; $('navDist').textContent = restM < 30 ? 'Ziel erreicht' : distText(restM);
-    $('navText').textContent = routeManeuvers.at(-1)?.text || 'Ziel';
+    $('navText').textContent = routeManeuvers.filter(m => !m.poi).at(-1)?.text || 'Ziel';
     $('navLanes').innerHTML = '';
   } else {
     const m = (next.km - nav.km) * 1000;
