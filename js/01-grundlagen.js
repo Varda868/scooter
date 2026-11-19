@@ -143,7 +143,7 @@ function mapBusy(key, text, ms) {
 function setRouteCoords(coords) {
   stopSim();
   routeManeuvers = [];
-  eleData = null; steilstes = null; $('steilstes').hidden = true;
+  eleData = null; steilstes = null; $('steilstes').hidden = true; if (typeof fussLayer !== 'undefined') fussLayer.clearLayers();
   gradeSignLayer.clearLayers();
   wxRouteLayer.clearLayers();
   $('wxRouteSummary').textContent = ''; $('wxWarnSummary').textContent = ''; routeWarnungen = [];

@@ -300,7 +300,9 @@ async function planRouteStuecke(locs, exclude) {
     if (exclude.length) body.exclude_locations = [...(body.exclude_locations || []), ...exclude].slice(0, 50);
     // Valhalla liefert Alternativen nur ohne Zwischenpunkte
     if (chunks.length === 1 && locs.length === 2 && !einfach()) body.alternates = 2;
-    const data = await fetchRoute(body, signal);
+    let data;
+    try { data = await fetchRoute(body, signal); }
+    catch (err) { if (!KEIN_WEG.includes(err.code)) throw err; data = await stueckEinzeln(chunk, body, signal, err); }
     // Fähre im Roller-Abschnitt, obwohl die Grobroute dort keine hat: meist ist der Hafen für 50er nur über eine
     // Kraftfahrstraße erreichbar (Europoort), dann sucht Valhalla einen Umweg übers Wasser
     // Kurze Flussfähren (Megen–Appeltern, Pannerden) zählen nicht, die nimmt der Roller zu Recht
@@ -314,6 +316,58 @@ async function planRouteStuecke(locs, exclude) {
   trips.forEach((t, k) => t.legs.forEach((l, j) => legs.push(k && !j && chunks[k][0].shaping ? joinLegs(legs.pop(), l) : l)));
   const sum = f => legs.reduce((acc, l) => acc + l.summary[f], 0);
   return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
+}
+
+// Keine Route (442/443) oder kein Weg am Punkt (171): Liegt ein Halt nur an Feld- oder Waldwegen (Geocaches aus einer
+// GPX-Tour), rastet Valhalla ihn auf einen Weg, von dem aus ohne unbefestigte Strecken nichts weitergeht, und das ganze
+// Stück scheitert. Dann Halt für Halt rechnen; wo es so nicht geht, die Halte nur an richtige Straßen binden
+// (search_filter, ohne Feld-/Waldwege und Zufahrten): Die Route endet an der Straße, den Rest zeigt die Karte gepunktet
+// als Fußweg (fussWege). Erst wenn auch das nicht geht, darf dieser Abschnitt unbefestigte Wege nehmen (mit Hinweis).
+const KEIN_WEG = [171, 442, 443];
+async function stueckEinzeln(chunk, body, signal, fehler) {
+  const grenzen = chunk.map((w, i) => i === 0 || i === chunk.length - 1 || !w.shaping ? i : -1).filter(i => i >= 0);
+  if (grenzen.length < 2) throw fehler;
+  const legs = [], ms = body.costing_options.motor_scooter;
+  const versuch = async b => { try { return await fetchRoute(b, signal); } catch (err) { if (!KEIN_WEG.includes(err.code)) throw err; return null; } };
+  for (let g = 1; g < grenzen.length; g++) {
+    const teil = chunk.slice(grenzen[g - 1], grenzen[g] + 1);
+    const b = { ...body, locations: routeBody(teil).locations, costing_options: { motor_scooter: { ...ms } } };
+    delete b.alternates;
+    let d = await versuch(b);
+    if (!d) {
+      const strasse = { min_road_class: 'residential' };
+      b.locations = b.locations.map((l, i) => i === 0 || i === b.locations.length - 1 ? { ...l, search_filter: { ...(l.search_filter || {}), ...strasse } } : l);
+      d = await versuch(b);
+    }
+    const name = (teil.at(-1).text || '').trim() || `Halt ${g}`;
+    if (!d && (ms.exclude_unpaved || ms.use_tracks === 0)) {
+      b.costing_options.motor_scooter = { ...ms, exclude_unpaved: false, use_tracks: 0.3 };
+      d = await versuch(b);
+      const hinweis = ` · ⚠ „${name}“ nur über unbefestigte Wege erreichbar`;
+      if (d && !summaryNote.includes(hinweis)) summaryNote += hinweis;
+    }
+    if (!d) throw new Error(`Keine Roller-Route zu „${name}“. 💡 Den Punkt näher an eine Straße setzen.`);
+    legs.push(...d.trip.legs);
+  }
+  const sum = f => legs.reduce((acc, l) => acc + l.summary[f], 0);
+  return { trip: { legs, summary: { length: sum('length'), time: sum('time') } } };
+}
+
+// Halte abseits der Straße (Geocache im Wald): vom Ende der Route gepunktet zum eigentlichen Punkt, wie ein Fußweg
+const FUSS_AB_M = 25;
+const fussLayer = L.layerGroup().addTo(map);
+function fussWege() {
+  fussLayer.clearLayers();
+  if (!routeCoords) return;
+  const halte = waypoints.filter(w => w.latlng && !w.shaping);
+  for (const w of halte) {
+    delete w.fussM;
+    const loc = locateOnRoute(w.latlng.lat, w.latlng.lng);
+    if (loc.dist < FUSS_AB_M) continue;
+    w.fussM = Math.round(loc.dist / 10) * 10;
+    L.polyline([pointAtKm(loc.km), w.latlng], { color: '#1d3557', weight: 4, opacity: .8, dashArray: '1 9', lineCap: 'round', interactive: false })
+      .bindTooltip(`🚶 ca. ${w.fussM} m zu Fuß`).addTo(fussLayer);
+  }
 }
 
 // Hin und zurück: Endet die Tour wieder am Start (≤ 300 m) und ist „Rückweg anders“ an, rechnet der Rückweg
@@ -462,8 +516,8 @@ function zwischenzieleBenennen(trip) {
     if (m.type < 4 || m.type > 6 || m.poi) continue;
     const w = halte[++n];
     if (!w || n === halte.length - 1) break;
-    const name = (w.text || '').trim() || `Zwischenziel ${n}`;
-    m.text = `🏁 ${name}`; m.verbal = `Zwischenziel: ${name}`;
+    const name = (w.text || '').trim() || `Zwischenziel ${n}`, fuss = w.fussM ? ` · 🚶 ca. ${w.fussM} m zu Fuß` : '';
+    m.text = `🏁 ${name}${fuss}`; m.verbal = `Zwischenziel: ${name}${w.fussM ? `, dann ${w.fussM} Meter zu Fuß` : ''}`;
   }
 }
 // Eigene POIs entlang der Route als Hinweis in Abbiegeliste und Navi („📦 GCBJN58 Geschickt geflickt“); nicht an Halten,
@@ -551,6 +605,7 @@ function showTrip(trip, alternates = []) {
       verbal: m.verbal_pre_transition_instruction || m.instruction, lanes: m.lanes?.some(x => x.active || x.valid) ? m.lanes : null });
     off += decode(l.shape).length - 1;
   }
+  fussWege();
   zwischenzieleBenennen(trip);
   poiHinweise(false);
   routeLayer = L.polyline(routeCoords, { color: '#e4572e', weight: 6, bubblingMouseEvents: false }).addTo(map);
