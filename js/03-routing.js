@@ -21,8 +21,11 @@ function routeBody(locs) {
     locations: locs.map((w, i) => {
       const shaping = w.shaping && i && i < locs.length - 1;
       // Formpunkte aus der Grobroute (w.grob): nicht auf Autobahn oder Kraftfahrstraße einrasten
+      // Halte aus einer GPX-Route (w.strasse, meist Geocaches im Gelände) gleich an richtige Straßen binden: sonst rastet
+      // Valhalla sie auf Feld-/Waldwege, das Stück scheitert und muss Halt für Halt nachgerechnet werden (stueckEinzeln)
       return { lat: w.latlng.lat, lon: w.latlng.lng, type: shaping ? 'through' : 'break',
-        ...(shaping ? { search_filter: { min_road_class: 'residential', ...(w.grob ? { max_road_class: 'primary' } : {}) } } : {}) };
+        ...(shaping ? { search_filter: { min_road_class: 'residential', ...(w.grob ? { max_road_class: 'primary' } : {}) } }
+          : w.strasse ? { search_filter: { min_road_class: 'residential' } } : {}) };
     }),
     costing: 'motor_scooter',
     costing_options: { motor_scooter: {
@@ -62,7 +65,18 @@ function valhallaError(status, data) {
 }
 
 const ueberholt = () => Object.assign(new Error('überholt'), { ueberholt: true });
+// Gleiche Anfrage, gleiche Antwort: die letzten Ergebnisse merken, damit ein Neuanlauf (kleinere Stücke nach Fehler 150,
+// Halt für Halt, Navi-Neuberechnung) nichts doppelt beim Server anfragt
+const routeMemo = new Map();
 async function fetchRoute(body, signal) {
+  const key = JSON.stringify(body);
+  if (routeMemo.has(key)) return routeMemo.get(key);
+  const data = await fetchRouteNetz(body, signal);
+  routeMemo.set(key, data);
+  if (routeMemo.size > 80) routeMemo.delete(routeMemo.keys().next().value);
+  return data;
+}
+async function fetchRouteNetz(body, signal) {
   let res;
   try { res = await fetch(VALHALLA_URL, { method: 'POST', body: JSON.stringify(body), signal }); }
   catch (err) { if (err.name === 'AbortError') throw ueberholt(); throw Object.assign(new Error('Keine Verbindung zum Routing-Server. 💡 Internetverbindung prüfen und erneut berechnen.'), { offline: true }); }
@@ -289,8 +303,9 @@ async function planRoute(locs, exclude = []) {
 async function planRouteStuecke(locs, exclude) {
   const lauf = routeLauf, signal = routeAbbruch.signal, chunks = chunkLocations(await grobePunkte(faehrWegpunkte(locs)));
   const trips = [];
-  for (const chunk of chunks) {
+  for (const [k, chunk] of chunks.entries()) {
     if (lauf !== routeLauf) throw ueberholt();
+    if (chunks.length > 1) $('summary').textContent = `Berechne … Teil ${k + 1}/${chunks.length}`;
     const fa = chunk.length === 2 && hafenAb(chunk[0]) && chunk[1].faehre;
     if (fa) { trips.push(faehrTrip(fa)); continue; }
     const body = routeBody(chunk);
@@ -330,6 +345,7 @@ async function stueckEinzeln(chunk, body, signal, fehler) {
   const legs = [], ms = body.costing_options.motor_scooter;
   const versuch = async b => { try { return await fetchRoute(b, signal); } catch (err) { if (!KEIN_WEG.includes(err.code)) throw err; return null; } };
   for (let g = 1; g < grenzen.length; g++) {
+    $('summary').textContent = `Berechne … Halt für Halt ${g}/${grenzen.length - 1}`;
     const teil = chunk.slice(grenzen[g - 1], grenzen[g] + 1);
     const b = { ...body, locations: routeBody(teil).locations, costing_options: { motor_scooter: { ...ms } } };
     delete b.alternates;
