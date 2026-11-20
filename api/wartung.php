@@ -73,23 +73,26 @@ function wartung_gesund(array &$p, array &$i): void {
   ];
   if ($w['tomtom_key'] !== '')
     $tests['TomTom-Schlüssel'] = ['https://api.tomtom.com/traffic/services/5/incidentDetails?bbox=10.88,48.36,10.9,48.38&fields=%7Bincidents%7Btype%7D%7D&key=' . rawurlencode($w['tomtom_key']), null];
-  $mh = curl_multi_init(); $h = [];
-  foreach ($tests as $name => [$url]) {
-    $c = curl_init($url);
-    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
-      CURLOPT_USERAGENT => 'Scooterways-Wartung/1 (+https://scooterways.dns.navy)', CURLOPT_FOLLOWLOCATION => false]);
-    curl_multi_add_handle($mh, $c); $h[$name] = $c;
-  }
-  do { $s = curl_multi_exec($mh, $laeuft); if ($laeuft) curl_multi_select($mh, 1); } while ($laeuft && $s === CURLM_OK);
-  foreach ($h as $name => $c) {
-    $st = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE); $ms = (int)round(curl_getinfo($c, CURLINFO_TOTAL_TIME) * 1000);
-    $ok = $st >= 200 && $st < 300;
-    $i[] = sprintf('%-17s %s %d (%d ms)', $name, $ok ? 'ok  ' : 'FEHL', $st, $ms);
+  $erg = wartung_abrufen($tests);
+  // Fehlschläge nach 30 s noch einmal versuchen, ein kurzer Aussetzer ist kein Alarm
+  $nochmal = array_filter($erg, fn($e, $name) => !$e['ok'] && $name !== 'Overpass', ARRAY_FILTER_USE_BOTH);
+  if ($nochmal) { sleep(30); $erg = array_merge($erg, wartung_abrufen(array_intersect_key($tests, $nochmal))); }
+  // Ausfälle fremder Dienste (5xx, Zeitüberschreitung) erst melden, wenn sie auch beim letzten Lauf schon da waren.
+  // 4xx (z. B. ungültiger Schlüssel) ist eine Einstellungssache und wird sofort gemeldet.
+  $merk = sw_daten() . '/wartung-gesund.json';
+  $vorher = json_decode((string)@file_get_contents($merk), true) ?: [];
+  $jetzt = [];
+  foreach ($erg as $name => $e) {
+    $i[] = sprintf('%-17s %s %d (%d ms)', $name, $e['ok'] ? 'ok  ' : 'FEHL', $e['st'], $e['ms']) . (!$e['ok'] && isset($nochmal[$name]) ? ', auch beim 2. Versuch' : '');
     // Overpass hat einen Ersatzserver, der Ausfall eines einzelnen ist kein Alarm
-    if (!$ok && $name !== 'Overpass') $p[] = "$name antwortet nicht richtig (HTTP $st" . (curl_error($c) ? ', ' . curl_error($c) : '') . ')';
-    curl_multi_remove_handle($mh, $c); curl_close($c);
+    if ($e['ok'] || $name === 'Overpass') continue;
+    $text = "$name antwortet nicht richtig (HTTP {$e['st']}" . ($e['err'] !== '' ? ', ' . $e['err'] : '') . ')';
+    if ($e['st'] >= 400 && $e['st'] < 500) { $p[] = $text; continue; }
+    $jetzt[$name] = 1;
+    if (!empty($vorher[$name])) $p[] = "$text, schon seit dem letzten Lauf";
+    else $i[] = "($name heute ausgefallen, Meldung erst wenn es beim nächsten Lauf noch so ist)";
   }
-  curl_multi_close($mh);
+  @file_put_contents($merk, json_encode($jetzt));
 
   $ix = json_decode((string)@file_get_contents(sw_docroot() . '/poi/index.json'), true);
   if (!$ix || empty($ix['date'])) $p[] = 'POI-Daten fehlen (poi/index.json)';
@@ -111,6 +114,25 @@ function wartung_gesund(array &$p, array &$i): void {
   $cache = wartung_groesse(sw_daten() . '/cache');
   $i[] = 'Zwischenspeicher ' . round($cache / 1048576) . ' MB' . ($frei !== false ? ', frei ' . round($frei / 1048576) . ' MB' : '');
   if ($frei !== false && $frei < WARTUNG_FREI_MB * 1048576) $p[] = 'Wenig Speicher frei: ' . round($frei / 1048576) . ' MB';
+}
+
+// Ruft die Prüf-Adressen parallel ab: Name => ['ok', 'st' (HTTP-Status), 'ms', 'err']
+function wartung_abrufen(array $tests): array {
+  $mh = curl_multi_init(); $h = []; $erg = [];
+  foreach ($tests as $name => [$url]) {
+    $c = curl_init($url);
+    curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 8, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+      CURLOPT_USERAGENT => 'Scooterways-Wartung/1 (+https://scooterways.dns.navy)', CURLOPT_FOLLOWLOCATION => false]);
+    curl_multi_add_handle($mh, $c); $h[$name] = $c;
+  }
+  do { $s = curl_multi_exec($mh, $laeuft); if ($laeuft) curl_multi_select($mh, 1); } while ($laeuft && $s === CURLM_OK);
+  foreach ($h as $name => $c) {
+    $st = (int)curl_getinfo($c, CURLINFO_RESPONSE_CODE);
+    $erg[$name] = ['ok' => $st >= 200 && $st < 300, 'st' => $st, 'ms' => (int)round(curl_getinfo($c, CURLINFO_TOTAL_TIME) * 1000), 'err' => curl_error($c)];
+    curl_multi_remove_handle($mh, $c); curl_close($c);
+  }
+  curl_multi_close($mh);
+  return $erg;
 }
 
 function wartung_fehler(array &$p, array &$i): void {
